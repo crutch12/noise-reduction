@@ -1,0 +1,6 @@
+/my_mic_record.mp3
+/.local/
+__pycache__/
+.pytest_cache/
+/build/
+/dist/

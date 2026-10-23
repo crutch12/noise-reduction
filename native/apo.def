@@ -1,0 +1,4 @@
+LIBRARY NoiseReduction.Apo.dll
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE
