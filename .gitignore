@@ -4,3 +4,7 @@ __pycache__/
 .pytest_cache/
 /build/
 /dist/
+/app-winui/bin/
+/app-winui/obj/
+/tests-winui/bin/
+/tests-winui/obj/

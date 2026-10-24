@@ -4,12 +4,25 @@ $cscPath = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
 $buildPath = Join-Path $repoPath 'build'
 $distPath = Join-Path $repoPath 'dist/setup'
 New-Item -ItemType Directory -Force $buildPath, $distPath | Out-Null
-$payload = @{
-    'NoiseReduction.exe' = Join-Path $repoPath 'dist/app/NoiseReduction.exe'
-    'NoiseReduction.exe.config' = Join-Path $repoPath 'dist/app/NoiseReduction.exe.config'
-    'NoiseReduction.Apo.dll' = Join-Path $buildPath 'NoiseReduction.Apo.dll'
-    'rnnoise.dll' = Join-Path $buildPath 'rnnoise.dll'
+$appPath = Join-Path $repoPath 'dist/app'
+$payload = @{}
+foreach ($inputFile in (Get-ChildItem -LiteralPath $appPath -File -Recurse)) {
+    $relative = $inputFile.FullName.Substring($appPath.Length + 1).Replace('\', '/')
+    if (($inputFile.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw "Reparse-point package input: $relative" }
+    for ($parent = $inputFile.Directory; $parent -and $parent.FullName.Length -ge $appPath.Length; $parent = $parent.Parent) {
+        if (($parent.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw "Reparse-point package directory: $($parent.FullName)" }
+    }
+    $extension = $inputFile.Extension.ToLowerInvariant()
+    if ($extension -in @('.wav', '.mp3', '.flac', '.ogg', '.m4a', '.aac', '.pcm', '.cs', '.cpp', '.h', '.ps1', '.pdb', '.py', '.zip') -or $inputFile.Name -match '(?i)(^|[._-])(test|tests|settings|recording)([._-]|$)') { throw "Private, source or test file in publish output: $relative" }
+    if ($extension -eq '.json' -and $relative -notin @('NoiseReduction.deps.json', 'NoiseReduction.runtimeconfig.json', 'workloads.json', 'workloads.365.json', 'workloads.j32.json', 'workloads.lnl.json', 'workloads.qnn.json', 'workloads.stx.json')) { throw "Unexpected JSON in publish output: $relative" }
+    if ($relative -in @('NoiseReduction.Setup.exe', 'installed-files.txt', 'install-transaction.txt', 'install-transaction.txt.pending', 'payload-sha256.txt') -or $relative.EndsWith('.nr-backup', [StringComparison]::OrdinalIgnoreCase)) { throw "Reserved installer input: $relative" }
+    $payload[$relative] = $inputFile.FullName
 }
+foreach ($required in @('NoiseReduction.exe', 'NoiseReduction.dll', 'NoiseReduction.Engine.exe', 'NoiseReduction.Engine.exe.config', 'NoiseReduction.deps.json', 'NoiseReduction.runtimeconfig.json', 'NoiseReduction.pri', 'NoiseReduction.ico', 'Microphone.png')) {
+    if (-not $payload.ContainsKey($required)) { throw "Missing WinUI package input: $required" }
+}
+$payload['NoiseReduction.Apo.dll'] = Join-Path $buildPath 'NoiseReduction.Apo.dll'
+$payload['rnnoise.dll'] = Join-Path $buildPath 'rnnoise.dll'
 if ((Get-FileHash -LiteralPath $payload['rnnoise.dll'] -Algorithm SHA256).Hash.ToLowerInvariant() -ne '06770aeb8855ef942b5dcdb436f84dfdd5867b716ba4b4c8a2c66ade03197f31') { throw 'RNNoise DLL differs from the licensed pyrnnoise 0.4.5 payload; update provenance and notices before packaging' }
 $redistPath = Get-ChildItem 'C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Redist/MSVC' -Directory | Where-Object Name -Match '^14\.' | Sort-Object Name -Descending | Select-Object -First 1
 if (-not $redistPath) { throw 'MSVC x64 redistributable directory is missing' }
@@ -27,7 +40,9 @@ $arguments = @('/nologo', '/target:exe', '/platform:x64', '/optimize+', '/warnas
 foreach ($name in ($payload.Keys | Sort-Object)) { $arguments += "/resource:$($payload[$name]),payload.$name" }
 $arguments += Join-Path $repoPath 'platform/Integration.cs'
 $arguments += Join-Path $repoPath 'installer/Setup.cs'
-& $cscPath @arguments
+$responsePath = Join-Path $buildPath 'setup.rsp'
+$arguments | ForEach-Object { '"' + $_ + '"' } | Set-Content -LiteralPath $responsePath -Encoding UTF8
+& $cscPath "@$responsePath"
 if ($LASTEXITCODE -ne 0) { throw 'Setup compilation failed' }
 & (Join-Path $distPath 'NoiseReduction.Setup.exe') --self-test --silent
 if ($LASTEXITCODE -ne 0) { throw 'Setup self-test failed' }

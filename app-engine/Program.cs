@@ -1,0 +1,89 @@
+using System;
+using System.IO;
+using System.Windows.Forms;
+using NoiseReduction.Platform;
+
+namespace NoiseReduction.Desktop
+{
+    internal static class Program
+    {
+        [STAThread]
+        private static int Main(string[] args)
+        {
+            try
+            {
+                UiText.Language = Settings.Load(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NoiseReduction", "settings.json")).Language;
+                if (args.Length == 0) throw new ArgumentException("Неизвестная команда");
+                switch (args[0])
+                {
+                    case "--attach": if (args.Length != 2) throw new ArgumentException("Нужен ID микрофона"); AttachVerified(args[1]); break;
+                    case "--detach": if (args.Length != 2) throw new ArgumentException("Нужен ID микрофона"); DetachAndRefresh(args[1]); break;
+                    case "--register": if (args.Length != 1) throw new ArgumentException("Неизвестная команда"); Integration.RegisterEngine(AppDomain.CurrentDomain.BaseDirectory); break;
+                    case "--unregister": if (args.Length != 1) throw new ArgumentException("Неизвестная команда"); Integration.UnregisterEngine(); break;
+                    default: throw new ArgumentException("Неизвестная команда");
+                }
+                return 0;
+            }
+            catch (Exception error) { MessageBox.Show(UiText.Message(error.Message), "Noise Reduction", MessageBoxButtons.OK, MessageBoxIcon.Error); return 1; }
+        }
+        private static void AttachVerified(string id)
+        {
+            using (var operation = new Integration.OperationLease())
+            {
+                var device = Integration.EnumerateMicrophones().Find(value => value.Id == id && value.Active);
+                if (device == null) throw new InvalidOperationException("Микрофон недоступен");
+                Exception verificationFailure = null;
+                bool refreshOnRollback = false;
+                try
+                {
+                    using (var control = new ControlFile(Integration.ControlRoot, device.Guid, true))
+                    using (var verification = Integration.BeginVerifiedAttachment(id))
+                    {
+                        device = Integration.EnumerateMicrophones().Find(value => value.Id == id && value.Active);
+                        if (device == null) throw new InvalidOperationException("Микрофон недоступен после восстановления подключения");
+                        try
+                        {
+                            AttachmentTransaction.Run(control, delegate
+                            {
+                                Integration.Attach(id);
+                                if (!device.Attached)
+                                {
+                                    refreshOnRollback = true;
+                                    Integration.RefreshAudioGraph();
+                                }
+                            }, delegate
+                            {
+                                long initial = control.ModelFrames;
+                                Comparison.VerifyCapture(id, delegate { return control.ModelFrames > initial; });
+                            });
+                            verification.Commit();
+                            refreshOnRollback = false;
+                        }
+                        catch (Exception error) { verificationFailure = error; throw; }
+                    }
+                }
+                catch (Exception error)
+                {
+                    if (refreshOnRollback)
+                    {
+                        try { Integration.RefreshAudioGraph(); }
+                        catch (Exception restoreError) { throw new AggregateException("Подключение отменено, не удалось восстановить аудиограф Windows", error, restoreError); }
+                    }
+                    if (Object.ReferenceEquals(error, verificationFailure))
+                        throw new InvalidOperationException(error.Message + (device.Attached ? "\nПрежнее подключение сохранено" : "\nНовое подключение отменено"), error);
+                    throw;
+                }
+            }
+        }
+        private static void DetachAndRefresh(string id)
+        {
+            using (var operation = new Integration.OperationLease())
+            {
+                var device = Integration.EnumerateMicrophones().Find(value => value.Id == id);
+                Integration.Detach(id);
+                if (device != null && device.Attached) Integration.RefreshAudioGraph();
+            }
+        }
+    }
+
+}

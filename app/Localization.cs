@@ -38,6 +38,7 @@ namespace NoiseReduction.Desktop
             { "Одна запись до и после локальной обработки RNNoise", "One recording, before and after local RNNoise processing" },
             { "Одна запись до и после локальной обработки RNNoise\nЗвук из микрофона не воспроизводится вживую", "One recording, before and after local RNNoise processing\nNo live microphone monitoring" },
             { "&Записать 5 сек", "R&ecord 5 sec" },
+            { "Записать 5 сек", "Record 5 sec" },
             { "Д&о", "&Before" },
             { "&После", "&After" },
             { "Записать пять секунд для сравнения", "Record five seconds for comparison" },
@@ -132,7 +133,27 @@ namespace NoiseReduction.Desktop
             { "Сначала включите обработку микрофона в окне программы и повторите подключение", "Enable processing for this microphone in the app, then connect again" },
             { "Счётчик обработанных моделью кадров не вырос", "The model did not process any new audio frames" },
             { "Windows не подтвердил работу эффекта", "Windows did not confirm that noise reduction is working" },
-            { "Перезапустите запись в использующем микрофон приложении", "Restart recording in the app that uses the microphone" }
+            { "Перезапустите запись в использующем микрофон приложении", "Restart recording in the app that uses the microphone" },
+            { "Шумоподавление", "Noise reduction" },
+            { "Пауза сохраняет настройки каждого микрофона", "Pausing keeps each microphone's settings" },
+            { "Пауза", "Paused" },
+            { "Выключен", "Off" },
+            { "Не подключён к Windows", "Not connected to Windows" },
+            { "Работает", "Working" },
+            { "Ждёт звука", "Waiting for audio" },
+            { "основной", "default" },
+            { "Система", "System" },
+            { "Запись звука", "Sound Recorder" },
+            { "Приложение", "App" },
+            { "Оригинал", "Original" },
+            { "С шумодавом", "Processed" },
+            { "Запись…", "Recording…" },
+            { "Ещё", "More" },
+            { "Одна запись до и после, живой звук не воспроизводится", "One recording before and after, no live monitoring" },
+            { "Говорите в микрофон, запись 5 секунд", "Speak into the microphone, recording for 5 seconds" },
+            { "Подключён к звуку Windows", "Connected to Windows audio" },
+            { "Не подключён к звуку Windows", "Not connected to Windows audio" },
+            { "Крестик оставляет программу в трее", "Closing the window keeps the app in the tray" }
         };
         private static readonly List<string> MessageKeys = SortedKeys();
         private static List<string> SortedKeys()

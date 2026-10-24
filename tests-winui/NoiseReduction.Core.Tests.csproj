@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
+    <Compile Include="../app/Core.cs" />
+    <Compile Include="../app/SecureControl.cs" />
+    <Compile Include="../app/Comparison.cs" />
+    <Compile Include="../app/tests/CoreTests.cs" />
+    <Compile Include="../app/tests/SecurityTests.cs" />
+  </ItemGroup>
+</Project>

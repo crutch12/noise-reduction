@@ -16,7 +16,7 @@ using Microsoft.Win32;
 using NoiseReduction.Platform;
 
 [assembly: AssemblyTitle("NoiseReduction Setup")]
-[assembly: AssemblyVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.1.0.0")]
 public class InstallFileState { public string Name; public bool Existed; }
 public class InstallTransaction {
  public string Id; public int Version; public bool Complete,Committed; public int FileCount=-1,EngineCount=-1,SetupCount=-1;
@@ -27,29 +27,55 @@ class Setup {
  const string UninstallKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\NoiseReduction";
  static bool silent;
  static string InstallRoot { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"NoiseReduction"); } }
- static string Shortcut { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms),"NoiseReduction.lnk"); } }
+ static string Shortcut { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms),"Noise Reduction.lnk"); } }
+ static string LegacyShortcut { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms),"NoiseReduction.lnk"); } }
  static string DataRoot { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),"NoiseReduction"); } }
- static string[] PayloadNames() { return Assembly.GetExecutingAssembly().GetManifestResourceNames().Where(n=>n.StartsWith("payload.",StringComparison.Ordinal)).Select(n=>n.Substring(8)).ToArray(); }
+ static string[] PayloadNames() { return Assembly.GetExecutingAssembly().GetManifestResourceNames().Where(n=>n.StartsWith("payload.",StringComparison.Ordinal)).Select(n=>n.Substring(8)).OrderBy(n=>n,StringComparer.OrdinalIgnoreCase).ToArray(); }
+ static string RelativeName(string name) {
+  if(String.IsNullOrEmpty(name) || Path.IsPathRooted(name)) throw new IOException("Unsafe package filename");
+  var parts=name.Replace('\\','/').Split('/');
+  foreach(var part in parts) {
+   if(part.Length==0 || part=="." || part==".." || part.EndsWith(".",StringComparison.Ordinal) || part.EndsWith(" ",StringComparison.Ordinal) || part.IndexOfAny(Path.GetInvalidFileNameChars())>=0) throw new IOException("Unsafe package filename");
+   string stem=part.Split('.')[0].TrimEnd(' ').ToUpperInvariant();
+   if(stem=="CON" || stem=="PRN" || stem=="AUX" || stem=="NUL" || stem=="CONIN$" || stem=="CONOUT$" || stem=="CLOCK$" || System.Text.RegularExpressions.Regex.IsMatch(stem,@"\A(COM|LPT)[1-9¹²³]\z")) throw new IOException("Reserved package filename");
+  }
+  return String.Join("/",parts);
+ }
+ static FileAttributes? ExistingAttributes(string path) { try { return File.GetAttributes(path); } catch(FileNotFoundException) { return null; } catch(DirectoryNotFoundException) { return null; } }
  static string SafeFile(string directory,string name) {
-  if(String.IsNullOrEmpty(name) || name != Path.GetFileName(name) || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0) throw new IOException("Unsafe package filename");
+  name=RelativeName(name);
   string root=Path.GetFullPath(directory).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-  string path=Path.GetFullPath(Path.Combine(root,name)); if(!path.StartsWith(root,StringComparison.OrdinalIgnoreCase)) throw new IOException("Package path escapes destination");
-  for(var current=new DirectoryInfo(root);current != null;current=current.Parent) if(current.Exists && (current.Attributes & FileAttributes.ReparsePoint) != 0) throw new IOException("Reparse-point installation paths are not supported");
-  if(File.Exists(path) && (File.GetAttributes(path)&FileAttributes.ReparsePoint) != 0) throw new IOException("Reparse-point files are not supported"); return path;
+  string path=Path.GetFullPath(Path.Combine(root,name.Replace('/',Path.DirectorySeparatorChar))); if(!path.StartsWith(root,StringComparison.OrdinalIgnoreCase)) throw new IOException("Package path escapes destination");
+  for(var current=new DirectoryInfo(Path.GetDirectoryName(path));current != null;current=current.Parent) { var attributes=ExistingAttributes(current.FullName); if(attributes.HasValue && ((attributes.Value&FileAttributes.ReparsePoint)!=0 || (attributes.Value&FileAttributes.Directory)==0)) throw new IOException("Reparse-point or non-directory installation paths are not supported"); }
+  var target=ExistingAttributes(path); if(target.HasValue && (target.Value&(FileAttributes.ReparsePoint|FileAttributes.Directory))!=0) throw new IOException("Reparse-point files or directory destinations are not supported"); return path;
+ }
+ static string PrepareFile(string directory,string name) {
+  string path=SafeFile(directory,name); Directory.CreateDirectory(Path.GetDirectoryName(path)); return SafeFile(directory,name);
+ }
+ static void RemoveFile(string directory,string name) { string path=SafeFile(directory,name); if(File.Exists(path)) File.Delete(path); }
+ static void PruneEmptyDirectories(string directory,IEnumerable<string> files) {
+  var parents=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+  foreach(var file in files) { string name=RelativeName(file); for(int slash=name.LastIndexOf('/');slash>=0;slash=name.LastIndexOf('/')) { name=name.Substring(0,slash); parents.Add(name); } }
+  foreach(var parent in parents.OrderByDescending(name=>name.Length)) {
+   string path=Path.GetDirectoryName(SafeFile(directory,parent+"/.nr-directory-check"));
+   if(Directory.Exists(path) && Directory.GetFileSystemEntries(path).Length==0) Directory.Delete(path);
+  }
  }
  static void Extract(string directory) {
   Directory.CreateDirectory(directory);
-  foreach(var name in PayloadNames()) using(var input=Assembly.GetExecutingAssembly().GetManifestResourceStream("payload."+name)) using(var output=new FileStream(SafeFile(directory,name),FileMode.CreateNew,FileAccess.Write)) input.CopyTo(output);
+  foreach(var name in PayloadNames()) using(var input=Assembly.GetExecutingAssembly().GetManifestResourceStream("payload."+name)) using(var output=new FileStream(PrepareFile(directory,name),FileMode.CreateNew,FileAccess.Write)) input.CopyTo(output);
  }
  static string Hash(string file) { using(var sha=SHA256.Create()) using(var input=File.OpenRead(file)) return BitConverter.ToString(sha.ComputeHash(input)).Replace("-","").ToLowerInvariant(); }
  static void ValidateManifest(string directory) {
   string manifest=SafeFile(directory,"installed-files.txt"); if(!File.Exists(manifest)) throw new IOException("Installed-files manifest is missing");
-  foreach(var line in File.ReadAllLines(manifest)) { var parts=line.Split('|'); if(parts.Length != 2 || parts[1].Length != 64) throw new IOException("Invalid installed-files manifest"); SafeFile(directory,parts[0]); }
+  var names=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+  foreach(var line in File.ReadAllLines(manifest)) { var parts=line.Split('|'); if(parts.Length != 2 || parts[1].Length != 64 || !names.Add(RelativeName(parts[0]))) throw new IOException("Invalid installed-files manifest"); SafeFile(directory,parts[0]); }
  }
- static string[] ManifestFiles(string directory) { ValidateManifest(directory); return File.ReadAllLines(SafeFile(directory,"installed-files.txt")).Select(line=>line.Split('|')[0]).ToArray(); }
+ static string[] ManifestFiles(string directory) { ValidateManifest(directory); return File.ReadAllLines(SafeFile(directory,"installed-files.txt")).Select(line=>RelativeName(line.Split('|')[0])).ToArray(); }
  static void MakeShortcut(string target) {
   Type type=Type.GetTypeFromProgID("WScript.Shell"); dynamic shell=Activator.CreateInstance(type); dynamic link=shell.CreateShortcut(Shortcut);
-  try { link.TargetPath=target; link.WorkingDirectory=Path.GetDirectoryName(target); link.Description="NoiseReduction microphone settings"; link.Save(); } finally { Marshal.FinalReleaseComObject(link); Marshal.FinalReleaseComObject(shell); }
+  try { link.TargetPath=target; link.WorkingDirectory=Path.GetDirectoryName(target); link.Description="Noise Reduction microphone settings"; link.Save(); } finally { Marshal.FinalReleaseComObject(link); Marshal.FinalReleaseComObject(shell); }
+  File.Delete(LegacyShortcut);
  }
  static RegistryEngine RegistryJournal(RegistryKey root, string name) { return new RegistryEngine(root,Path.Combine(DataRoot,name)); }
  static InstallTransaction ReadTransaction(string directory,string transaction) {
@@ -58,7 +84,7 @@ class Setup {
   if((state.Version!=2 && state.Version!=3) || !Guid.TryParse(state.Id,out transactionId) || !state.Complete || state.Files==null || state.EngineCheckpoint==null || state.SetupCheckpoint==null || state.FileCount!=state.Files.Length || state.EngineCount!=state.EngineCheckpoint.Length || state.SetupCount!=state.SetupCheckpoint.Length || state.FileCount==0) throw new IOException("Incomplete or unsupported installation transaction");
   if(state.Version==3 && (state.OriginalRunningServices==null || (state.GraphSnapshotTaken && !state.OriginalRunningServices.Contains("Audiosrv",StringComparer.OrdinalIgnoreCase)) || state.OriginalRunningServices.Any(name=>String.IsNullOrEmpty(name) || name.IndexOfAny(new[]{'\\','/','\0'})>=0))) throw new IOException("Incomplete installation service recovery snapshot");
   var names=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-  foreach(var file in state.Files) { if(file==null || !names.Add(file.Name)) throw new IOException("Invalid installation transaction ownership list"); SafeFile(directory,file.Name); }
+  foreach(var file in state.Files) { if(file==null || !names.Add(RelativeName(file.Name))) throw new IOException("Invalid installation transaction ownership list"); SafeFile(directory,file.Name); }
   return state;
  }
  static void PublishTransaction(string transaction,InstallTransaction state) {
@@ -68,12 +94,14 @@ class Setup {
  }
  static void RollbackRegistry(InstallTransaction state) { using(var root=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64)) { RegistryJournal(root,"Journal").RestoreTransaction(state.Id); RegistryJournal(root,"SetupJournal").RestoreTransaction(state.Id); } }
  static void CleanupCommitted(string directory,string transaction,InstallTransaction state) {
-  foreach(var file in state.Files) File.Delete(SafeFile(directory,file.Name+".nr-backup"));
+  foreach(var file in state.Files) RemoveFile(directory,file.Name+".nr-backup");
+  PruneEmptyDirectories(directory,state.Files.Select(file=>file.Name));
   File.Delete(transaction);
  }
  static void RestoreFiles(string directory,string transaction,InstallTransaction state,bool sandbox) {
   if(!sandbox) RollbackRegistry(state);
-  foreach(var file in state.Files.Reverse()) { string destination=SafeFile(directory,file.Name),backup=SafeFile(directory,file.Name+".nr-backup"); if(File.Exists(backup)) { if(File.Exists(destination)) File.Replace(backup,destination,null); else File.Move(backup,destination); } else if(!file.Existed) File.Delete(destination); }
+  foreach(var file in state.Files.Reverse()) { string destination=SafeFile(directory,file.Name),backup=SafeFile(directory,file.Name+".nr-backup"); if(File.Exists(backup)) { if(File.Exists(destination)) File.Replace(backup,destination,null); else File.Move(backup,PrepareFile(directory,file.Name)); } else if(!file.Existed) RemoveFile(directory,file.Name); }
+  PruneEmptyDirectories(directory,state.Files.Select(file=>file.Name));
   state.FilesRestored=true; PublishTransaction(transaction,state);
  }
  static void GraphMaintenance(string transaction,InstallTransaction state,Action action,IAudioServices services,Func<long> milliseconds) {
@@ -86,7 +114,7 @@ class Setup {
   bool useGraph=(!sandbox || services!=null) && (state.GraphRestoreRequired || state.Files.Any(file=>file.Name.EndsWith(".dll",StringComparison.OrdinalIgnoreCase) && File.Exists(SafeFile(directory,file.Name+".nr-backup"))));
   services=services ?? new WindowsAudioServices();
   if(state.FilesRestored) { if(useGraph && state.GraphSnapshotTaken) AudioGraphRefresh.Restore(services,milliseconds,state.OriginalRunningServices); File.Delete(transaction); return; }
-  Action recover=delegate { if(!sandbox && useGraph) WaitForPayloadRelease(directory,state.Files.Select(file=>file.Name).Concat(state.Files.Select(file=>file.Name+".nr-backup")),10000); if(state.Committed) { foreach(var file in state.Files) File.Delete(SafeFile(directory,file.Name+".nr-backup")); } else RestoreFiles(directory,transaction,state,sandbox); };
+  Action recover=delegate { if(!sandbox && useGraph) WaitForPayloadRelease(directory,state.Files.Select(file=>file.Name).Concat(state.Files.Select(file=>file.Name+".nr-backup")),10000); if(state.Committed) { foreach(var file in state.Files) RemoveFile(directory,file.Name+".nr-backup"); PruneEmptyDirectories(directory,state.Files.Select(file=>file.Name)); } else RestoreFiles(directory,transaction,state,sandbox); };
   if(useGraph) GraphMaintenance(transaction,state,recover,services,milliseconds); else recover();
   File.Delete(transaction);
  }
@@ -111,28 +139,31 @@ class Setup {
   RecoverInstall(directory,transaction,sandbox,services,milliseconds);
   var owned=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
   if(File.Exists(SafeFile(directory,"installed-files.txt"))) { foreach(var name in ManifestFiles(directory)) owned.Add(name); owned.Add("installed-files.txt"); }
+  string[] obsolete=owned.Except(names,StringComparer.OrdinalIgnoreCase).ToArray();
   foreach(var name in names) if(File.Exists(SafeFile(directory,name)) && !owned.Contains(name)) throw new IOException("Installation destination contains an unowned conflicting file: "+name);
-  foreach(var name in names) { SafeFile(directory,name); if(File.Exists(SafeFile(directory,name+".nr-backup"))) throw new IOException("An unfinished installation backup exists"); }
+  foreach(var name in names.Concat(obsolete)) { SafeFile(directory,name); if(File.Exists(SafeFile(directory,name+".nr-backup"))) throw new IOException("An unfinished installation backup exists"); }
   if(!sandbox) Integration.PrepareDirectories();
   string stage=Path.Combine(directory,"stage-"+Guid.NewGuid().ToString("N")); Directory.CreateDirectory(stage);
   bool committed=false; string previousTransaction=RegistryEngine.CurrentTransactionId;
   try {
    Extract(stage); File.Copy(Assembly.GetExecutingAssembly().Location,SafeFile(stage,"NoiseReduction.Setup.exe"));
    File.WriteAllLines(SafeFile(stage,"installed-files.txt"),names.Where(n=>n!="installed-files.txt").Select(n=>n+"|"+Hash(SafeFile(stage,n))).ToArray());
-   var state=new InstallTransaction { Id=Guid.NewGuid().ToString("N"),Version=3,Complete=true,OriginalRunningServices=new string[0],GraphRestoreRequired=owned.Contains("NoiseReduction.Apo.dll") && (!sandbox || services!=null),Files=names.Select(name=>new InstallFileState { Name=name,Existed=File.Exists(SafeFile(directory,name)) }).ToArray(),EngineCheckpoint=new string[0],SetupCheckpoint=new string[0] };
+   var state=new InstallTransaction { Id=Guid.NewGuid().ToString("N"),Version=3,Complete=true,OriginalRunningServices=new string[0],GraphRestoreRequired=owned.Contains("NoiseReduction.Apo.dll") && (!sandbox || services!=null),Files=names.Concat(obsolete).Select(name=>new InstallFileState { Name=name,Existed=File.Exists(SafeFile(directory,name)) }).ToArray(),EngineCheckpoint=new string[0],SetupCheckpoint=new string[0] };
    if(!sandbox) using(var registry=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64)) { state.EngineCheckpoint=RegistryJournal(registry,"Journal").Checkpoint(); state.SetupCheckpoint=RegistryJournal(registry,"SetupJournal").Checkpoint(); }
    state.FileCount=state.Files.Length; state.EngineCount=state.EngineCheckpoint.Length; state.SetupCount=state.SetupCheckpoint.Length;
    PublishTransaction(transaction,state);
    RegistryEngine.CurrentTransactionId=state.Id;
    Action replace=delegate {
     try {
-    if(!sandbox && state.GraphRestoreRequired) WaitForPayloadRelease(directory,names,10000);
-    foreach(var name in names) { string destination=SafeFile(directory,name); if(File.Exists(destination)) File.Replace(SafeFile(stage,name),destination,SafeFile(directory,name+".nr-backup")); else File.Move(SafeFile(stage,name),destination); if(afterReplace!=null) afterReplace(name); }
+    if(!sandbox && state.GraphRestoreRequired) WaitForPayloadRelease(directory,names.Concat(obsolete),10000);
+    foreach(var name in names) { string destination=PrepareFile(directory,name); if(File.Exists(destination)) File.Replace(SafeFile(stage,name),destination,SafeFile(directory,name+".nr-backup")); else File.Move(SafeFile(stage,name),destination); if(afterReplace!=null) afterReplace(name); }
+    foreach(var name in obsolete) { string destination=SafeFile(directory,name),backup=SafeFile(directory,name+".nr-backup"); if(File.Exists(backup)) throw new IOException("An unfinished obsolete-file backup exists"); if(File.Exists(destination)) File.Move(destination,backup); if(afterReplace!=null) afterReplace(name); }
    if(!sandbox) { Integration.RegisterEngine(directory);
    using(var root=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64)) {
     var e=new RegistryEngine(root,Path.Combine(DataRoot,"SetupJournal")); e.Recover();
-    e.Set(UninstallKey,"DisplayName","NoiseReduction",RegistryValueKind.String); e.Set(UninstallKey,"DisplayVersion","1.0.0",RegistryValueKind.String);
-    e.Set(UninstallKey,"Publisher","NoiseReduction contributors",RegistryValueKind.String); e.Set(UninstallKey,"InstallLocation",directory,RegistryValueKind.String);
+    e.Set(UninstallKey,"DisplayName","Noise Reduction",RegistryValueKind.String); e.Set(UninstallKey,"DisplayVersion","1.1.0",RegistryValueKind.String);
+    e.Set(UninstallKey,"EstimatedSize",(int)(new DirectoryInfo(directory).EnumerateFiles("*",SearchOption.AllDirectories).Sum(file=>file.Length)/1024),RegistryValueKind.DWord);
+    e.Set(UninstallKey,"Publisher","Noise Reduction",RegistryValueKind.String); e.Set(UninstallKey,"InstallLocation",directory,RegistryValueKind.String);
     e.Set(UninstallKey,"UninstallString","\""+Path.Combine(directory,"NoiseReduction.Setup.exe")+"\" --uninstall",RegistryValueKind.String);
     e.Set(UninstallKey,"QuietUninstallString","\""+Path.Combine(directory,"NoiseReduction.Setup.exe")+"\" --uninstall --silent",RegistryValueKind.String);
     e.Set(UninstallKey,"DisplayIcon",Path.Combine(directory,"NoiseReduction.exe"),RegistryValueKind.String); e.Set(UninstallKey,"NoModify",1,RegistryValueKind.DWord); e.Set(UninstallKey,"NoRepair",1,RegistryValueKind.DWord);
@@ -146,7 +177,7 @@ class Setup {
   } catch {
    if(!committed) RecoverInstall(directory,transaction,sandbox,services,milliseconds);
    throw;
-  } finally { RegistryEngine.CurrentTransactionId=previousTransaction; foreach(var name in names) File.Delete(SafeFile(stage,name)); if(Directory.Exists(stage) && Directory.GetFileSystemEntries(stage).Length==0) Directory.Delete(stage); }
+  } finally { RegistryEngine.CurrentTransactionId=previousTransaction; foreach(var name in names) RemoveFile(stage,name); PruneEmptyDirectories(stage,names); if(Directory.Exists(stage) && Directory.GetFileSystemEntries(stage).Length==0) Directory.Delete(stage); }
  }
  static void Uninstall(string directory,bool sandbox) {
   RecoverInstall(directory,SafeFile(directory,"install-transaction.txt"),sandbox);
@@ -158,10 +189,11 @@ class Setup {
   try { foreach(var name in names) { string file=SafeFile(directory,name); if(File.Exists(file)) using(var probe=new FileStream(file,FileMode.Open,FileAccess.ReadWrite,FileShare.None)) { } } } catch(IOException ex) { throw new IOException("Microphone effects were detached. Close NoiseReduction and other microphone applications, then retry uninstall",ex); }
   Integration.UnregisterEngine();
   using(var root=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64)) { var e=new RegistryEngine(root,Path.Combine(DataRoot,"SetupJournal")); e.Recover(); e.RestorePrefix(UninstallKey); using(var key=root.OpenSubKey(UninstallKey)) if(key != null && key.ValueCount==0 && key.SubKeyCount==0) { key.Dispose(); root.DeleteSubKey(UninstallKey,false); } }
-  File.Delete(Shortcut);
+  File.Delete(Shortcut); File.Delete(LegacyShortcut);
   using(var startup=Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run",true)) if(startup!=null) { string value=startup.GetValue("NoiseReduction") as string; string expected="\""+Path.Combine(directory,"NoiseReduction.exe")+"\" --tray"; if(String.Equals(value,expected,StringComparison.OrdinalIgnoreCase)) startup.DeleteValue("NoiseReduction",false); }
   }
   foreach(var name in names) { string file=SafeFile(directory,name); if(File.Exists(file)) File.Delete(file); }
+  PruneEmptyDirectories(directory,names);
   File.Delete(SafeFile(directory,"installed-files.txt"));
   if(Directory.GetFileSystemEntries(directory).Length==0) Directory.Delete(directory);
  }
@@ -179,6 +211,20 @@ class Setup {
   return executable;
  }
  static void RequireAdmin() { if(!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator)) throw new UnauthorizedAccessException("Run setup as administrator"); }
+ [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern bool CreateSymbolicLink(string link,string target,uint flags);
+ static void TestPaths(string directory) {
+  foreach(var name in new[]{"../outside","a/../../outside","a/./file","a//file","a\\\\file","/absolute","C:/absolute","C:relative",@"\\server\share\file","a/file:stream","a/CON.txt","a/CON .txt","a/CONOUT$","a/LPT1","a/NUL.ext","a/trailing.","a/trailing ",".",""}) {
+   bool rejected=false; try { SafeFile(directory,name); } catch(IOException) { rejected=true; } if(!rejected) throw new Exception("Unsafe package path accepted: "+name);
+  }
+  string victim=Path.Combine(directory,"path-victim"),alias=Path.Combine(directory,"path-link"); Directory.CreateDirectory(victim); File.WriteAllText(Path.Combine(victim,"keep.txt"),"unchanged");
+  try {
+   if(CreateSymbolicLink(alias,victim,3) || CreateSymbolicLink(alias,victim,1)) {
+    try { bool rejected=false; try { PrepareFile(directory,"path-link/nested/new.txt"); } catch(IOException) { rejected=true; } if(!rejected || Directory.Exists(Path.Combine(victim,"nested"))) throw new Exception("Nested package path followed a directory link"); }
+    finally { Directory.Delete(alias); }
+   } else { int error=Marshal.GetLastWin32Error(); if(error!=1314 && error!=5) throw new System.ComponentModel.Win32Exception(error); Console.WriteLine("SKIP package symlink fixture: privilege unavailable"); }
+   if(File.ReadAllText(Path.Combine(victim,"keep.txt"))!="unchanged") throw new Exception("Package path validation changed unrelated data");
+  } finally { File.Delete(Path.Combine(victim,"keep.txt")); Directory.Delete(victim); }
+ }
  sealed class SandboxAudioServices : IAudioServices {
   internal readonly Dictionary<string,ServiceControllerStatus> States=new Dictionary<string,ServiceControllerStatus> { {"Audiosrv",ServiceControllerStatus.Running},{"Rtk",ServiceControllerStatus.Running},{"Idle",ServiceControllerStatus.Stopped} };
   internal readonly List<string> Calls=new List<string>(); internal Action OnAudioStart;
@@ -191,11 +237,17 @@ class Setup {
  static InstallTransaction SandboxTransaction(string name,bool committed) { return new InstallTransaction{ Id=Guid.NewGuid().ToString("N"),Version=3,Complete=true,Committed=committed,GraphRestoreRequired=true,GraphSnapshotTaken=true,OriginalRunningServices=new[]{"Rtk","Audiosrv"},FileCount=1,EngineCount=0,SetupCount=0,EngineCheckpoint=new string[0],SetupCheckpoint=new string[0],Files=new[]{new InstallFileState{Name=name,Existed=true}}}; }
  static int SelfTest() {
   string directory=Path.Combine(Path.GetTempPath(),"nr-package-"+Guid.NewGuid().ToString("N"));
-  try { Extract(directory); var names=PayloadNames(); if(!names.Contains("NoiseReduction.exe") || !names.Contains("NoiseReduction.exe.config") || !names.Contains("NoiseReduction.Apo.dll") || !names.Contains("rnnoise.dll")) throw new Exception("Required payload missing");
-   if(names.Any(n=>new[]{".mp3",".wav",".flac",".ogg",".json"}.Contains(Path.GetExtension(n).ToLowerInvariant()))) throw new Exception("Unexpected private/audio payload");
+  try { Extract(directory); var names=PayloadNames(); foreach(var required in new[]{"NoiseReduction.exe","NoiseReduction.dll","NoiseReduction.Engine.exe","NoiseReduction.Engine.exe.config","NoiseReduction.deps.json","NoiseReduction.runtimeconfig.json","NoiseReduction.pri","NoiseReduction.ico","Microphone.png","NoiseReduction.Apo.dll","rnnoise.dll"}) if(!names.Contains(required,StringComparer.OrdinalIgnoreCase)) throw new Exception("Required payload missing: "+required);
+   var allowedJson=new[]{"NoiseReduction.deps.json","NoiseReduction.runtimeconfig.json","workloads.json","workloads.365.json","workloads.j32.json","workloads.lnl.json","workloads.qnn.json","workloads.stx.json"};
+   if(names.Any(n=>new[]{".mp3",".wav",".flac",".ogg",".m4a",".aac",".pcm",".cs",".cpp",".h",".ps1",".pdb",".py",".zip"}.Contains(Path.GetExtension(n).ToLowerInvariant()) || (Path.GetExtension(n).Equals(".json",StringComparison.OrdinalIgnoreCase) && !allowedJson.Contains(n,StringComparer.OrdinalIgnoreCase)))) throw new Exception("Unexpected private/audio/source payload");
+   string nested=names.FirstOrDefault(name=>name.IndexOf('/')>=0); if(nested==null) throw new Exception("WinUI localized runtime payload is missing");
+   foreach(var line in File.ReadAllLines(SafeFile(directory,"payload-sha256.txt"))) { var parts=line.Split('|'); if(parts.Length!=2 || Hash(SafeFile(directory,parts[0]))!=parts[1]) throw new Exception("Extracted payload hash mismatch"); }
+   TestPaths(directory);
    foreach(var name in names) File.Delete(SafeFile(directory,name));
+   PruneEmptyDirectories(directory,names);
    Install(directory,true); ValidateManifest(directory);
    File.WriteAllText(SafeFile(directory,"user-recording.wav"),"keep me");
+   string nestedRecording=RelativeName(nested).Substring(0,nested.LastIndexOf('/')+1)+"user-recording.wav"; File.WriteAllText(PrepareFile(directory,nestedRecording),"keep nested recording");
    Install(directory,true); ValidateManifest(directory);
    var expected=ManifestFiles(directory).ToDictionary(n=>n,n=>Hash(SafeFile(directory,n)));
    bool failed=false;
@@ -204,6 +256,8 @@ class Setup {
    string interrupted=SafeFile(directory,"install-transaction.txt"); string app=SafeFile(directory,"NoiseReduction.exe"),backup=SafeFile(directory,"NoiseReduction.exe.nr-backup");
    File.Copy(app,backup); PublishTransaction(interrupted,new InstallTransaction{ Id=Guid.NewGuid().ToString("N"),Version=2,Complete=true,FileCount=2,EngineCount=0,SetupCount=0,EngineCheckpoint=new string[0],SetupCheckpoint=new string[0],Files=new[]{new InstallFileState{Name="NoiseReduction.exe",Existed=true},new InstallFileState{Name="partial-new.txt",Existed=false}}}); File.WriteAllText(app,"interrupted"); File.WriteAllText(SafeFile(directory,"partial-new.txt"),"partial");
    RecoverInstall(directory,interrupted,true); if(Hash(app)!=expected["NoiseReduction.exe"] || File.Exists(SafeFile(directory,"partial-new.txt"))) throw new Exception("Interrupted install recovery failed");
+   string nestedFile=SafeFile(directory,nested),nestedBackup=SafeFile(directory,nested+".nr-backup"); File.Copy(nestedFile,nestedBackup); File.WriteAllText(nestedFile,"interrupted nested replacement"); PublishTransaction(interrupted,SandboxTransaction(nested,false));
+   RecoverInstall(directory,interrupted,true); if(Hash(nestedFile)!=expected[nested] || File.Exists(nestedBackup)) throw new Exception("Nested v3 rollback did not restore the owned runtime file");
    File.Copy(app,backup); File.WriteAllText(app,"committed new payload"); string committedHash=Hash(app);
    PublishTransaction(interrupted,new InstallTransaction{ Id=Guid.NewGuid().ToString("N"),Version=2,Complete=true,Committed=true,FileCount=1,EngineCount=0,SetupCount=0,EngineCheckpoint=new string[0],SetupCheckpoint=new string[0],Files=new[]{new InstallFileState{Name="NoiseReduction.exe",Existed=true}}});
    bool cleanupBlocked=false;
@@ -230,6 +284,10 @@ class Setup {
    string apoBackup=SafeFile(directory,"NoiseReduction.Apo.dll.nr-backup"); File.Copy(apo,apoBackup); string newApoHash=Hash(apo); PublishTransaction(interrupted,SandboxTransaction("NoiseReduction.Apo.dll",true));
    audio=new SandboxAudioServices(); audio.OnAudioStart=delegate { if(File.Exists(apoBackup) || Hash(apo)!=newApoHash) throw new Exception("Committed cleanup did not unload and remove backup before audio restart"); };
    RecoverInstall(directory,interrupted,true,audio,delegate{return 0;}); if(File.Exists(interrupted) || !audio.Calls.Contains("stop:Audiosrv")) throw new Exception("Committed DLL backup cleanup skipped graph unloading");
+   string obsolete="obsolete-locale/previous.resources.dll",obsoletePath=PrepareFile(directory,obsolete); File.WriteAllText(obsoletePath,"old owned runtime"); string obsoleteHash=Hash(obsoletePath); File.AppendAllText(SafeFile(directory,"installed-files.txt"),obsolete+"|"+obsoleteHash+Environment.NewLine);
+   bool obsoleteFailure=false; try { Install(directory,true,null,null,delegate(string name) { if(name==obsolete) throw new IOException("injected obsolete removal failure"); }); } catch(IOException) { obsoleteFailure=true; }
+   if(!obsoleteFailure || Hash(obsoletePath)!=obsoleteHash || !ManifestFiles(directory).Contains(obsolete)) throw new Exception("Failed upgrade lost an obsolete owned runtime file");
+   Install(directory,true); if(File.Exists(obsoletePath) || Directory.Exists(Path.GetDirectoryName(obsoletePath)) || ManifestFiles(directory).Contains(obsolete)) throw new Exception("Upgrade left an obsolete owned runtime file behind");
    string ownedManifest=SafeFile(directory,"installed-files.txt"), savedManifest=File.ReadAllText(ownedManifest); string originalModelHash=Hash(SafeFile(directory,"rnnoise.dll"));
    File.WriteAllLines(ownedManifest,File.ReadAllLines(ownedManifest).Where(line=>!line.StartsWith("rnnoise.dll|",StringComparison.Ordinal)).ToArray());
    bool ownershipRejected=false; try { Install(directory,true); } catch(IOException) { ownershipRejected=true; }
@@ -241,13 +299,14 @@ class Setup {
    File.Copy(app,backup); PublishTransaction(interrupted,new InstallTransaction{ Id=Guid.NewGuid().ToString("N"),Version=2,Complete=true,FileCount=1,EngineCount=0,SetupCount=0,EngineCheckpoint=new string[0],SetupCheckpoint=new string[0],Files=new[]{new InstallFileState{Name="NoiseReduction.exe",Existed=true}}}); File.WriteAllText(app,"interrupted before uninstall");
    Uninstall(directory,true); if(File.Exists(backup) || File.Exists(interrupted)) throw new Exception("Uninstall skipped interrupted install recovery");
    if(File.ReadAllText(SafeFile(directory,"user-recording.wav"))!="keep me") throw new Exception("User file lost"); File.Delete(SafeFile(directory,"user-recording.wav"));
+   if(File.ReadAllText(SafeFile(directory,nestedRecording))!="keep nested recording") throw new Exception("Nested unrelated user recording lost"); File.Delete(SafeFile(directory,nestedRecording)); PruneEmptyDirectories(directory,new[]{nestedRecording});
    var workerAcl=WorkerAccess(); var workerRules=workerAcl.GetAccessRules(true,true,typeof(SecurityIdentifier));
    if(!workerAcl.AreAccessRulesProtected || workerRules.Count!=2 || !workerAcl.GetOwner(typeof(SecurityIdentifier)).Equals(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid,null))) throw new Exception("Uninstall worker directory is not protected");
    foreach(FileSystemAccessRule rule in workerRules) if(rule.AccessControlType!=AccessControlType.Allow || rule.FileSystemRights!=FileSystemRights.FullControl || (!rule.IdentityReference.Equals(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid,null)) && !rule.IdentityReference.Equals(new SecurityIdentifier(WellKnownSidType.LocalSystemSid,null)))) throw new Exception("Uninstall worker allows unprivileged write access");
    if(!WorkerDirectory().StartsWith(Path.GetFullPath(DataRoot)+Path.DirectorySeparatorChar,StringComparison.OrdinalIgnoreCase)) throw new Exception("Uninstall worker staged outside protected ProgramData root");
    bool rejected=false; try { SafeFile(directory,"..\\outside"); } catch(IOException) { rejected=true; } if(!rejected) throw new Exception("Path validation failed");
-   Console.WriteLine("PASS package extraction, upgrade/failure/crash rollback, checkpoint validation, committed cleanup retry, stopped upgrade rollback/service recovery, ownership conflict, uninstall recovery/preservation, path validation: "+names.Length+" files"); return 0;
-  } finally { foreach(var name in PayloadNames()) File.Delete(SafeFile(directory,name)); if(Directory.Exists(directory) && Directory.GetFileSystemEntries(directory).Length==0) Directory.Delete(directory); }
+   Console.WriteLine("PASS nested package extraction, upgrade/failure/crash rollback, v2/v3 recovery, obsolete runtime removal, checkpoint validation, committed cleanup retry, stopped upgrade rollback/service recovery, ownership conflict, uninstall preservation, traversal/reparse validation: "+names.Length+" files"); return 0;
+  } finally { foreach(var name in PayloadNames()) RemoveFile(directory,name); PruneEmptyDirectories(directory,PayloadNames()); if(Directory.Exists(directory) && Directory.GetFileSystemEntries(directory).Length==0) Directory.Delete(directory); }
  }
  [STAThread] static int Main(string[] args) {
   silent=args.Contains("--silent");

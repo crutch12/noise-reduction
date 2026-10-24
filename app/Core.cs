@@ -92,7 +92,7 @@ namespace NoiseReduction.Desktop
             try
             {
                 var access = readOnly ? MemoryMappedFileAccess.Read : MemoryMappedFileAccess.ReadWrite;
-                mapping = MemoryMappedFile.CreateFromFile(file.Stream, null, 64, access, null, HandleInheritability.None, true);
+                mapping = MemoryMappedFile.CreateFromFile(file.Stream, null, 64, access, HandleInheritability.None, true);
                 view = mapping.CreateViewAccessor(0, 64, access);
             }
             catch { if (mapping != null) mapping.Dispose(); file.Dispose(); throw; }
@@ -114,7 +114,14 @@ namespace NoiseReduction.Desktop
                 {
                     string name = NotificationName(Path.GetFileName(marker));
                     if (name == null) continue;
-                    try { using (var notification = EventWaitHandle.OpenExisting(name, EventWaitHandleRights.Modify)) notification.Set(); }
+                    try
+                    {
+#if NETCOREAPP
+                        using (var notification = EventWaitHandleAcl.OpenExisting(name, EventWaitHandleRights.Modify)) notification.Set();
+#else
+                        using (var notification = EventWaitHandle.OpenExisting(name, EventWaitHandleRights.Modify)) notification.Set();
+#endif
+                    }
                     catch (WaitHandleCannotBeOpenedException) { }
                     catch (UnauthorizedAccessException) { }
                     catch (FileNotFoundException) { }

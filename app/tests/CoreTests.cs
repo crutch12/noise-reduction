@@ -37,7 +37,7 @@ class CoreTests
     static InvalidOperationException ExpectFailure(Action action, string message)
     { try { action(); } catch (InvalidOperationException error) { return error; } throw new Exception(message); }
     static void Check(bool value, string name) { if (!value) throw new Exception(name); }
-    static byte[] ReadShared(string path) { using (var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)) { var data = new byte[64]; file.Read(data, 0, 64); return data; } }
+    static byte[] ReadShared(string path) { using (var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)) using (var reader = new BinaryReader(file)) { var data = reader.ReadBytes(64); Check(data.Length == 64, "complete control header"); return data; } }
     static int Main()
     {
         string root = Path.Combine(Path.GetTempPath(), "nr-tests-" + Guid.NewGuid());

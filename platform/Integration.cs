@@ -39,13 +39,13 @@ namespace NoiseReduction.Platform {
     for(var current=new DirectoryInfo(directory);current != null;current=current.Parent) if(current.Exists && (current.Attributes & FileAttributes.ReparsePoint)!=0) throw new IOException("NoiseReduction data paths must not contain reparse points");
     if(directory.EndsWith("Journal",StringComparison.OrdinalIgnoreCase) && Directory.Exists(directory)) foreach(string file in Directory.GetFiles(directory)) {
      if((File.GetAttributes(file)&FileAttributes.ReparsePoint)!=0) throw new IOException("Journal must not contain reparse points");
-     var owner=File.GetAccessControl(file).GetOwner(typeof(SecurityIdentifier)); if(!owner.Equals(admins) && !owner.Equals(system)) throw new UnauthorizedAccessException("Rollback journal has an untrusted owner: " + file);
+     var owner=new FileInfo(file).GetAccessControl().GetOwner(typeof(SecurityIdentifier)); if(!owner.Equals(admins) && !owner.Equals(system)) throw new UnauthorizedAccessException("Rollback journal has an untrusted owner: " + file);
     }
    }
    foreach(string directory in new[]{DataRoot,Path.Combine(DataRoot,"Journal"),Path.Combine(DataRoot,"SetupJournal"),ControlRoot}) {
     Directory.CreateDirectory(directory); var acl=new DirectorySecurity(); acl.SetAccessRuleProtection(true,false); acl.SetOwner(admins);
     foreach(var principal in new[]{admins,system}) acl.AddAccessRule(new FileSystemAccessRule(principal,FileSystemRights.FullControl,InheritanceFlags.ContainerInherit|InheritanceFlags.ObjectInherit,PropagationFlags.None,AccessControlType.Allow));
-    acl.AddAccessRule(new FileSystemAccessRule(users,directory==ControlRoot ? FileSystemRights.Modify : FileSystemRights.ReadAndExecute,InheritanceFlags.ContainerInherit|InheritanceFlags.ObjectInherit,PropagationFlags.None,AccessControlType.Allow)); Directory.SetAccessControl(directory,acl);
+    acl.AddAccessRule(new FileSystemAccessRule(users,directory==ControlRoot ? FileSystemRights.Modify : FileSystemRights.ReadAndExecute,InheritanceFlags.ContainerInherit|InheritanceFlags.ObjectInherit,PropagationFlags.None,AccessControlType.Allow)); new DirectoryInfo(directory).SetAccessControl(acl);
    }
   }
   internal static string EndpointGuid(string id) { int start = id.LastIndexOf('{'); Guid guid; if(start < 0 || !Guid.TryParse(id.Substring(start), out guid)) throw new ArgumentException("Invalid capture endpoint ID"); return guid.ToString("B"); }
