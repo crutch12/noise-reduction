@@ -73,6 +73,7 @@ class CoreTests
             Check(settings.Enabled && settings.For("mic-a").Enabled && settings.For("mic-a").Attenuation == 24 && settings.Language == "system" && settings.EnableNewMicrophones, "missing persisted fields use safe defaults");
             settings.EnableNewMicrophones = false;
             Check(settings.Has("mic-a") && !settings.Has("mic-c") && !settings.For("mic-c").Enabled && settings.For("mic-a").Enabled, "new microphones follow the default without touching saved ones");
+            Check(!settings.For("mic-a").LowCut, "low cut is off by default");
             string guid = "a2345678-1234-1234-1234-123456789abc";
             using (var control = new ControlFile(root, guid))
             {
@@ -83,6 +84,8 @@ class CoreTests
                 Check(bytes.Length == 64 && BitConverter.ToUInt32(bytes, 0) == 0x3143524e && BitConverter.ToUInt32(bytes, 8) == 6145 && control.Frames == 1234, "protocol preserves native counters");
                 control.Set(false, 90);
                 Check(BitConverter.ToUInt32(ReadShared(Path.Combine(root, guid + ".bin")), 8) == 15360, "disable and attenuation clamp");
+                control.Set(true, 24, true);
+                Check(BitConverter.ToUInt32(ReadShared(Path.Combine(root, guid + ".bin")), 8) == 6147, "low cut uses its own bit");
                 string token = "b2345678-1234-1234-1234-123456789abc";
                 string marker = guid + "." + token + ".notify";
                 Check(ControlFile.NotificationName(marker) == "Global\\NoiseReduction.Changed." + guid + "." + token, "canonical notification name");

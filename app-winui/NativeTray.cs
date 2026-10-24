@@ -18,7 +18,16 @@ namespace NoiseReduction.WinUI
         private const int CommandGlobal = 1, CommandSettings = 2, CommandExit = 3, CommandMicrophone = 100;
         private readonly DesktopController controller;
         private readonly NotifyIcon tray;
-        private readonly NativeWindow owner = new NativeWindow();
+        private sealed class Owner : NativeWindow
+        {
+            internal Action Hotkey;
+            protected override void WndProc(ref Message message)
+            {
+                if (message.Msg == 0x0312) Hotkey?.Invoke();
+                base.WndProc(ref message);
+            }
+        }
+        private readonly Owner owner = new Owner();
         private readonly Icon[] icons = new Icon[6];
         private readonly Action reveal, flyout, exit;
         private bool disposed, menuOpen;
@@ -27,6 +36,8 @@ namespace NoiseReduction.WinUI
         [DllImport("user32.dll")] private static extern bool DestroyIcon(IntPtr icon);
         [DllImport("user32.dll")] private static extern IntPtr CreatePopupMenu();
         [DllImport("user32.dll")] private static extern bool DestroyMenu(IntPtr menu);
+        [DllImport("user32.dll")] private static extern bool RegisterHotKey(IntPtr window, int id, uint modifiers, uint key);
+        [DllImport("user32.dll")] private static extern bool UnregisterHotKey(IntPtr window, int id);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern bool AppendMenu(IntPtr menu, uint flags, UIntPtr id, string text);
         [DllImport("user32.dll")] private static extern int TrackPopupMenuEx(IntPtr menu, uint flags, int x, int y, IntPtr window, IntPtr parameters);
         [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr window);
@@ -40,6 +51,14 @@ namespace NoiseReduction.WinUI
             this.controller = controller; this.reveal = reveal; this.flyout = flyout; this.exit = exit;
             WindowsFormsSynchronizationContext.AutoInstall = false;
             owner.CreateHandle(new CreateParams());
+            // Ctrl+Alt+N ставит шумодав на паузу и снимает с неё из любой программы
+            owner.Hotkey = () =>
+            {
+                if (disposed || controller.Busy) return;
+                controller.SetGlobal(!controller.GlobalEnabled);
+                tray.ShowBalloonTip(2000, "Noise Reduction", T(controller.GlobalEnabled ? "Шумоподавление включено" : "Шумоподавление на паузе"), ToolTipIcon.None);
+            };
+            HotkeyRegistered = RegisterHotKey(owner.Handle, 1, 0x0002 | 0x0001 | 0x4000, (uint)Keys.N);
             tray = new NotifyIcon { Visible = true };
             tray.MouseUp += (_, args) =>
             {
@@ -84,6 +103,8 @@ namespace NoiseReduction.WinUI
             }
             catch (Exception) { }
         }
+
+        internal static bool HotkeyRegistered { get; private set; }
 
         internal static bool SystemLight()
         {
@@ -197,6 +218,7 @@ namespace NoiseReduction.WinUI
         {
             if (disposed) return;
             disposed = true; controller.Changed -= Update;
+            UnregisterHotKey(owner.Handle, 1);
             tray.Visible = false; tray.Dispose(); owner.DestroyHandle();
             foreach (var icon in icons) if (icon != null) icon.Dispose();
         }

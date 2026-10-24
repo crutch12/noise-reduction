@@ -15,6 +15,15 @@ int wmain(int argc, wchar_t** argv) {
     try {
         require(argc == 2, "RNNoise DLL path required");
         nr::RnnoiseBackend backend(argv[1]);
+        {
+            nr::HighPass dc, tone;
+            float last = 1;
+            for (int i = 0; i < 48000; ++i) last = dc.process(1.0f);
+            require(std::abs(last) < 0.001f, "Low cut keeps DC hum");
+            float peak = 0;
+            for (int i = 0; i < 48000; ++i) { float y = tone.process(0.5f * std::sin(6.2831853f * 1000 * float(i) / 48000)); if (i > 4800) peak = std::max(peak, std::abs(y)); }
+            require(peak > 0.48f && peak < 0.52f, "Low cut changes voice band");
+        }
         std::vector<float> input(48000), whole(input.size()), chunks(input.size());
         for (size_t i = 0; i < input.size(); ++i) input[i] = 0.1f * std::sin(float(i) * 0.03f);
         nr::Processor first(backend.api()), second(backend.api());

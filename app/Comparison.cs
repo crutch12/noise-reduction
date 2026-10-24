@@ -16,11 +16,15 @@ namespace NoiseReduction.Desktop
         [DllImport("NoiseReduction.Apo.dll", CallingConvention = CallingConvention.Cdecl)] private static extern uint nr_get_latency();
 
         internal static void Create(string endpoint, string directory, int attenuation)
+        { Create(endpoint, directory, attenuation, null); }
+
+        // stop задаёт пользователь кнопкой, без него запись длится 5 секунд
+        internal static void Create(string endpoint, string directory, int attenuation, Func<bool> stop)
         {
             string engine = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "NoiseReduction.Apo.dll");
             if (!File.Exists(engine) || !File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "rnnoise.dll")))
                 throw new FileNotFoundException("Для сравнения нужны NoiseReduction.Apo.dll и rnnoise.dll рядом с программой");
-            float[] original = Capture(endpoint);
+            float[] original = Capture(endpoint, false, null, stop);
             float[] processed = ProcessCaptured(original, attenuation);
             WriteWave(Path.Combine(directory, "original.wav"), original);
             WriteWave(Path.Combine(directory, "processed.wav"), processed);
@@ -60,12 +64,9 @@ namespace NoiseReduction.Desktop
         }
 
         internal static void VerifyCapture(string endpoint, Func<bool> modelAdvanced)
-        { Capture(endpoint, true, modelAdvanced); }
+        { Capture(endpoint, true, modelAdvanced, null); }
 
-        private static float[] Capture(string endpoint)
-        { return Capture(endpoint, false, null); }
-
-        private static float[] Capture(string endpoint, bool discard, Func<bool> modelAdvanced)
+        private static float[] Capture(string endpoint, bool discard, Func<bool> modelAdvanced, Func<bool> stop)
         {
             IMMDeviceEnumerator enumerator = null;
             IMMDevice device = null;
@@ -85,14 +86,16 @@ namespace NoiseReduction.Desktop
                 // Let the bypass flag reach an already running audio graph
                 Thread.Sleep(150);
                 Check(client.Start()); started = true;
-                int target = (discard ? 3 : 5) * 48000;
+                int target = (discard ? 3 : stop != null ? 60 : 5) * 48000;
                 var samples = discard ? null : new List<float>(target);
                 int captured = 0;
-                DateTime deadline = DateTime.UtcNow.AddSeconds(discard ? 6 : 12);
+                DateTime deadline = DateTime.UtcNow.AddSeconds(discard ? 6 : stop != null ? 67 : 12);
+                DateTime silentUntil = DateTime.UtcNow.AddSeconds(6);
                 while (captured < target)
                 {
                     if (discard && modelAdvanced()) break;
-                    if (DateTime.UtcNow > deadline) throw new InvalidOperationException("Микрофон не передал запись, проверьте разрешение доступа и занятость устройства");
+                    if (stop != null && captured >= 24000 && stop()) break;
+                    if (DateTime.UtcNow > deadline || captured == 0 && DateTime.UtcNow > silentUntil) throw new InvalidOperationException("Микрофон не передал запись, проверьте разрешение доступа и занятость устройства");
                     uint available; Check(capture.GetNextPacketSize(out available));
                     if (available == 0) { Thread.Sleep(10); continue; }
                     IntPtr data; uint count; uint flags; ulong position; ulong timestamp;

@@ -11,6 +11,21 @@ struct Backend {
     float (*frame)(void*, float*, const float*);
 };
 
+// Срез гула ниже 80 Гц, Butterworth второго порядка для 48 кГц
+class HighPass {
+public:
+    float process(float x) noexcept {
+        const float y = b0 * x + z1_;
+        z1_ = b1 * x - a1 * y + z2_;
+        z2_ = b0 * x - a2 * y;
+        return y;
+    }
+    void reset() noexcept { z1_ = z2_ = 0; }
+private:
+    static constexpr float b0 = 0.99262254f, b1 = -1.98524509f, a1 = -1.98519066f, a2 = 0.98529951f;
+    float z1_ = 0, z2_ = 0;
+};
+
 class Processor {
 public:
     static constexpr size_t frame_size = 480;

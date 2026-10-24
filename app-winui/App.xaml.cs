@@ -20,10 +20,11 @@ namespace NoiseReduction.WinUI
         protected override void OnLaunched(LaunchActivatedEventArgs args)
         {
             Controller = new DesktopController();
+            // трей первым, окно уже знает, удалось ли занять горячую клавишу
+            tray = new NativeTray(Controller, () => Window?.Reveal(), () => flyout?.Toggle(), ExitApplication);
             Window = new MainWindow(Controller);
             Program.WindowReady();
             flyout = new TrayFlyout(Controller, Window.Reveal);
-            tray = new NativeTray(Controller, Window.Reveal, flyout.Toggle, ExitApplication);
             if (!Program.StartHidden) Window.Reveal();
         }
 

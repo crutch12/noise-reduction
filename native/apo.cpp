@@ -7,6 +7,7 @@
 #include <mmdeviceapi.h>
 #include <ks.h>
 #include <ksmedia.h>
+#include <cmath>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -204,6 +205,7 @@ public:
                 std::vector<std::unique_ptr<nr::Processor>> fresh;
                 for (UINT32 i = 0; i < channels_; ++i) fresh.push_back(std::make_unique<nr::Processor>(backend_ ? backend_->api() : nr::Backend{}, effective_enabled()));
                 processors_ = std::move(fresh);
+                highpass_.assign(channels_, nr::HighPass{});
                 update_model_status();
                 previous_settings_ = UINT32_MAX;
             }
@@ -234,6 +236,7 @@ public:
             scratch_in_.resize(in[0]->u32MaxFrameCount);
             scratch_out_.resize(in[0]->u32MaxFrameCount);
             processors_ = std::move(fresh);
+            highpass_.assign(input_format.dwSamplesPerFrame, nr::HighPass{});
             update_model_status();
             previous_settings_ = UINT32_MAX;
         }
@@ -266,13 +269,18 @@ public:
         auto input = source.u32BufferFlags == BUFFER_SILENT ? nullptr : reinterpret_cast<const float*>(source.pBuffer);
         const uint32_t settings = standalone_ ? (1u | (24u << 8)) : controls_.config();
         const bool enabled = (settings & 1u) && system_enabled_.load(std::memory_order_relaxed) && model_usable_.load(std::memory_order_relaxed);
+        const bool low_cut = enabled && (settings & 2u);
         uint64_t inferred = 0;
         bool silent = true;
         for (UINT32 channel = 0; channel < channels_; ++channel) {
+            if (!low_cut && ((previous_settings_ & 2u) || previous_settings_ == UINT32_MAX)) highpass_[channel].reset();
             processors_[channel]->set_enabled(enabled);
             if (settings != previous_settings_) processors_[channel]->set_attenuation(static_cast<float>(std::min(60u, (settings >> 8) & 255u)));
             const uint64_t before = processors_[channel]->processed_frames();
-            if (input) for (UINT32 i = 0; i < source.u32ValidFrameCount; ++i) scratch_in_[i] = input[static_cast<size_t>(i) * channels_ + channel];
+            if (input) for (UINT32 i = 0; i < source.u32ValidFrameCount; ++i) {
+                const float sample = input[static_cast<size_t>(i) * channels_ + channel];
+                scratch_in_[i] = low_cut && std::isfinite(sample) ? highpass_[channel].process(sample) : sample;
+            }
             processors_[channel]->process(input ? scratch_in_.data() : nullptr, scratch_out_.data(), source.u32ValidFrameCount);
             inferred += processors_[channel]->processed_frames() - before;
             for (UINT32 i = 0; i < source.u32ValidFrameCount; ++i) {
@@ -352,6 +360,7 @@ private:
     std::unique_ptr<nr::RnnoiseBackend> backend_;
     std::vector<std::unique_ptr<nr::Processor>> processors_;
     std::vector<float> scratch_in_, scratch_out_;
+    std::vector<nr::HighPass> highpass_;
     UINT32 channels_ = 1;
     UINT32 max_frames_ = 0;
     nr::ControlView controls_;

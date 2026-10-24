@@ -86,7 +86,7 @@ namespace NoiseReduction.WinUI
             LanguagePicker.Items.Add(new ComboBoxItem { Content = "English", Tag = "en" });
             LanguagePicker.Items.Add(new ComboBoxItem { Content = "Русский", Tag = "ru" });
             StartupLabel.Text = T("Запускать при входе в Windows");
-            TrayHelp.Text = T("Крестик оставляет программу в трее");
+            TrayHelp.Text = T("Крестик оставляет программу в трее") + (NativeTray.HotkeyRegistered ? ", Ctrl+Alt+N " + T("ставит шумодав на паузу") : "");
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(StartupSwitch, T("Запускать при входе в Windows"));
             EngineText.Text = T("RNNoise · формат движка 48 кГц · задержка движка 30 мс");
             foreach (var card in cards) card.Localize();

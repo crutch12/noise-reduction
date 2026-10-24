@@ -23,7 +23,7 @@ namespace NoiseReduction.WinUI
             internal TextBlock Name, Details, Value;
             internal Ellipse Dot;
             internal ToggleSwitch Toggle;
-            internal Slider Slider;
+            internal StrengthPresets Presets;
             internal HyperlinkButton Enable;
         }
 
@@ -141,6 +141,7 @@ namespace NoiseReduction.WinUI
                     Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(GlobalSwitch, T("Шумоподавление"));
                     ToolTipService.SetToolTip(SettingsButton, T("Настройки"));
                     Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(SettingsButton, T("Настройки"));
+                    foreach (var row in rows) row.Presets.Localize();
                     renderedLanguage = controller.Language;
                 }
                 bool idle = !controller.Busy;
@@ -162,11 +163,10 @@ namespace NoiseReduction.WinUI
                     row.Toggle.IsOn = controller.ProfileEnabled(row.Id);
                     row.Toggle.IsEnabled = idle;
                     int value = controller.Attenuation(row.Id);
-                    if ((int)row.Slider.Value != value) row.Slider.Value = value;
-                    row.Slider.IsEnabled = idle && controller.IsEnabled(row.Id);
-                    row.Value.Text = value.ToString();
+                    row.Presets.Update(value, idle && controller.IsEnabled(row.Id));
+                    row.Value.Text = Array.IndexOf(StrengthPresets.Values, value) < 0 ? value + " " + T("дБ") : "";
+                    row.Value.Visibility = row.Value.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
                     Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row.Toggle, device.Name);
-                    Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row.Slider, T("Сила подавления в децибелах"));
                 }
             }
             finally { updating = false; }
@@ -182,7 +182,7 @@ namespace NoiseReduction.WinUI
                 Value = new TextBlock { Style = (Style)FlyoutRoot.Resources["FlyoutValueStyle"], TextAlignment = TextAlignment.Right, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center },
                 Dot = new Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center },
                 Toggle = new ToggleSwitch { MinWidth = 0, OnContent = "", OffContent = "", Margin = new Thickness(0, 0, -12, 0), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center },
-                Slider = new Slider { Minimum = 0, Maximum = 60, StepFrequency = 1, Margin = new Thickness(0, 2, 0, 0), VerticalAlignment = VerticalAlignment.Center }
+                Presets = new StrengthPresets()
             };
             // одна сетка на микрофон: слева имя и ползунок, справа переключатель и значение на одном крае
             var block = new Grid { ColumnSpacing = 12, RowSpacing = 0 };
@@ -196,11 +196,13 @@ namespace NoiseReduction.WinUI
             block.Children.Add(row.Name);
             Grid.SetRow(details, 1); block.Children.Add(details);
             Grid.SetColumn(row.Toggle, 1); Grid.SetRowSpan(row.Toggle, 2); block.Children.Add(row.Toggle);
-            Grid.SetRow(row.Slider, 2); block.Children.Add(row.Slider);
+            row.Presets.View.Margin = new Thickness(0, 8, 0, 0);
+            row.Presets.Localize();
+            Grid.SetRow(row.Presets.View, 2); block.Children.Add(row.Presets.View);
             Grid.SetRow(row.Value, 2); Grid.SetColumn(row.Value, 1); block.Children.Add(row.Value);
             MicrophoneRows.Children.Add(block);
             row.Toggle.Toggled += (_, _) => { if (!updating) controller.SetProfile(id, row.Toggle.IsOn); };
-            row.Slider.ValueChanged += (_, args) => { if (!updating) { row.Value.Text = ((int)args.NewValue).ToString(); controller.SetAttenuation(id, (int)Math.Round(args.NewValue)); } };
+            row.Presets.Selected += value => controller.SetAttenuation(id, value);
             return row;
         }
 

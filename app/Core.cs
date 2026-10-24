@@ -17,7 +17,8 @@ namespace NoiseReduction.Desktop
         [DataMember] public string Id;
         [DataMember] public bool Enabled = true;
         [DataMember] public int Attenuation = 24;
-        [OnDeserializing] private void Defaults(StreamingContext context) { Enabled = true; Attenuation = 24; }
+        [DataMember] public bool LowCut;
+        [OnDeserializing] private void Defaults(StreamingContext context) { Enabled = true; Attenuation = 24; LowCut = false; }
     }
     [DataContract]
     public sealed class Settings
@@ -100,8 +101,11 @@ namespace NoiseReduction.Desktop
             catch { if (mapping != null) mapping.Dispose(); file.Dispose(); throw; }
         }
         public void Set(bool enabled, int attenuation)
+        { Set(enabled, attenuation, false); }
+        // бит 1 включает срез гула ниже 80 Гц
+        public void Set(bool enabled, int attenuation, bool lowCut)
         {
-            uint configuration = (uint)((enabled ? 1 : 0) | (Math.Max(0, Math.Min(60, attenuation)) << 8));
+            uint configuration = (uint)((enabled ? 1 : 0) | (lowCut ? 2 : 0) | (Math.Max(0, Math.Min(60, attenuation)) << 8));
             SetConfiguration(configuration);
         }
         public uint Configuration { get { return view.ReadUInt32(8); } }

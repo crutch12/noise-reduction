@@ -4,10 +4,11 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Media;
 using System.Threading.Tasks;
 using Microsoft.UI.Dispatching;
 using Microsoft.Win32;
+using Windows.Media.Core;
+using Windows.Media.Playback;
 using NoiseReduction.Desktop;
 using NoiseReduction.Platform;
 using Activity = NoiseReduction.Desktop.Activity;
@@ -40,7 +41,8 @@ namespace NoiseReduction.WinUI
         private readonly Dictionary<string, List<string>> usage = new Dictionary<string, List<string>>();
         private readonly Dictionary<string, string> notes = new Dictionary<string, string>();
         private readonly DesktopState state = new DesktopState();
-        private readonly SoundPlayer player = new SoundPlayer();
+        private MediaPlayer original, processed;
+        private volatile bool stopRequested;
         private readonly DispatcherQueueTimer timer;
         private List<DeviceInfo> devices = new List<DeviceInfo>();
         private DateTime refreshAt;
@@ -54,6 +56,9 @@ namespace NoiseReduction.WinUI
         public string DefaultId { get; private set; }
         public string RecordingId => state.CaptureEndpoint;
         public string IntegratingId { get; private set; }
+        public DateTime RecordingStarted { get; private set; }
+        public bool Playing { get; private set; }
+        public bool ListenProcessed { get; private set; } = true;
         public bool WatchUsage { get; set; }
         public bool GlobalEnabled => Settings.Enabled;
         public bool Busy => !state.CanRefresh;
@@ -119,6 +124,8 @@ namespace NoiseReduction.WinUI
         public void SetGlobal(bool enabled) { Change(() => Settings.Enabled = enabled); }
         public void SetProfile(string id, bool enabled) { Change(() => { Settings.For(id).Enabled = enabled; if (enabled) Settings.Enabled = true; }); }
         public void SetAttenuation(string id, int attenuation) { Change(() => Settings.For(id).Attenuation = Math.Clamp(attenuation, 0, 60)); }
+        public bool LowCut(string id) => Settings.For(id).LowCut;
+        public void SetLowCut(string id, bool enabled) { Change(() => Settings.For(id).LowCut = enabled); }
         public void ResetProfile(string id) { SetAttenuation(id, 24); }
         public void ToggleMicrophone(string id) { if (devices.Any(device => device.Id == id)) SetProfile(id, !IsEnabled(id)); }
         // до подписки трея новые микрофоны копятся, иначе подключённые до запуска потеряются
@@ -232,7 +239,7 @@ namespace NoiseReduction.WinUI
             foreach (var pair in controls)
             {
                 var profile = Settings.For(pair.Key);
-                try { pair.Value.Set(state.Enabled(pair.Key, Settings.Enabled && !bypass, profile.Enabled), profile.Attenuation); }
+                try { pair.Value.Set(state.Enabled(pair.Key, Settings.Enabled && !bypass, profile.Enabled), profile.Attenuation, profile.LowCut); }
                 catch (Exception error) { if (!bypass) throw; failure ??= error; }
             }
             if (failure != null) throw failure;
@@ -277,13 +284,14 @@ namespace NoiseReduction.WinUI
             var device = devices.Find(value => value.Id == id);
             if (Busy || disposed || device == null) return;
             int attenuation = Attenuation(id);
-            player.Stop(); state.CaptureEndpoint = id; comparisonId = null; Error = null;
+            StopPlayback(); state.CaptureEndpoint = id; comparisonId = null; Error = null;
+            stopRequested = false; RecordingStarted = DateTime.UtcNow;
             string directory = Path.Combine(Path.GetTempPath(), "NoiseReduction-" + Guid.NewGuid().ToString("N"));
-            notes[id] = "Говорите в микрофон, запись 5 секунд"; Notify();
+            notes[id] = "Говорите в микрофон и нажмите Остановить"; Notify();
             try
             {
                 Directory.CreateDirectory(directory); ApplyControls(false);
-                await Task.Run(() => Comparison.Create(id, directory, attenuation));
+                await Task.Run(() => Comparison.Create(id, directory, attenuation, () => stopRequested));
                 if (disposed) { DeleteRecording(directory); return; }
                 DeleteRecording(recordingDirectory); recordingDirectory = directory; comparisonId = id;
                 notes.Remove(id);
@@ -295,15 +303,43 @@ namespace NoiseReduction.WinUI
                 if (!disposed) { try { ApplyControls(false); } catch (Exception error) { Error = error.Message; } Notify(); }
             }
         }
-        public void Play(string id, bool processed)
+        public void StopRecording() { stopRequested = true; }
+
+        // оба варианта играют одновременно и по кругу, переключение просто меняет, какой слышно
+        public void TogglePlayback(string id)
         {
+            if (Playing) { StopPlayback(); Notify(); return; }
             if (!CanCompare(id)) return;
             Error = null;
-            try { player.Stop(); player.SoundLocation = Path.Combine(recordingDirectory, processed ? "processed.wav" : "original.wav"); player.Load(); player.Play(); }
-            catch (Exception error) { Error = error.Message; }
+            try
+            {
+                original = Open("original.wav"); processed = Open("processed.wav");
+                ApplyListen();
+                original.Play(); processed.Play();
+                Playing = true;
+            }
+            catch (Exception error) { StopPlayback(); Error = error.Message; }
             Notify();
         }
-        public void Stop() { if (!disposed) player.Stop(); }
+        public void SetListenProcessed(bool value) { ListenProcessed = value; ApplyListen(); Notify(); }
+        private MediaPlayer Open(string name)
+        {
+            var player = new MediaPlayer { IsLoopingEnabled = true, AudioCategory = MediaPlayerAudioCategory.Media };
+            player.Source = MediaSource.CreateFromUri(new Uri(Path.Combine(recordingDirectory, name)));
+            return player;
+        }
+        private void ApplyListen()
+        {
+            if (original != null) original.IsMuted = ListenProcessed;
+            if (processed != null) processed.IsMuted = !ListenProcessed;
+        }
+        private void StopPlayback()
+        {
+            Playing = false;
+            foreach (var player in new[] { original, processed }) if (player != null) { try { player.Pause(); } catch (Exception) { } player.Dispose(); }
+            original = processed = null;
+        }
+        public void Stop() { if (!disposed) { StopPlayback(); Notify(); } }
         public string BuildDiagnostics(string id)
         {
             var device = devices.Find(value => value.Id == id);
@@ -333,7 +369,7 @@ namespace NoiseReduction.WinUI
             finally
             {
                 disposed = true;
-                player.Stop(); player.Dispose();
+                StopPlayback();
                 foreach (var control in controls.Values) control.Dispose();
                 controls.Clear(); DeleteRecording(recordingDirectory);
             }

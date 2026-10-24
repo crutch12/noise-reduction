@@ -22,9 +22,13 @@ namespace NoiseReduction.WinUI
         private readonly ToggleSwitch toggle = new ToggleSwitch { MinWidth = 0, VerticalAlignment = VerticalAlignment.Center };
         private readonly TextBlock strengthLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
         private readonly TextBlock strengthValue = new TextBlock { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = Brush("TextFillColorSecondaryBrush") };
-        private readonly Slider slider = new Slider { Minimum = 0, Maximum = 60, StepFrequency = 1, TickFrequency = 12, TickPlacement = TickPlacement.None };
+        private readonly Slider slider = new Slider { Minimum = 0, Maximum = 60, StepFrequency = 1, TickFrequency = 12, TickPlacement = TickPlacement.None, Visibility = Visibility.Collapsed };
+        private readonly StrengthPresets presets = new StrengthPresets();
+        private readonly ToggleSwitch lowCut = new ToggleSwitch { Visibility = Visibility.Collapsed };
+        private readonly HyperlinkButton precise = new HyperlinkButton { Padding = new Thickness(0, 2, 0, 2) };
         private readonly TextBlock compareLabel = new TextBlock();
-        private readonly Button record = new Button(), before = new Button(), after = new Button(), stop = new Button();
+        private readonly Button record = new Button { MinWidth = 120 }, listen = new Button { MinWidth = 96 };
+        private readonly ToggleSwitch listenSwitch = new ToggleSwitch { MinWidth = 0, Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
         private readonly TextBlock note = new TextBlock { Style = Style("CaptionTextBlockStyle"), Foreground = Brush("TextFillColorSecondaryBrush"), TextWrapping = TextWrapping.Wrap };
         private readonly TextBlock connection = new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
         private readonly Button connect = new Button();
@@ -57,7 +61,7 @@ namespace NoiseReduction.WinUI
             strengthHead.Children.Add(strengthLabel); strengthHead.Children.Add(strengthValue);
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
             record.Style = Style("AccentButtonStyle");
-            foreach (var button in new[] { record, before, after, stop }) buttons.Children.Add(button);
+            buttons.Children.Add(record); buttons.Children.Add(listen); buttons.Children.Add(listenSwitch);
             var connectRow = new Grid { ColumnSpacing = 8 };
             connectRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             connectRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -68,7 +72,7 @@ namespace NoiseReduction.WinUI
             more.Flyout = new MenuFlyout { Items = { reset, diagnostics } };
 
             var body = new StackPanel { Spacing = 8 };
-            body.Children.Add(strengthHead); body.Children.Add(slider);
+            body.Children.Add(strengthHead); body.Children.Add(presets.View); body.Children.Add(precise); body.Children.Add(slider); body.Children.Add(lowCut);
             body.Children.Add(Divider());
             body.Children.Add(compareLabel); body.Children.Add(buttons); body.Children.Add(note);
             body.Children.Add(Divider());
@@ -77,11 +81,13 @@ namespace NoiseReduction.WinUI
             View = new Expander { Header = header, Content = body, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
 
             toggle.Toggled += (_, _) => { if (!updating) controller.SetProfile(Id, toggle.IsOn); };
+            presets.Selected += value => controller.SetAttenuation(Id, value);
+            precise.Click += (_, _) => slider.Visibility = lowCut.Visibility = slider.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+            lowCut.Toggled += (_, _) => { if (!updating) controller.SetLowCut(Id, lowCut.IsOn); };
             slider.ValueChanged += (_, args) => { if (!updating) controller.SetAttenuation(Id, (int)Math.Round(args.NewValue)); };
-            record.Click += (_, _) => run(() => controller.RecordAsync(Id));
-            before.Click += (_, _) => controller.Play(Id, false);
-            after.Click += (_, _) => controller.Play(Id, true);
-            stop.Click += (_, _) => controller.Stop();
+            record.Click += (_, _) => { if (controller.RecordingId == Id) controller.StopRecording(); else run(() => controller.RecordAsync(Id)); };
+            listen.Click += (_, _) => controller.TogglePlayback(Id);
+            listenSwitch.Toggled += (_, _) => { if (!updating) controller.SetListenProcessed(listenSwitch.IsOn); };
             connect.Click += (_, _) => { var device = Device; if (device != null) run(() => controller.IntegrateAsync(Id, !device.Attached)); };
             enable.Click += (_, _) => run(() => controller.IntegrateAsync(Id, true));
             reset.Click += (_, _) => controller.ResetProfile(Id);
@@ -97,12 +103,15 @@ namespace NoiseReduction.WinUI
         {
             Label(toggle);
             strengthLabel.Text = T("Сила подавления");
+            presets.Localize();
+            precise.Content = T("Точная настройка");
+            lowCut.Header = T("Срезать низкий гул");
+            Label(lowCut);
+            ToolTipService.SetToolTip(lowCut, T("Убирает гудение сети, вентиляторов и стола ниже 80 Гц"));
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(slider, T("Сила подавления в децибелах"));
             compareLabel.Text = T("Сравните на своём голосе");
-            record.Content = T("Записать 5 сек");
-            before.Content = T("Оригинал");
-            after.Content = T("С шумодавом");
-            stop.Content = T("Стоп");
+            listenSwitch.OnContent = T("С шумодавом");
+            listenSwitch.OffContent = T("Без шумодава");
             reset.Text = T("Сбросить силу до 24 дБ");
             diagnostics.Text = T("Скопировать диагностику");
             ToolTipService.SetToolTip(more, T("Ещё"));
@@ -130,14 +139,24 @@ namespace NoiseReduction.WinUI
                 int value = controller.Attenuation(Id);
                 if ((int)slider.Value != value) slider.Value = value;
                 slider.IsEnabled = idle;
+                presets.Update(value, idle);
+                // своё значение вне пресетов сразу показываем ползунком
+                lowCut.IsOn = controller.LowCut(Id);
+                lowCut.IsEnabled = idle;
+                if (Array.IndexOf(StrengthPresets.Values, value) < 0 || lowCut.IsOn) slider.Visibility = lowCut.Visibility = Visibility.Visible;
                 strengthValue.Text = value + " " + T("дБ");
                 bool recording = controller.RecordingId == Id;
-                record.IsEnabled = idle;
-                record.Content = T(recording ? "Запись…" : "Записать 5 сек");
-                before.IsEnabled = after.IsEnabled = controller.CanCompare(Id);
-                stop.IsEnabled = controller.CanCompare(Id);
+                var elapsed = DateTime.UtcNow - controller.RecordingStarted;
+                record.IsEnabled = idle || recording;
+                record.Content = recording ? T("Остановить") + " " + (int)elapsed.TotalMinutes + ":" + elapsed.Seconds.ToString("00") : T("Записать");
+                bool ready = controller.CanCompare(Id);
+                bool playing = ready && controller.Playing;
+                listen.IsEnabled = ready;
+                listen.Content = T(playing ? "Стоп" : "Слушать");
+                listenSwitch.IsEnabled = ready;
+                listenSwitch.IsOn = controller.ListenProcessed;
                 string message = controller.Note(Id);
-                note.Text = message == null ? T("Одна запись до и после, живой звук не воспроизводится") : UiText(message);
+                note.Text = message == null ? T("Запишите фразу и слушайте, переключая шумодав на ходу") : UiText(message);
                 // переключатель включён, но фильтр не встроен в микрофон, явно просим включить
                 bool enabling = controller.IntegratingId == Id;
                 enable.Visibility = state == MicrophoneState.Detached || enabling ? Visibility.Visible : Visibility.Collapsed;
