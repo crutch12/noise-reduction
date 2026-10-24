@@ -104,6 +104,15 @@ int wmain(int argc, wchar_t** argv) {
                 if (cycle != 0) check(SUCCEEDED(configuration->UnlockForProcess()), "Unlock failed");
             }
             check(block->audio_frames > 0 && block->model_frames > 0, "Actual processing telemetry missing");
+            InterlockedExchange(&block->config, 0);
+            const LONG64 before_bypass = block->model_frames;
+            check(SUCCEEDED(configuration->LockForProcess(1,&pin,1,&pout)), "Disabled graph lock failed");
+            for (int frame = 0; frame < 6; ++frame) rt->APOProcess(1,&pip,1,&pop);
+            check(block->model_frames == before_bypass, "New disabled graph performed model inference during startup fade");
+            check(SUCCEEDED(apo->Reset()), "Disabled graph reset failed");
+            for (int frame = 0; frame < 6; ++frame) rt->APOProcess(1,&pip,1,&pop);
+            check(block->model_frames == before_bypass, "Reset disabled graph performed model inference");
+            check(SUCCEEDED(configuration->UnlockForProcess()), "Disabled graph unlock failed");
         }
         std::cout << "PASS: Windows endpoint initialization, control association, notifications, telemetry, strength after Reset/relock\n";
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; code = 1; }

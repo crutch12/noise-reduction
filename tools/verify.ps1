@@ -2,7 +2,8 @@ $ErrorActionPreference = 'Stop'
 $repoPath = Split-Path -Parent $PSScriptRoot
 Push-Location $repoPath
 try {
-    & ./.local/venv/Scripts/python.exe -m pytest tools/tests -q
+    $pytestTemp = Join-Path '.local' ('pytest-' + [guid]::NewGuid().ToString('N'))
+    & ./.local/venv/Scripts/python.exe -m pytest tools/tests -q -p no:cacheprovider --basetemp $pytestTemp
     if ($LASTEXITCODE -ne 0) { throw 'Python tests failed' }
     cmd /c native\build.cmd
     if ($LASTEXITCODE -ne 0) { throw 'Native build failed' }
@@ -16,7 +17,7 @@ try {
     & ./build/windows_control_test.exe (Resolve-Path 'build/NoiseReduction.Apo.dll').Path
     if ($LASTEXITCODE -ne 0) { throw 'Windows initialization tests failed' }
     $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
-    & $compiler /nologo /platform:x64 /warnaserror+ /out:build\IntegrationTests.exe platform\Integration.cs platform\IntegrationTests.cs
+    & $compiler /nologo /platform:x64 /warnaserror+ /r:System.ServiceProcess.dll /out:build\IntegrationTests.exe platform\Integration.cs platform\IntegrationTests.cs
     if ($LASTEXITCODE -ne 0) { throw 'Integration test compilation failed' }
     & ./build/IntegrationTests.exe
     if ($LASTEXITCODE -ne 0) { throw 'Registry integration tests failed' }

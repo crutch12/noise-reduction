@@ -1,12 +1,15 @@
 using System;
 using System.IO;
+using System.Collections.Generic;
+using System.ServiceProcess;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using Microsoft.Win32;
 using NoiseReduction.Platform;
 class IntegrationTests {
  static void Assert(bool ok, string why) { if (!ok) throw new Exception(why); }
- static int Main() {
+ static int Main(string[] args) {
+  AudioGraphTests.Run(); if(Array.IndexOf(args,"--audio-graph-only")>=0) return 0;
   string path = "Software\\NoiseReductionTests\\" + Guid.NewGuid().ToString("N");
   string journal = Path.Combine(Path.GetTempPath(), "nr-tests-" + Guid.NewGuid().ToString("N"));
   try {
@@ -103,5 +106,54 @@ class IntegrationTests {
   } finally {
    using(var restrictedKey=Registry.CurrentUser.OpenSubKey(path+"\\RestrictedFx",RegistryKeyPermissionCheck.ReadWriteSubTree,RegistryRights.ReadPermissions|RegistryRights.ChangePermissions)) if(restrictedKey!=null) { var acl=restrictedKey.GetAccessControl(); acl.RemoveAccessRuleSpecific(new RegistryAccessRule(WindowsIdentity.GetCurrent().User,RegistryRights.CreateSubKey,AccessControlType.Deny)); restrictedKey.SetAccessControl(acl); }
    Registry.CurrentUser.DeleteSubKeyTree(path, false); if(Directory.Exists(journal)) Directory.Delete(journal, true); }
+ }
+}
+
+class AudioGraphTests {
+ sealed class FakeServices : IAudioServices {
+  internal readonly Dictionary<string,ServiceControllerStatus> States=new Dictionary<string,ServiceControllerStatus> { {"Audiosrv",ServiceControllerStatus.Running},{"Rtk",ServiceControllerStatus.Running},{"Leaf",ServiceControllerStatus.Running},{"Other",ServiceControllerStatus.Running},{"Idle",ServiceControllerStatus.Stopped} };
+  internal readonly List<string> Calls=new List<string>(); internal readonly List<double> Waits=new List<double>();
+  internal long Now; internal string FailStop,FailWait,FailStart; internal int WaitCost;
+  public string[] Dependents(string name) { return name=="Audiosrv" ? new[]{"Rtk","Idle","Other"} : name=="Rtk" ? new[]{"Leaf"} : new string[0]; }
+  public ServiceControllerStatus Status(string name) { return States[name]; }
+  public void Stop(string name) { Calls.Add("stop:"+name); if(FailStop==name) throw new InvalidOperationException("stop refused"); States[name]=ServiceControllerStatus.StopPending; }
+  public void Start(string name) { Calls.Add("start:"+name); if(FailStart==name) throw new InvalidOperationException("start refused"); States[name]=ServiceControllerStatus.StartPending; }
+  public void Wait(string name,ServiceControllerStatus desired,TimeSpan timeout) { Calls.Add("wait:"+name+":"+desired); Waits.Add(timeout.TotalMilliseconds); if(FailWait==name && desired==ServiceControllerStatus.Stopped) { FailWait=null; Now+=(long)timeout.TotalMilliseconds; throw new System.TimeoutException("injected stop timeout"); } if(WaitCost>timeout.TotalMilliseconds) { Now+=(long)timeout.TotalMilliseconds; throw new System.TimeoutException("phase budget exhausted"); } Now+=WaitCost; States[name]=desired; }
+ }
+ static void Check(bool value,string message) { if(!value) throw new Exception(message); }
+ internal static void Run() {
+  var f=new FakeServices(); AudioGraphRefresh.Run(f,delegate{return f.Now;});
+  Check(f.Calls.IndexOf("stop:Leaf")<f.Calls.IndexOf("stop:Rtk") && f.Calls.IndexOf("stop:Rtk")<f.Calls.IndexOf("stop:Audiosrv"),"dependents stop before Windows Audio");
+  Check(f.Calls.IndexOf("start:Audiosrv")<f.Calls.IndexOf("start:Rtk") && f.Calls.IndexOf("start:Rtk")<f.Calls.IndexOf("start:Leaf"),"Windows Audio and parents restore before dependents");
+  Check(!f.Calls.Contains("stop:Idle") && !f.Calls.Contains("start:Idle"),"initially stopped services stay stopped");
+  foreach(var state in f.States) Check(state.Value==(state.Key=="Idle" ? ServiceControllerStatus.Stopped : ServiceControllerStatus.Running),"initial service states restored");
+  f=new FakeServices{FailStop="Audiosrv"}; bool failed=false; try { AudioGraphRefresh.Run(f,delegate{return f.Now;}); } catch(InvalidOperationException) { failed=true; }
+  Check(failed && f.States["Leaf"]==ServiceControllerStatus.Running && f.States["Rtk"]==ServiceControllerStatus.Running && f.States["Other"]==ServiceControllerStatus.Running,"restore stopped dependents if audio stop fails");
+  f=new FakeServices{FailWait="Rtk"}; failed=false; try { AudioGraphRefresh.Run(f,delegate{return f.Now;}); } catch(InvalidOperationException) { failed=true; }
+  Check(failed && f.States["Rtk"]==ServiceControllerStatus.Running && f.States["Leaf"]==ServiceControllerStatus.Running,"bounded stop timeout still restores pending service and dependents");
+  foreach(var wait in f.Waits) Check(wait>0 && wait<=30000,"all service waits explicitly bounded");
+  f=new FakeServices{FailStart="Rtk"}; failed=false; try { AudioGraphRefresh.Run(f,delegate{return f.Now;}); } catch(InvalidOperationException error) { failed=error.Message.Contains("Rtk"); }
+  Check(failed && f.Calls.Contains("start:Leaf") && f.States["Other"]==ServiceControllerStatus.Running,"failed dependent restore is reported and other restoration attempts continue");
+  f=new FakeServices{WaitCost=11000}; failed=false; try { AudioGraphRefresh.Run(f,delegate{return f.Now;}); } catch(InvalidOperationException) { failed=true; }
+  Check(failed,"expired restoration waits are reported even when remaining services receive Start attempts");
+  Check(f.Now<=60000,"separate global stop and restoration budgets bound total waits");
+  foreach(var name in new[]{"Leaf","Rtk","Other"}) Check(f.Calls.Contains("start:"+name),"every stopped originally running service gets a restoration attempt even after wait budget expires: "+name);
+  Check(!f.Calls.Contains("start:Idle") && !f.Calls.Contains("start:Audiosrv"),"exhausted wait budget does not start initially stopped or already running services");
+  Check(f.States["Leaf"]!=ServiceControllerStatus.Stopped,"leaf is not left stopped just because previous restoration used the wait budget");
+  f=new FakeServices(); f.States["Rtk"]=ServiceControllerStatus.StartPending; failed=false; try { AudioGraphRefresh.Run(f,delegate{return f.Now;}); } catch(InvalidOperationException) { failed=true; }
+  Check(failed && f.Calls.Count==0,"unstable initial service snapshot rejects refresh before changes");
+  f=new FakeServices(); f.States["Audiosrv"]=ServiceControllerStatus.Stopped; failed=false; try { AudioGraphRefresh.Run(f,delegate{return f.Now;}); } catch(InvalidOperationException) { failed=true; }
+  Check(failed && f.Calls.Count==0,"initially stopped Windows Audio is not unexpectedly started");
+  f=new FakeServices(); string[] saved=null; bool callback=false;
+  AudioGraphRefresh.Run(f,delegate{return f.Now;},delegate { callback=true; foreach(var state in f.States) Check(state.Value==ServiceControllerStatus.Stopped,"maintenance callback executes only with graph stopped"); },delegate(string[] names) { saved=names; Check(f.Calls.Count==0,"durable snapshot callback precedes any stop"); },null);
+  Check(callback && saved.Length==4,"service snapshot includes every originally running service");
+  f=new FakeServices{FailStop="Audiosrv"}; callback=false; try { AudioGraphRefresh.Run(f,delegate{return f.Now;},delegate { callback=true; },null,null); } catch(InvalidOperationException) { }
+  Check(!callback && f.States["Leaf"]==ServiceControllerStatus.Running,"failed graph stop never runs replacement callback and restores dependents");
+  f=new FakeServices(); failed=false; try { AudioGraphRefresh.Run(f,delegate{return f.Now;},delegate { throw new IOException("replacement failed"); },null,null); } catch(InvalidOperationException) { failed=true; }
+  Check(failed && f.States["Audiosrv"]==ServiceControllerStatus.Running && f.States["Leaf"]==ServiceControllerStatus.Running,"maintenance failure still restores graph and dependents");
+  f=new FakeServices(); foreach(var name in new[]{"Audiosrv","Leaf","Rtk","Other"}) f.States[name]=ServiceControllerStatus.Stopped;
+  AudioGraphRefresh.Run(f,delegate{return f.Now;},delegate { Check(f.States["Audiosrv"]==ServiceControllerStatus.Stopped,"crash recovery action keeps stopped graph stopped until replacement rollback finishes"); },null,saved);
+  Check(f.States["Audiosrv"]==ServiceControllerStatus.Running && f.States["Leaf"]==ServiceControllerStatus.Running && !f.Calls.Contains("start:Idle"),"persisted original services restore after process loss");
+  Console.WriteLine("PASS audio graph service ordering, original states, bounded waits, stopped callbacks and crash restoration");
  }
 }

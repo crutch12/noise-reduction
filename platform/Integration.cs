@@ -7,7 +7,11 @@ using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Xml.Serialization;
 using System.Threading;
+using System.ServiceProcess;
+using System.Diagnostics;
+using System.ComponentModel;
 using Microsoft.Win32;
+using Microsoft.Win32.SafeHandles;
 
 namespace NoiseReduction.Platform {
  public class DeviceInfo { public string Id, Name, Guid; public bool Attached, EnhancementsEnabled, Active; }
@@ -46,6 +50,14 @@ namespace NoiseReduction.Platform {
   }
   internal static string EndpointGuid(string id) { int start = id.LastIndexOf('{'); Guid guid; if(start < 0 || !Guid.TryParse(id.Substring(start), out guid)) throw new ArgumentException("Invalid capture endpoint ID"); return guid.ToString("B"); }
   static string Fx(string id) { return Capture + "\\" + EndpointGuid(id) + "\\FxProperties"; }
+  public static string GetDefaultMicrophoneId() {
+   var enumerator=(IMMDeviceEnumerator)new MMDeviceEnumerator(); IMMDevice device=null;
+   try {
+    int result=enumerator.GetDefaultAudioEndpoint(1,0,out device);
+    if(result==unchecked((int)0x80070490)) return null;
+    Marshal.ThrowExceptionForHR(result); string id; Marshal.ThrowExceptionForHR(device.GetId(out id)); return id;
+   } finally { if(device!=null) Marshal.ReleaseComObject(device); Marshal.ReleaseComObject(enumerator); }
+  }
   public static List<DeviceInfo> EnumerateMicrophones() {
    var result = new List<DeviceInfo>(); var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator(); IMMDeviceCollection collection = null;
    try {
@@ -73,6 +85,9 @@ namespace NoiseReduction.Platform {
    }
    public void Commit() { if(scope==null) throw new ObjectDisposedException("VerifiedAttachmentScope"); scope.Commit(); }
    public void Dispose() { if(scope==null) return; try { scope.Dispose(); } finally { scope=null; root.Dispose(); operation.Dispose(); } }
+  }
+  public static void RefreshAudioGraph() {
+   using(var operation=new OperationLease()) using(var root=Machine()) { Engine(root).Recover(); var clock=Stopwatch.StartNew(); AudioGraphRefresh.Run(new WindowsAudioServices(),delegate { return clock.ElapsedMilliseconds; }); }
   }
   public static VerifiedAttachmentScope BeginVerifiedAttachment(string endpointId) { return new VerifiedAttachmentScope(endpointId); }
   public static void Attach(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); if(!EnumerateMicrophones().Any(d => d.Id == endpointId && d.Active)) throw new InvalidOperationException("Capture endpoint is unavailable"); e.Attach(Fx(endpointId)); } }
@@ -206,6 +221,91 @@ namespace NoiseReduction.Platform {
    foreach(var file in ReverseFiles()) { var c=Load(file); if(!String.Equals(c.TransactionId,transactionId,StringComparison.Ordinal)) continue; ValueSnapshot now; using(var key=root.OpenSubKey(c.Path)) now=ValueSnapshot.Read(key,c.Name); if(now.Same(c.After)) Write(c,c.Before); else if(!now.Same(c.Before)) throw new InvalidOperationException("Registry transaction conflict at " + c.Path); File.Delete(file); }
   }
   public void RestorePrefix(string prefix) { foreach(var file in ReverseFiles()) { var c=Load(file); if(!c.Path.StartsWith(prefix,StringComparison.OrdinalIgnoreCase)) continue; ValueSnapshot now; using(var key=root.OpenSubKey(c.Path)) now=ValueSnapshot.Read(key,c.Name); if(now.Same(c.After)) Write(c,c.Before); else if(!now.Same(c.Before)) throw new InvalidOperationException("Registration has been changed by another installation"); File.Delete(file); } }
+ }
+ internal interface IAudioServices {
+  string[] Dependents(string name);
+  ServiceControllerStatus Status(string name);
+  void Stop(string name);
+  void Start(string name);
+  void Wait(string name,ServiceControllerStatus desired,TimeSpan timeout);
+ }
+ internal sealed class WindowsAudioServices : IAudioServices {
+  [StructLayout(LayoutKind.Sequential)] struct ServiceStatus { public uint Type,State,Controls,Win32Exit,SpecificExit,CheckPoint,WaitHint; }
+  sealed class NativeServiceHandle : SafeHandleZeroOrMinusOneIsInvalid {
+   public NativeServiceHandle() : base(true) { }
+   protected override bool ReleaseHandle() { return CloseServiceHandle(handle); }
+  }
+  [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern NativeServiceHandle OpenSCManager(string machine,string database,uint access);
+  [DllImport("advapi32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern NativeServiceHandle OpenService(NativeServiceHandle manager,string name,uint access);
+  [DllImport("advapi32.dll",SetLastError=true)] static extern bool ControlService(NativeServiceHandle service,uint control,out ServiceStatus status);
+  [DllImport("advapi32.dll",SetLastError=true)] static extern bool CloseServiceHandle(IntPtr handle);
+  public string[] Dependents(string name) {
+   using(var service=new ServiceController(name)) { var dependents=service.DependentServices; try { return dependents.Select(dependent=>dependent.ServiceName).ToArray(); } finally { foreach(var dependent in dependents) dependent.Dispose(); } }
+  }
+  public ServiceControllerStatus Status(string name) { using(var service=new ServiceController(name)) { service.Refresh(); return service.Status; } }
+  public void Stop(string name) {
+   using(var manager=OpenSCManager(null,null,1)) {
+    if(manager.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(),"Cannot open service manager");
+    using(var service=OpenService(manager,name,0x20)) {
+     if(service.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error(),"Cannot open audio service for stop: "+name);
+     ServiceStatus status; if(!ControlService(service,1,out status)) { int error=Marshal.GetLastWin32Error(); if(error!=1062) throw new Win32Exception(error,"Cannot stop "+name); }
+    }
+   }
+  }
+  public void Start(string name) { using(var service=new ServiceController(name)) service.Start(); }
+  public void Wait(string name,ServiceControllerStatus desired,TimeSpan timeout) { using(var service=new ServiceController(name)) service.WaitForStatus(desired,timeout); }
+ }
+ internal static class AudioGraphRefresh {
+  const long PhaseTimeoutMilliseconds=30000;
+  static TimeSpan Remaining(Func<long> milliseconds,long deadline,string name) { long remaining=deadline-milliseconds(); if(remaining<=0) throw new System.TimeoutException("Audio service refresh timed out at "+name); return TimeSpan.FromMilliseconds(remaining); }
+  static void ThrowFailures(List<Exception> failures) { if(failures.Count>0) throw new InvalidOperationException("Windows Audio graph maintenance failed: "+String.Join("; ",failures.Select(error=>error.Message)),new AggregateException(failures)); }
+  internal static void Run(IAudioServices services,Func<long> milliseconds) { Run(services,milliseconds,delegate { },null,null); }
+  internal static void Run(IAudioServices services,Func<long> milliseconds,Action whileStopped,Action<string[]> beforeStop,string[] savedRunning) {
+   if(savedRunning==null && services.Status("Audiosrv")!=ServiceControllerStatus.Running) throw new InvalidOperationException("Windows Audio must be running before refreshing the audio graph");
+   var all=new List<string>(); var running=new List<string>(); var visited=new HashSet<string>(StringComparer.OrdinalIgnoreCase); long snapshotDeadline=milliseconds()+PhaseTimeoutMilliseconds;
+   Action<string> snapshot=null;
+   snapshot=delegate(string name) {
+    if(!visited.Add(name)) return;
+    var status=services.Status(name);
+    if(savedRunning!=null && (status==ServiceControllerStatus.StartPending || status==ServiceControllerStatus.StopPending)) { services.Wait(name,status==ServiceControllerStatus.StartPending ? ServiceControllerStatus.Running : ServiceControllerStatus.Stopped,Remaining(milliseconds,snapshotDeadline,name)); status=services.Status(name); }
+    if(status!=ServiceControllerStatus.Running && status!=ServiceControllerStatus.Stopped) throw new InvalidOperationException("Audio service state is changing: "+name+" ("+status+")");
+    foreach(var dependent in services.Dependents(name)) snapshot(dependent);
+    all.Add(name); if(status==ServiceControllerStatus.Running) running.Add(name);
+   };
+   snapshot("Audiosrv");
+   var required=new HashSet<string>(running,StringComparer.OrdinalIgnoreCase); if(savedRunning!=null) required.UnionWith(savedRunning);
+   var restoreOrder=(savedRunning ?? new string[0]).Where(name=>!all.Contains(name,StringComparer.OrdinalIgnoreCase)).Concat(all.Where(required.Contains)).ToArray();
+   if(beforeStop!=null) beforeStop(restoreOrder);
+   var failures=new List<Exception>(); long stopDeadline=milliseconds()+PhaseTimeoutMilliseconds;
+   try {
+    foreach(var name in running) {
+     var status=services.Status(name);
+     if(status==ServiceControllerStatus.Stopped) continue;
+     if(status==ServiceControllerStatus.StartPending) { services.Wait(name,ServiceControllerStatus.Running,Remaining(milliseconds,stopDeadline,name)); status=services.Status(name); }
+     if(status==ServiceControllerStatus.Running) { Remaining(milliseconds,stopDeadline,name); services.Stop(name); }
+     else if(status!=ServiceControllerStatus.StopPending) throw new InvalidOperationException("Cannot stop audio service "+name+" ("+status+")");
+     services.Wait(name,ServiceControllerStatus.Stopped,Remaining(milliseconds,stopDeadline,name));
+    }
+    whileStopped();
+   } catch(Exception error) { failures.Add(new InvalidOperationException("Could not complete maintenance while Windows Audio was stopped: "+error.Message,error)); }
+   finally { failures.AddRange(RestoreServices(services,milliseconds,restoreOrder)); }
+   ThrowFailures(failures);
+  }
+  internal static void Restore(IAudioServices services,Func<long> milliseconds,string[] savedRunning) { ThrowFailures(RestoreServices(services,milliseconds,savedRunning)); }
+  static List<Exception> RestoreServices(IAudioServices services,Func<long> milliseconds,IEnumerable<string> running) {
+   var failures=new List<Exception>(); long restoreDeadline=milliseconds()+PhaseTimeoutMilliseconds;
+   foreach(var name in running.Reverse()) {
+    try {
+     var status=services.Status(name);
+     if(status==ServiceControllerStatus.Running) continue;
+     if(status==ServiceControllerStatus.StopPending) { services.Wait(name,ServiceControllerStatus.Stopped,Remaining(milliseconds,restoreDeadline,name)); status=services.Status(name); }
+     if(status==ServiceControllerStatus.Stopped) services.Start(name);
+     else if(status!=ServiceControllerStatus.StartPending) throw new InvalidOperationException("Cannot restore audio service "+name+" ("+status+")");
+     services.Wait(name,ServiceControllerStatus.Running,Remaining(milliseconds,restoreDeadline,name));
+    } catch(Exception error) { failures.Add(new InvalidOperationException("Could not restore originally running audio service "+name+": "+error.Message,error)); }
+   }
+   return failures;
+  }
  }
  [StructLayout(LayoutKind.Sequential)] struct PropertyKey { public Guid Format; public uint Id; public PropertyKey(Guid format,uint id){Format=format;Id=id;} }
  [StructLayout(LayoutKind.Explicit,Size=24)] struct PropVariant { [FieldOffset(0)] public ushort Type; [FieldOffset(8)] public IntPtr Pointer; }

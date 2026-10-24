@@ -93,6 +93,29 @@ int wmain(int argc, wchar_t** argv) {
             check(SUCCEEDED(CreateAudioMediaType(&wave, sizeof(wave), &media)), "Media type creation failed");
             ComPtr<IAudioMediaType> supported;
             check(apo->IsInputFormatSupported(nullptr, media.Get(), &supported) == S_OK, "Mono float48k rejected");
+            {
+                WAVEFORMATEX pcm{WAVE_FORMAT_PCM, 4, 48000, 384000, 8, 16, 0};
+                WAVEFORMATEX float_wave{WAVE_FORMAT_IEEE_FLOAT, 4, 48000, 768000, 16, 32, 0};
+                ComPtr<IAudioMediaType> hardware, float_media;
+                check(SUCCEEDED(CreateAudioMediaType(&pcm, sizeof(pcm), &hardware)) &&
+                    SUCCEEDED(CreateAudioMediaType(&float_wave, sizeof(float_wave), &float_media)), "Hardware format fixture failed");
+                ComPtr<IAudioMediaType> alternative;
+                check(apo->IsInputFormatSupported(float_media.Get(), hardware.Get(), &alternative) == S_FALSE && alternative,
+                    "PCM16 hardware format must suggest float32 instead of failing graph negotiation");
+                UNCOMPRESSEDAUDIOFORMAT format{};
+                check(SUCCEEDED(alternative->GetUncompressedAudioFormat(&format)) && format.dwSamplesPerFrame == 4 &&
+                    format.dwBytesPerSampleContainer == 4 && format.dwValidBitsPerSample == 32 && format.fFramesPerSecond == 48000,
+                    "Suggested hardware format is not four-channel float48k");
+                ComPtr<IAudioMediaType> accepted;
+                check(apo->IsInputFormatSupported(float_media.Get(), alternative.Get(), &accepted) == S_OK,
+                    "Suggested format cannot complete negotiation");
+                alternative.Reset();
+                check(apo->IsOutputFormatSupported(float_media.Get(), hardware.Get(), &alternative) == S_FALSE && alternative,
+                    "Output negotiation must also suggest float32");
+                alternative.Reset();
+                check(apo->IsInputFormatSupported(nullptr, hardware.Get(), &alternative) == S_FALSE && alternative,
+                    "PCM format without opposite must suggest float32");
+            }
             wave.nSamplesPerSec = 44100; wave.nAvgBytesPerSec = 176400;
             ComPtr<IAudioMediaType> unsupported;
             check(SUCCEEDED(CreateAudioMediaType(&wave, sizeof(wave), &unsupported)), "Negative media creation failed");

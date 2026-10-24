@@ -3,6 +3,7 @@
 #include "control.h"
 #include <audioenginebaseapo.h>
 #include <audioengineextensionapo.h>
+#include <audiomediatype.h>
 #include <mmdeviceapi.h>
 #include <ks.h>
 #include <ksmedia.h>
@@ -12,6 +13,7 @@
 #include <stdexcept>
 #include <vector>
 #include <mutex>
+#include <cwchar>
 #ifdef NR_DIAGNOSTICS
 #include <evntprov.h>
 #endif
@@ -30,6 +32,18 @@ void trace(const wchar_t* text) {
 #else
 void trace(const wchar_t*) {}
 #endif
+void trace_format(const wchar_t* operation, IAudioMediaType* media) {
+#ifdef NR_DIAGNOSTICS
+    UNCOMPRESSEDAUDIOFORMAT format{};
+    if (!media || FAILED(media->GetUncompressedAudioFormat(&format))) { trace(L"Format unavailable"); return; }
+    wchar_t message[256]{};
+    std::swprintf(message, 256, L"%ls: channels=%lu rate=%.0f bytes=%lu bits=%lu subtype=%08lx", operation,
+        format.dwSamplesPerFrame, format.fFramesPerSecond, format.dwBytesPerSampleContainer, format.dwValidBitsPerSample, format.guidFormatType.Data1);
+    trace(message);
+#else
+    (void)operation; (void)media;
+#endif
+}
 constexpr PROPERTYKEY endpoint_guid_property{{0x1da5d803, 0xd492, 0x4edd, {0x8c, 0x23, 0xe0, 0xc0, 0xff, 0xee, 0x7f, 0x0e}}, 4};
 const APO_REG_PROPERTIES properties{CLSID_NoiseReduction,
     static_cast<APO_FLAG>(APO_FLAG_DEFAULT | APO_FLAG_INPLACE), L"Noise Reduction", L"",
@@ -123,6 +137,7 @@ public:
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE GetEffectsList(GUID** ids, UINT* count, HANDLE event) override {
+        trace(effective_enabled() ? L"GetEffectsList: enabled" : L"GetEffectsList: disabled");
         if (!ids || !count) return E_POINTER;
         *ids = nullptr; *count = 0;
         HRESULT status = remember_event(event);
@@ -163,6 +178,7 @@ public:
     UINT32 STDMETHODCALLTYPE CalcInputFrames(UINT32 value) override { return value; }
     UINT32 STDMETHODCALLTYPE CalcOutputFrames(UINT32 value) override { return value; }
     HRESULT STDMETHODCALLTYPE GetInputChannelCount(UINT32* value) override {
+        trace(L"GetInputChannelCount entered");
         if (!value) return E_POINTER;
         *value = channels_;
         return S_OK;
@@ -186,7 +202,7 @@ public:
         if (m_bIsLocked) {
             try {
                 std::vector<std::unique_ptr<nr::Processor>> fresh;
-                for (UINT32 i = 0; i < channels_; ++i) fresh.push_back(std::make_unique<nr::Processor>(backend_ ? backend_->api() : nr::Backend{}));
+                for (UINT32 i = 0; i < channels_; ++i) fresh.push_back(std::make_unique<nr::Processor>(backend_ ? backend_->api() : nr::Backend{}, effective_enabled()));
                 processors_ = std::move(fresh);
                 update_model_status();
                 previous_settings_ = UINT32_MAX;
@@ -204,6 +220,8 @@ public:
         if (!in || !out || !in[0] || !out[0]) return E_POINTER;
         if (in[0]->u32Signature != APO_CONNECTION_DESCRIPTOR_SIGNATURE || out[0]->u32Signature != APO_CONNECTION_DESCRIPTOR_SIGNATURE) return E_INVALIDARG;
         if (!in[0]->pFormat || !out[0]->pFormat) return E_POINTER;
+        trace_format(L"Lock input", in[0]->pFormat);
+        trace_format(L"Lock output", out[0]->pFormat);
         if (!in[0]->u32MaxFrameCount || out[0]->u32MaxFrameCount < in[0]->u32MaxFrameCount) return APOERR_INVALID_OUTPUT_MAXFRAMECOUNT;
         if (!valid_format(in[0]->pFormat) || !valid_format(out[0]->pFormat)) return APOERR_FORMAT_NOT_SUPPORTED;
         UNCOMPRESSEDAUDIOFORMAT input_format{}, output_format{};
@@ -212,7 +230,7 @@ public:
         if (input_format.dwSamplesPerFrame != output_format.dwSamplesPerFrame) return APOERR_FORMAT_NOT_SUPPORTED;
         try {
             std::vector<std::unique_ptr<nr::Processor>> fresh;
-            for (UINT32 i = 0; i < input_format.dwSamplesPerFrame; ++i) fresh.push_back(std::make_unique<nr::Processor>(backend_ ? backend_->api() : nr::Backend{}));
+            for (UINT32 i = 0; i < input_format.dwSamplesPerFrame; ++i) fresh.push_back(std::make_unique<nr::Processor>(backend_ ? backend_->api() : nr::Backend{}, effective_enabled()));
             scratch_in_.resize(in[0]->u32MaxFrameCount);
             scratch_out_.resize(in[0]->u32MaxFrameCount);
             processors_ = std::move(fresh);
@@ -296,12 +314,29 @@ private:
             format.dwBytesPerSampleContainer == 4 && format.dwValidBitsPerSample == 32 && format.fFramesPerSecond == 48000;
     }
     static HRESULT negotiate(IAudioMediaType* opposite, IAudioMediaType* requested, IAudioMediaType** supported) {
+        trace_format(L"Negotiate requested", requested);
+        if (opposite) trace_format(L"Negotiate opposite", opposite);
         if (!requested || !supported) return E_POINTER;
-        if (!valid_format(requested) || (opposite && !valid_format(opposite))) return APOERR_FORMAT_NOT_SUPPORTED;
+        if (!valid_format(requested)) {
+            UNCOMPRESSEDAUDIOFORMAT format{}, other{};
+            if (FAILED(requested->GetUncompressedAudioFormat(&format)) || format.guidFormatType != KSDATAFORMAT_SUBTYPE_PCM ||
+                format.fFramesPerSecond != 48000 || format.dwSamplesPerFrame < 1 || format.dwSamplesPerFrame > 8 ||
+                format.dwBytesPerSampleContainer < 1 || format.dwBytesPerSampleContainer > 4 ||
+                format.dwValidBitsPerSample < 1 || format.dwValidBitsPerSample > format.dwBytesPerSampleContainer * 8 ||
+                (opposite && (!valid_format(opposite) || FAILED(opposite->GetUncompressedAudioFormat(&other)) ||
+                    other.dwSamplesPerFrame != format.dwSamplesPerFrame))) return APOERR_FORMAT_NOT_SUPPORTED;
+            format.guidFormatType = KSDATAFORMAT_SUBTYPE_IEEE_FLOAT;
+            format.dwBytesPerSampleContainer = 4;
+            format.dwValidBitsPerSample = 32;
+            HRESULT result = CreateAudioMediaTypeFromUncompressedAudioFormat(&format, supported);
+            trace(L"Negotiate: suggest float32 for PCM hardware");
+            return SUCCEEDED(result) ? S_FALSE : result;
+        }
+        if (opposite && !valid_format(opposite)) return APOERR_FORMAT_NOT_SUPPORTED;
         if (opposite) {
             UNCOMPRESSEDAUDIOFORMAT a{}, b{};
             requested->GetUncompressedAudioFormat(&a); opposite->GetUncompressedAudioFormat(&b);
-            if (a.dwSamplesPerFrame != b.dwSamplesPerFrame) return APOERR_FORMAT_NOT_SUPPORTED;
+            if (a.dwSamplesPerFrame != b.dwSamplesPerFrame) { trace(L"Negotiate: different channel counts"); return APOERR_FORMAT_NOT_SUPPORTED; }
         }
         requested->AddRef();
         *supported = requested;

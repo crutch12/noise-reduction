@@ -22,7 +22,7 @@ $hashLines = $payload.Keys | Sort-Object | ForEach-Object { "$_|$((Get-FileHash 
 $hashPath = Join-Path $buildPath 'payload-sha256.txt'
 $hashLines | Set-Content -LiteralPath $hashPath -Encoding Ascii
 $payload['payload-sha256.txt'] = $hashPath
-$arguments = @('/nologo', '/target:exe', '/platform:x64', '/optimize+', '/warnaserror+', '/r:System.Windows.Forms.dll', '/r:Microsoft.CSharp.dll', "/win32manifest:$(Join-Path $repoPath 'installer/Setup.manifest')", "/out:$(Join-Path $distPath 'NoiseReduction.Setup.exe')")
+$arguments = @('/nologo', '/target:exe', '/platform:x64', '/optimize+', '/warnaserror+', '/r:System.Windows.Forms.dll', '/r:System.ServiceProcess.dll', '/r:Microsoft.CSharp.dll', "/win32icon:$(Join-Path $repoPath 'app/assets/NoiseReduction.ico')", "/win32manifest:$(Join-Path $repoPath 'installer/Setup.manifest')", "/out:$(Join-Path $distPath 'NoiseReduction.Setup.exe')")
 foreach ($name in ($payload.Keys | Sort-Object)) { $arguments += "/resource:$($payload[$name]),payload.$name" }
 $arguments += Join-Path $repoPath 'platform/Integration.cs'
 $arguments += Join-Path $repoPath 'installer/Setup.cs'
