@@ -35,6 +35,8 @@ namespace NoiseReduction.WinUI
         private readonly Button enable = new Button { VerticalAlignment = VerticalAlignment.Center };
         private readonly MenuFlyoutItem reset = new MenuFlyoutItem(), diagnostics = new MenuFlyoutItem();
         private readonly Button more = new Button { Content = new FontIcon { Glyph = "", FontSize = 14 }, Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0), Padding = new Thickness(8, 6, 8, 6) };
+        private readonly WaveformView waveform = new WaveformView();
+        private Microsoft.UI.Dispatching.DispatcherQueueTimer animation;
         private bool updating;
         internal readonly string Id;
         internal readonly Expander View;
@@ -74,7 +76,7 @@ namespace NoiseReduction.WinUI
             var body = new StackPanel { Spacing = 8 };
             body.Children.Add(strengthHead); body.Children.Add(presets.View); body.Children.Add(precise); body.Children.Add(slider); body.Children.Add(lowCut);
             body.Children.Add(Divider());
-            body.Children.Add(compareLabel); body.Children.Add(buttons); body.Children.Add(note);
+            body.Children.Add(compareLabel); body.Children.Add(buttons); body.Children.Add(waveform.View); body.Children.Add(note);
             body.Children.Add(Divider());
             body.Children.Add(connectRow);
 
@@ -146,6 +148,17 @@ namespace NoiseReduction.WinUI
                 if (Array.IndexOf(StrengthPresets.Values, value) < 0 || lowCut.IsOn) slider.Visibility = lowCut.Visibility = Visibility.Visible;
                 strengthValue.Text = value + " " + T("дБ");
                 bool recording = controller.RecordingId == Id;
+                UpdateWaveform();
+                bool animate = recording || controller.CanCompare(Id) && controller.Playing;
+                if (animate && animation == null)
+                {
+                    // волну и таймер обновляем часто только во время записи и прослушивания
+                    animation = View.DispatcherQueue.CreateTimer();
+                    animation.Interval = TimeSpan.FromMilliseconds(40);
+                    animation.Tick += (_, _) => { UpdateWaveform(); UpdateRecordButton(); };
+                    animation.Start();
+                }
+                else if (!animate && animation != null) { animation.Stop(); animation = null; }
                 var elapsed = DateTime.UtcNow - controller.RecordingStarted;
                 record.IsEnabled = idle || recording;
                 record.Content = recording ? T("Остановить") + " " + (int)elapsed.TotalMinutes + ":" + elapsed.Seconds.ToString("00") : T("Записать");
@@ -170,6 +183,20 @@ namespace NoiseReduction.WinUI
                 reset.IsEnabled = idle;
             }
             finally { updating = false; }
+        }
+        private void UpdateWaveform()
+        {
+            bool recording = controller.RecordingId == Id;
+            bool ready = controller.CanCompare(Id) && controller.OriginalPeaks != null;
+            waveform.View.Visibility = recording || ready ? Visibility.Visible : Visibility.Collapsed;
+            if (recording) waveform.Live(controller.LivePeaks);
+            else if (ready) waveform.Result(controller.OriginalPeaks, controller.ProcessedPeaks, controller.ListenProcessed, controller.PlaybackProgress);
+        }
+        private void UpdateRecordButton()
+        {
+            if (controller.RecordingId != Id) return;
+            var elapsed = DateTime.UtcNow - controller.RecordingStarted;
+            record.Content = T("Остановить") + " " + (int)elapsed.TotalMinutes + ":" + elapsed.Seconds.ToString("00");
         }
         private static string UiText(string message) => NoiseReduction.Desktop.UiText.Message(message);
     }

@@ -43,6 +43,9 @@ namespace NoiseReduction.WinUI
         private readonly DesktopState state = new DesktopState();
         private MediaPlayer original, processed;
         private volatile bool stopRequested;
+        private readonly List<float> livePeaks = new List<float>();
+        private float bucketPeak;
+        private int bucketCount;
         private readonly DispatcherQueueTimer timer;
         private List<DeviceInfo> devices = new List<DeviceInfo>();
         private DateTime refreshAt;
@@ -59,6 +62,19 @@ namespace NoiseReduction.WinUI
         public DateTime RecordingStarted { get; private set; }
         public bool Playing { get; private set; }
         public bool ListenProcessed { get; private set; } = true;
+        public float[] OriginalPeaks { get; private set; }
+        public float[] ProcessedPeaks { get; private set; }
+        public float[] LivePeaks { get { lock (livePeaks) return livePeaks.ToArray(); } }
+        public double PlaybackProgress
+        {
+            get
+            {
+                if (!Playing || original == null) return -1;
+                var session = original.PlaybackSession;
+                double total = session.NaturalDuration.TotalSeconds;
+                return total > 0 ? session.Position.TotalSeconds / total : 0;
+            }
+        }
         public bool WatchUsage { get; set; }
         public bool GlobalEnabled => Settings.Enabled;
         public bool Busy => !state.CanRefresh;
@@ -89,7 +105,8 @@ namespace NoiseReduction.WinUI
 
         private void Tick(DispatcherQueueTimer sender, object args)
         {
-            if (disposed || Busy) return;
+            if (disposed) return;
+            if (Busy) { if (RecordingId != null) Notify(); return; }
             if (DateTime.UtcNow >= refreshAt) Refresh();
             else
             {
@@ -286,13 +303,16 @@ namespace NoiseReduction.WinUI
             int attenuation = Attenuation(id);
             StopPlayback(); state.CaptureEndpoint = id; comparisonId = null; Error = null;
             stopRequested = false; RecordingStarted = DateTime.UtcNow;
+            lock (livePeaks) livePeaks.Clear();
+            bucketPeak = 0; bucketCount = 0; OriginalPeaks = ProcessedPeaks = null;
             string directory = Path.Combine(Path.GetTempPath(), "NoiseReduction-" + Guid.NewGuid().ToString("N"));
             notes[id] = "Говорите в микрофон и нажмите Остановить"; Notify();
             try
             {
                 Directory.CreateDirectory(directory); ApplyControls(false);
-                await Task.Run(() => Comparison.Create(id, directory, attenuation, () => stopRequested));
+                var result = await Task.Run(() => Comparison.Create(id, directory, attenuation, () => stopRequested, Collect));
                 if (disposed) { DeleteRecording(directory); return; }
+                OriginalPeaks = Peaks(result[0], 240); ProcessedPeaks = Peaks(result[1], 240);
                 DeleteRecording(recordingDirectory); recordingDirectory = directory; comparisonId = id;
                 notes.Remove(id);
             }
@@ -304,6 +324,28 @@ namespace NoiseReduction.WinUI
             }
         }
         public void StopRecording() { stopRequested = true; }
+
+        // пик каждых 20 мс для живой волны, вызывается из потока записи
+        private void Collect(float[] packet)
+        {
+            foreach (float sample in packet)
+            {
+                bucketPeak = Math.Max(bucketPeak, Math.Abs(sample));
+                if (++bucketCount < 960) continue;
+                lock (livePeaks) livePeaks.Add(bucketPeak);
+                bucketPeak = 0; bucketCount = 0;
+            }
+        }
+        private static float[] Peaks(float[] samples, int count)
+        {
+            var peaks = new float[count];
+            for (int i = 0; i < samples.Length; i++)
+            {
+                int bucket = (int)((long)i * count / samples.Length);
+                peaks[bucket] = Math.Max(peaks[bucket], Math.Abs(samples[i]));
+            }
+            return peaks;
+        }
 
         // оба варианта играют одновременно и по кругу, переключение просто меняет, какой слышно
         public void TogglePlayback(string id)

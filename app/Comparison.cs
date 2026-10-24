@@ -20,14 +20,19 @@ namespace NoiseReduction.Desktop
 
         // stop задаёт пользователь кнопкой, без него запись длится 5 секунд
         internal static void Create(string endpoint, string directory, int attenuation, Func<bool> stop)
+        { Create(endpoint, directory, attenuation, stop, null); }
+
+        // возвращает исходный и обработанный звук, onPacket получает куски записи для живой волны
+        internal static float[][] Create(string endpoint, string directory, int attenuation, Func<bool> stop, Action<float[]> onPacket)
         {
             string engine = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "NoiseReduction.Apo.dll");
             if (!File.Exists(engine) || !File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "rnnoise.dll")))
                 throw new FileNotFoundException("Для сравнения нужны NoiseReduction.Apo.dll и rnnoise.dll рядом с программой");
-            float[] original = Capture(endpoint, false, null, stop);
+            float[] original = Capture(endpoint, false, null, stop, onPacket);
             float[] processed = ProcessCaptured(original, attenuation);
             WriteWave(Path.Combine(directory, "original.wav"), original);
             WriteWave(Path.Combine(directory, "processed.wav"), processed);
+            return new[] { original, processed };
         }
 
         internal static float[] ProcessCaptured(float[] original, int attenuation)
@@ -64,9 +69,9 @@ namespace NoiseReduction.Desktop
         }
 
         internal static void VerifyCapture(string endpoint, Func<bool> modelAdvanced)
-        { Capture(endpoint, true, modelAdvanced, null); }
+        { Capture(endpoint, true, modelAdvanced, null, null); }
 
-        private static float[] Capture(string endpoint, bool discard, Func<bool> modelAdvanced, Func<bool> stop)
+        private static float[] Capture(string endpoint, bool discard, Func<bool> modelAdvanced, Func<bool> stop, Action<float[]> onPacket)
         {
             IMMDeviceEnumerator enumerator = null;
             IMMDevice device = null;
@@ -108,6 +113,7 @@ namespace NoiseReduction.Desktop
                             var packet = new float[length];
                             if ((flags & 2) == 0) Marshal.Copy(data, packet, 0, length);
                             samples.AddRange(packet);
+                            if (onPacket != null) onPacket(packet);
                         }
                         captured += length;
                     }
