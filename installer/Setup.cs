@@ -191,7 +191,7 @@ class Setup {
  static InstallTransaction SandboxTransaction(string name,bool committed) { return new InstallTransaction{ Id=Guid.NewGuid().ToString("N"),Version=3,Complete=true,Committed=committed,GraphRestoreRequired=true,GraphSnapshotTaken=true,OriginalRunningServices=new[]{"Rtk","Audiosrv"},FileCount=1,EngineCount=0,SetupCount=0,EngineCheckpoint=new string[0],SetupCheckpoint=new string[0],Files=new[]{new InstallFileState{Name=name,Existed=true}}}; }
  static int SelfTest() {
   string directory=Path.Combine(Path.GetTempPath(),"nr-package-"+Guid.NewGuid().ToString("N"));
-  try { Extract(directory); var names=PayloadNames(); if(!names.Contains("NoiseReduction.exe") || !names.Contains("NoiseReduction.Apo.dll") || !names.Contains("rnnoise.dll")) throw new Exception("Required payload missing");
+  try { Extract(directory); var names=PayloadNames(); if(!names.Contains("NoiseReduction.exe") || !names.Contains("NoiseReduction.exe.config") || !names.Contains("NoiseReduction.Apo.dll") || !names.Contains("rnnoise.dll")) throw new Exception("Required payload missing");
    if(names.Any(n=>new[]{".mp3",".wav",".flac",".ogg",".json"}.Contains(Path.GetExtension(n).ToLowerInvariant()))) throw new Exception("Unexpected private/audio payload");
    foreach(var name in names) File.Delete(SafeFile(directory,name));
    Install(directory,true); ValidateManifest(directory);

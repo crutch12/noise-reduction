@@ -22,21 +22,18 @@ public static class MicrophoneIconBuilder {
   foreach(int size in sizes) using(var bitmap=new Bitmap(size,size,PixelFormat.Format32bppArgb)) {
    using(var g=Graphics.FromImage(bitmap)) {
     g.Clear(Color.Transparent); g.SmoothingMode=SmoothingMode.AntiAlias; g.ScaleTransform(size/64f,size/64f);
-    using(var ink=new SolidBrush(ColorTranslator.FromHtml("#203a35")))
-    using(var white=new SolidBrush(ColorTranslator.FromHtml("#f4f7f3")))
-    using(var tile=Round(2,2,60,60,15)) using(var capsule=Round(23,11,18,31,9)) {
+    using(var ink=new SolidBrush(ColorTranslator.FromHtml("#0067c0")))
+    using(var white=new SolidBrush(Color.White))
+    using(var tile=Round(1,1,62,62,14)) using(var capsule=Round(22,9,20,31,10)) {
      g.FillPath(ink,tile); g.FillPath(white,capsule);
     }
-    using(var bracket=new GraphicsPath()) using(var sage=new Pen(ColorTranslator.FromHtml("#a7cabb"),4.5f)) {
+    using(var bracket=new GraphicsPath()) using(var sage=new Pen(Color.White,5f)) {
      sage.StartCap=sage.EndCap=LineCap.Round;
-     bracket.AddLine(16,29,16,34); bracket.AddArc(16,18,32,32,180,-180); bracket.AddLine(48,34,48,29);
+     bracket.AddLine(15,28,15,33); bracket.AddArc(15,16,34,34,180,-180); bracket.AddLine(49,33,49,28);
      g.DrawPath(sage,bracket);
     }
-    using(var white=new Pen(ColorTranslator.FromHtml("#f4f7f3"),4.5f)) {
-     white.StartCap=white.EndCap=LineCap.Round; g.DrawLine(white,32,50,32,59); g.DrawLine(white,24,59,40,59);
-    }
-    if(size>=24) using(var ink=new Pen(ColorTranslator.FromHtml("#203a35"),2.5f)) {
-     ink.StartCap=ink.EndCap=LineCap.Round; g.DrawLine(ink,29,21,35,21); g.DrawLine(ink,29,27,35,27);
+    using(var white=new Pen(Color.White,5f)) {
+     white.StartCap=white.EndCap=LineCap.Round; g.DrawLine(white,32,50,32,56); g.DrawLine(white,24,56,40,56);
     }
    }
    using(var stream=new MemoryStream()) { bitmap.Save(stream,ImageFormat.Png); images.Add(stream.ToArray()); }

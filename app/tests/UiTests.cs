@@ -7,6 +7,8 @@ using System.Threading;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Drawing.Drawing2D;
+using System.Globalization;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using Microsoft.Win32;
 using NoiseReduction.Desktop;
@@ -14,6 +16,8 @@ using NoiseReduction.Platform;
 
 internal static class UiTests
 {
+    [DllImport("user32.dll")] private static extern IntPtr GetWindowDpiAwarenessContext(IntPtr window);
+    [DllImport("user32.dll")] private static extern bool AreDpiAwarenessContextsEqual(IntPtr first, IntPtr second);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] private static extern bool LogicalToPhysicalPointForPerMonitorDPI(IntPtr window, ref Point point);
     [DllImport("user32.dll")] private static extern IntPtr WindowFromPhysicalPoint(Point point);
@@ -21,6 +25,8 @@ internal static class UiTests
     [STAThread]
     private static int Main(string[] args)
     {
+        string settingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NoiseReduction", "settings.json");
+        byte[] originalSettings = File.Exists(settingsPath) ? File.ReadAllBytes(settingsPath) : null;
         var original = new Dictionary<string, uint>();
         if (Directory.Exists(Integration.ControlRoot))
             foreach (string file in Directory.GetFiles(Integration.ControlRoot, "*.bin"))
@@ -36,6 +42,8 @@ internal static class UiTests
             foreach (var item in original)
                 try { using (var control = new ControlFile(Integration.ControlRoot, item.Key)) control.SetConfiguration(item.Value); }
                 catch (Exception error) { failures.Add(error); }
+            try { if (originalSettings != null) File.WriteAllBytes(settingsPath, originalSettings); else if (File.Exists(settingsPath)) File.Delete(settingsPath); }
+            catch (Exception error) { failures.Add(error); }
             if (failures.Count > 0) throw new AggregateException("Could not restore original endpoint configurations", failures);
             Console.WriteLine("PASS: original endpoint configuration words restored, audio counters preserved");
         }
@@ -48,6 +56,8 @@ internal static class UiTests
         using (var window = new MainWindow(false))
         {
             window.Show(); Application.DoEvents();
+            if (!AreDpiAwarenessContextsEqual(GetWindowDpiAwarenessContext(window.Handle), new IntPtr(-4))) throw new Exception("Settings window is bitmap-scaled instead of PerMonitorV2 DPI aware");
+            Console.WriteLine("PASS: native PerMonitorV2 window DPI awareness, dpi=" + window.DeviceDpi);
             if (!window.Visible || window.Text != "Noise Reduction") throw new Exception("Settings window did not open");
             var flags = BindingFlags.Instance | BindingFlags.NonPublic;
             TestStartup(window, flags);
@@ -84,19 +94,47 @@ internal static class UiTests
             TestTrayIcons(window, flags);
             TestDefaultMicrophoneTray(window, flags);
             TestDisabledIdleStatus(window, flags);
+            TestLanguages(window, flags);
+            TestAdvanced(window, flags);
+            TestTrayProfiles(window, flags);
             TestKeyboard(window, flags);
             string review = Path.GetFullPath(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "ux", "review"));
             Directory.CreateDirectory(review);
-            Capture(window, new Size(860, 650), args.Length == 1 ? Path.Combine(review, "desktop.png") : null);
-            Capture(window, new Size(760, 600), args.Length == 1 ? Path.Combine(review, "compact.png") : null);
-            if (args.Length == 1) CaptureTrayFixture((Theme)typeof(MainWindow).GetField("theme", flags).GetValue(window), Path.Combine(review, "tray-states.png"));
+            var captureSettings = (Settings)typeof(MainWindow).GetField("settings", flags).GetValue(window);
+            string originalLanguage = captureSettings.Language;
+            foreach (string locale in new[] { "en", "ru" })
+            {
+                captureSettings.Language = locale;
+                typeof(MainWindow).GetMethod("ApplyLanguage", flags).Invoke(window, null);
+                Capture(window, new Size(860, 650), args.Length == 1 ? Path.Combine(review, "desktop-" + locale + ".png") : null);
+                Capture(window, new Size(760, 600), args.Length == 1 ? Path.Combine(review, "compact-" + locale + ".png") : null);
+                var panel = (Control)typeof(MainWindow).GetField("advancedPanel", flags).GetValue(window);
+                panel.Visible = true;
+                Capture(window, new Size(860, 900), args.Length == 1 ? Path.Combine(review, "advanced-" + locale + ".png") : null);
+                window.Size = new Size(760 * window.DeviceDpi / 96, 600 * window.DeviceDpi / 96);
+                Application.DoEvents();
+                var viewport = (Panel)panel.Parent.Parent;
+                viewport.ScrollControlIntoView(panel);
+                Application.DoEvents();
+                if (!viewport.RectangleToScreen(viewport.ClientRectangle).Contains(panel.RectangleToScreen(panel.ClientRectangle))) throw new Exception("Expanded advanced settings cannot be reached by scrolling at minimum size");
+                panel.Visible = false;
+                viewport.AutoScrollPosition = Point.Empty;
+            }
+            captureSettings.Language = originalLanguage;
+            typeof(MainWindow).GetMethod("ApplyLanguage", flags).Invoke(window, null);
+            if (args.Length == 1)
+            {
+                File.Copy(Path.Combine(review, "desktop-ru.png"), Path.Combine(review, "desktop.png"), true);
+                File.Copy(Path.Combine(review, "compact-ru.png"), Path.Combine(review, "compact.png"), true);
+                CaptureTrayFixture((Theme)typeof(MainWindow).GetField("theme", flags).GetValue(window), Path.Combine(review, "tray-states.png"));
+            }
             window.Close(); Application.DoEvents();
             if (window.Visible || window.IsDisposed) throw new Exception("Close did not preserve tray application");
             typeof(MainWindow).GetMethod("Reveal", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(window, null);
             Application.DoEvents();
             if (!window.Visible) throw new Exception("Tray activation did not restore settings");
             var tray = (NotifyIcon)typeof(MainWindow).GetField("tray", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(window);
-            ((ToolStripMenuItem)tray.ContextMenuStrip.Items[1]).PerformClick();
+            ((ToolStripMenuItem)tray.ContextMenuStrip.Items["TrayExit"]).PerformClick();
             Application.DoEvents();
             if (!window.IsDisposed) throw new Exception("Explicit tray exit did not close application");
         }
@@ -105,9 +143,9 @@ internal static class UiTests
             hidden.Show(); Application.DoEvents();
             if (hidden.Visible || hidden.IsDisposed) throw new Exception("Tray startup exposed settings");
             var tray = (NotifyIcon)typeof(MainWindow).GetField("tray", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(hidden);
-            ((ToolStripMenuItem)tray.ContextMenuStrip.Items[0]).PerformClick(); Application.DoEvents();
+            ((ToolStripMenuItem)tray.ContextMenuStrip.Items["TraySettings"]).PerformClick(); Application.DoEvents();
             if (!hidden.Visible) throw new Exception("Tray settings action did not show hidden startup");
-            ((ToolStripMenuItem)tray.ContextMenuStrip.Items[1]).PerformClick(); Application.DoEvents();
+            ((ToolStripMenuItem)tray.ContextMenuStrip.Items["TrayExit"]).PerformClick(); Application.DoEvents();
         }
         Console.WriteLine("PASS: settings window, close-to-tray, activation, explicit Exit");
         return 0;
@@ -133,13 +171,13 @@ internal static class UiTests
             Icon icon = theme.TrayIcon(state);
             if (!Object.ReferenceEquals(icon, theme.TrayIcon(state))) throw new Exception("Tray icon was reallocated for an unchanged state");
             using (var bitmap = icon.ToBitmap())
-                if (bitmap.GetPixel(12, 12).ToArgb() != expected[state].ToArgb()) throw new Exception("Tray badge does not render its actual state color");
+                if (bitmap.GetPixel(bitmap.Width * 3 / 4, bitmap.Height * 3 / 4).ToArgb() != expected[state].ToArgb()) throw new Exception("Tray badge does not render its actual state color");
         }
         var desktopState = (DesktopState)typeof(MainWindow).GetField("state", flags).GetValue(window);
         desktopState.RefreshError = "Test refresh failure";
         typeof(MainWindow).GetMethod("UpdateTray", flags).Invoke(window, null);
         var tray = (NotifyIcon)typeof(MainWindow).GetField("tray", flags).GetValue(window);
-        if (!Object.ReferenceEquals(tray.Icon, theme.TrayIcon(2)) || !tray.Text.StartsWith("Ошибка")) throw new Exception("Tray does not explain the current refresh error");
+        if (!Object.ReferenceEquals(tray.Icon, theme.TrayIcon(2)) || !tray.Text.StartsWith(UiText.Get("Ошибка")) && !tray.Text.StartsWith("Could not")) throw new Exception("Tray does not explain the current refresh error");
         desktopState.RefreshError = null;
         typeof(MainWindow).GetMethod("UpdateTray", flags).Invoke(window, null);
         Console.WriteLine("PASS: cached native tray icons, gray/green/red rendered badges, actionable error tooltip");
@@ -149,7 +187,8 @@ internal static class UiTests
         var result = new List<Control>();
         foreach (Control control in parent.Controls)
         {
-            if (control is Button || control is CheckBox || control is TrackBar || control is ListBox) result.Add(control);
+            if (!control.Visible) continue;
+            if (control is Button || control is CheckBox || control is TrackBar || control is ListBox || control is ComboBox) result.Add(control);
             result.AddRange(Interactive(control));
         }
         return result;
@@ -170,17 +209,114 @@ internal static class UiTests
         {
             activity[device.Id] = new Activity();
             settings.Enabled = false; profile.Enabled = true; render();
-            if (!status.Text.Contains("Обработка выключена") || status.Text.Contains("начните запись")) throw new Exception("Globally disabled idle microphone invites recording instead of showing off");
+            if (!status.Text.Contains(UiText.Get("Обработка выключена")) || status.Text.Contains(UiText.Get("начните запись"))) throw new Exception("Globally disabled idle microphone invites recording instead of showing off");
             settings.Enabled = true; profile.Enabled = false; render();
-            if (!status.Text.Contains("Обработка выключена") || status.Text.Contains("начните запись")) throw new Exception("Disabled idle profile invites recording instead of showing off");
+            if (!status.Text.Contains(UiText.Get("Обработка выключена")) || status.Text.Contains(UiText.Get("начните запись"))) throw new Exception("Disabled idle profile invites recording instead of showing off");
             profile.Enabled = true; render();
-            if (!status.Text.Contains("Ожидание звука")) throw new Exception("Enabled idle microphone lost its waiting state");
+            if (!status.Text.Contains(UiText.Get("Ожидание звука"))) throw new Exception("Enabled idle microphone lost its waiting state");
         }
         finally
         {
             settings.Enabled = globalBefore; profile.Enabled = profileBefore; activity[device.Id] = activityBefore; render();
         }
         Console.WriteLine("PASS: disabled global/profile idle status takes precedence over waiting for audio");
+    }
+    private static void TestLanguages(MainWindow window, BindingFlags flags)
+    {
+        var selector = (ComboBox)typeof(MainWindow).GetField("language", flags).GetValue(window);
+        var settings = (Settings)typeof(MainWindow).GetField("settings", flags).GetValue(window);
+        var global = (CheckBox)typeof(MainWindow).GetField("global", flags).GetValue(window);
+        var tray = (NotifyIcon)typeof(MainWindow).GetField("tray", flags).GetValue(window);
+        string path = (string)typeof(MainWindow).GetField("settingsPath", flags).GetValue(window);
+        string original = settings.Language;
+        try
+        {
+            selector.SelectedIndex = 2;
+            if (global.Text != "Process all microphones" || tray.ContextMenuStrip.Items["TraySettings"].Text != "Settings" || Settings.Load(path).Language != "en") throw new Exception("English did not apply instantly to the window, tray and persisted preference");
+            var bound = (Dictionary<Control, string>)typeof(MainWindow).GetField("originalTexts", flags).GetValue(window);
+            foreach (var pair in bound) if (Regex.IsMatch(pair.Key.Text, @"\p{IsCyrillic}")) throw new Exception("Untranslated English interface text: " + pair.Key.Text);
+            if (UiText.Message("Windows не подтвердил работу эффекта\nНовое подключение отменено") != "Windows did not confirm that noise reduction is working\nThe new connection was rolled back") throw new Exception("Integration error and rollback message were not localized");
+            selector.SelectedIndex = 1;
+            if (global.Text != "Обработка всех микрофонов" || tray.ContextMenuStrip.Items["TraySettings"].Text != "Настройки" || Settings.Load(path).Language != "ru") throw new Exception("Russian did not apply instantly or persist");
+            selector.SelectedIndex = 0;
+            if (Settings.Load(path).Language != "system" || UiText.EffectiveLanguage != LanguagePreference.Resolve("system", CultureInfo.CurrentUICulture.Name)) throw new Exception("System language did not retain the system preference");
+        }
+        finally { settings.Language = original; typeof(MainWindow).GetMethod("ApplyLanguage", flags).Invoke(window, null); }
+        Console.WriteLine("PASS: live English/Russian/System selection, window/tray/error translations and persisted locale");
+    }
+    private static void TestAdvanced(MainWindow window, BindingFlags flags)
+    {
+        var toggle = (Button)typeof(MainWindow).GetField("advanced", flags).GetValue(window);
+        var panel = (Panel)typeof(MainWindow).GetField("advancedPanel", flags).GetValue(window);
+        if (panel.Visible) throw new Exception("Advanced settings should start collapsed");
+        var list = (ListBox)typeof(MainWindow).GetField("devices", flags).GetValue(window);
+        var device = list.SelectedItem as DeviceInfo;
+        if (device == null) throw new Exception("A microphone is required for profile reset verification");
+        var settings = (Settings)typeof(MainWindow).GetField("settings", flags).GetValue(window);
+        var profile = settings.For(device.Id);
+        int attenuation = profile.Attenuation;
+        bool global = settings.Enabled, enabled = profile.Enabled;
+        try
+        {
+            toggle.PerformClick();
+            if (!panel.Visible) throw new Exception("Advanced settings did not expand");
+            settings.Enabled = false; profile.Enabled = false; profile.Attenuation = 50;
+            typeof(MainWindow).GetMethod("ResetProfile", flags).Invoke(window, null);
+            if (profile.Attenuation != 24 || settings.Enabled || profile.Enabled) throw new Exception("Profile reset changed global/profile enabled state or failed to restore 24 dB");
+            string diagnostics = (string)typeof(MainWindow).GetMethod("BuildDiagnostics", flags).Invoke(window, null);
+            if (!diagnostics.Contains(device.Id) || !diagnostics.Contains("RNNoise") || !diagnostics.Contains("48 kHz") || !diagnostics.Contains("30 ms")) throw new Exception("Diagnostics omitted selected endpoint or actual engine parameters");
+        }
+        finally
+        {
+            settings.Enabled = global; profile.Enabled = enabled; profile.Attenuation = attenuation;
+            typeof(MainWindow).GetMethod("Persist", flags).Invoke(window, null);
+            typeof(MainWindow).GetMethod("ShowProfile", flags).Invoke(window, null);
+            if (panel.Visible) toggle.PerformClick();
+        }
+        Console.WriteLine("PASS: collapsed advanced settings, selected-profile reset without global changes, real engine diagnostics");
+    }
+    private static void TestTrayProfiles(MainWindow window, BindingFlags flags)
+    {
+        var settings = (Settings)typeof(MainWindow).GetField("settings", flags).GetValue(window);
+        var state = (DesktopState)typeof(MainWindow).GetField("state", flags).GetValue(window);
+        var list = (ListBox)typeof(MainWindow).GetField("devices", flags).GetValue(window);
+        var menu = (ToolStripMenuItem)typeof(MainWindow).GetField("trayDevices", flags).GetValue(window);
+        var snapshots = (Dictionary<string, CaptureSessionSnapshot>)typeof(MainWindow).GetField("usageSnapshots", flags).GetValue(window);
+        var defaults = typeof(MainWindow).GetField("defaultMicrophoneId", flags);
+        var updating = typeof(MainWindow).GetField("updating", flags);
+        var items = new List<object>(); foreach (object item in list.Items) items.Add(item);
+        object selected = list.SelectedItem, defaultBefore = defaults.GetValue(window);
+        bool globalBefore = settings.Enabled;
+        var first = new DeviceInfo { Id = "tray-fixture-default", Name = "Default fixture" };
+        var second = new DeviceInfo { Id = "tray-fixture-busy", Name = "In-use fixture" };
+        var unknown = new DeviceInfo { Id = "tray-fixture-unknown", Name = "Unknown fixture" };
+        Action rebuild = delegate { typeof(MainWindow).GetMethod("RebuildTrayDevices", flags).Invoke(window, null); };
+        list.BeginUpdate(); updating.SetValue(window, true);
+        try
+        {
+            list.Items.Clear(); list.Items.Add(first); list.Items.Add(second); list.Items.Add(unknown); defaults.SetValue(window, first.Id);
+            snapshots.Clear();
+            snapshots[first.Id] = new CaptureSessionSnapshot { Available = true, EndpointId = first.Id };
+            var active = new CaptureSessionSnapshot { Available = true, EndpointId = second.Id };
+            active.Sessions.Add(new CaptureSessionInfo { ApplicationName = "Browser fixture", ProcessId = 42 }); snapshots[second.Id] = active;
+            snapshots[unknown.Id] = new CaptureSessionSnapshot { Available = false, EndpointId = unknown.Id };
+            settings.Enabled = false; settings.For(first.Id).Enabled = true; settings.For(second.Id).Enabled = false;
+            rebuild();
+            if (!menu.DropDownItems[0].Text.Contains(UiText.Get("По умолчанию")) || !menu.DropDownItems[0].Text.Contains(UiText.Get("Не используется")) || !menu.DropDownItems[1].Text.Contains(UiText.Get("Используется")) || !menu.DropDownItems[2].Text.Contains(UiText.Get("Активность неизвестна"))) throw new Exception("Tray confused default microphone, actual capture use and unknown activity");
+            ((ToolStripMenuItem)menu.DropDownItems[1]).PerformClick();
+            if (!settings.Enabled || !settings.For(second.Id).Enabled || !settings.For(first.Id).Enabled) throw new Exception("Tray enabling a microphone did not enable global processing while preserving other profiles");
+            state.Integrating = true; rebuild();
+            foreach (ToolStripItem item in menu.DropDownItems) if (item.Enabled) throw new Exception("Tray profile switch remained enabled during integration");
+        }
+        finally
+        {
+            state.Integrating = false; settings.Enabled = globalBefore;
+            settings.Profiles.RemoveAll(profile => profile.Id == first.Id || profile.Id == second.Id || profile.Id == unknown.Id);
+            list.Items.Clear(); foreach (object item in items) list.Items.Add(item); list.SelectedItem = selected; defaults.SetValue(window, defaultBefore); snapshots.Clear();
+            updating.SetValue(window, false); list.EndUpdate();
+            typeof(MainWindow).GetMethod("SaveTrayProfile", flags).Invoke(window, null);
+        }
+        Console.WriteLine("PASS: tray per-device enable, global resume preserving profiles, actual-use/default/unknown distinction and busy guards");
     }
     private static void TestDefaultMicrophoneTray(MainWindow window, BindingFlags flags)
     {
@@ -212,15 +348,15 @@ internal static class UiTests
             update();
             if (!Object.ReferenceEquals(tray.Icon, theme.TrayIcon(1)) || !tray.Text.Contains(current.Name)) throw new Exception("Selected microphone changed the Windows default microphone badge");
             current.EnhancementsEnabled = false; update();
-            if (!Object.ReferenceEquals(tray.Icon, theme.TrayIcon(2)) || !tray.Text.Contains("Улучшения звука Windows выключены")) throw new Exception("Disabled Windows enhancements did not show a red explanation");
+            if (!Object.ReferenceEquals(tray.Icon, theme.TrayIcon(2)) || !tray.Text.Contains(UiText.Get("Улучшения звука Windows выключены"))) throw new Exception("Disabled Windows enhancements did not show a red explanation");
             settings.For(current.Id).Enabled = false; update();
-            if (!Object.ReferenceEquals(tray.Icon, theme.TrayIcon(0)) || !tray.Text.Contains("выключено")) throw new Exception("Disabled default profile did not show gray and explain why");
+            if (!Object.ReferenceEquals(tray.Icon, theme.TrayIcon(0)) || !tray.Text.Contains(UiText.Get("Шумоподавление выключено"))) throw new Exception("Disabled default profile did not show gray and explain why");
             settings.For(current.Id).Enabled = true; settings.Enabled = false; update();
             if (!Object.ReferenceEquals(tray.Icon, theme.TrayIcon(0))) throw new Exception("Disabled global processing did not show a gray badge");
             settings.Enabled = true; current.EnhancementsEnabled = true; current.Attached = false; update();
-            if (!Object.ReferenceEquals(tray.Icon, theme.TrayIcon(0)) || !tray.Text.Contains("не подключён")) throw new Exception("Unattached default microphone incorrectly showed enabled");
+            if (!Object.ReferenceEquals(tray.Icon, theme.TrayIcon(0)) || !tray.Text.Contains(UiText.Get("Эффект не подключён"))) throw new Exception("Unattached default microphone incorrectly showed enabled");
             defaultField.SetValue(window, null); update();
-            if (!Object.ReferenceEquals(tray.Icon, theme.TrayIcon(0)) || !tray.Text.Contains("не найден")) throw new Exception("Missing default microphone did not show gray");
+            if (!Object.ReferenceEquals(tray.Icon, theme.TrayIcon(0)) || !tray.Text.Contains(UiText.Get("Основной микрофон не найден"))) throw new Exception("Missing default microphone did not show gray");
         }
         finally
         {
@@ -246,16 +382,24 @@ internal static class UiTests
         global.Focus();
         window.SelectNextControl(global, true, true, true, false);
         if (!devices.Focused) throw new Exception("Tab from the global switch did not reach the microphone list");
+        var record = (Button)typeof(MainWindow).GetField("record", flags).GetValue(window);
+        using (var bitmap = new Bitmap(record.Width, record.Height))
+        {
+            record.DrawToBitmap(bitmap, record.ClientRectangle);
+            if (bitmap.GetPixel(0, 0).ToArgb() != Color.White.ToArgb()) throw new Exception("Primary action background fills its rounded corners");
+        }
         Console.WriteLine("PASS: accessible native control names, keyboard tab stops and global-to-microphone focus order");
     }
     private static void Capture(MainWindow window, Size size, string path)
     {
+        size = new Size(size.Width * window.DeviceDpi / 96, size.Height * window.DeviceDpi / 96);
         window.Size = size;
         window.PerformLayout(); Application.DoEvents();
         var controls = Interactive(window);
         foreach (var control in controls)
         {
             Rectangle area = window.RectangleToClient(control.RectangleToScreen(control.ClientRectangle));
+            if (!control.Parent.ClientRectangle.Contains(control.Bounds)) throw new Exception("Control is clipped by its parent: " + control.AccessibleName + " " + control.Bounds + " parent " + control.Parent.ClientRectangle);
             if (!window.ClientRectangle.Contains(area) || area.Width == 0 || area.Height == 0) throw new Exception("Control is clipped at " + size + ": " + control.AccessibleName + " " + area);
         }
         for (int first = 0; first < controls.Count; first++)
@@ -263,7 +407,7 @@ internal static class UiTests
             {
                 Rectangle a = controls[first].RectangleToScreen(controls[first].ClientRectangle);
                 Rectangle b = controls[second].RectangleToScreen(controls[second].ClientRectangle);
-                if (a.IntersectsWith(b)) throw new Exception("Interactive controls overlap at " + size + ": " + controls[first].AccessibleName + " / " + controls[second].AccessibleName);
+                if (a.IntersectsWith(b)) throw new Exception("Interactive controls overlap at " + size + ": " + controls[first].AccessibleName + " " + a + " parent " + controls[first].Parent.Bounds + " / " + controls[second].AccessibleName + " " + b + " parent " + controls[second].Parent.Bounds);
             }
         if (path != null)
         {
@@ -293,28 +437,30 @@ internal static class UiTests
     }
     private static void CaptureTrayFixture(Theme theme, string path)
     {
-        using (var image = new Bitmap(700, 280))
+        int native = theme.TrayIcon(0).Width;
+        int rowHeight = native * 4 + 24;
+        using (var image = new Bitmap(760, 76 + rowHeight * 2))
         using (var graphics = Graphics.FromImage(image))
         {
             graphics.Clear(Color.FromArgb(241, 244, 242));
-            TextRenderer.DrawText(graphics, "Значки трея: 16 px и увеличение 4x", theme.Section, new Point(18, 14), Theme.Ink);
+            TextRenderer.DrawText(graphics, "Tray icons: native " + native + " px and 4x", theme.Section, new Point(18, 14), Theme.Ink);
             string[] names = { "Выключено", "Включено", "Ошибка" };
             for (int state = 0; state < 3; state++) TextRenderer.DrawText(graphics, names[state], theme.Body, new Point(134 + state * 180, 44), Theme.Ink);
             Color[] backgrounds = { Color.White, Color.FromArgb(32, 42, 38) };
             for (int row = 0; row < 2; row++)
             {
-                int top = 72 + row * 94;
-                using (var brush = new SolidBrush(backgrounds[row])) graphics.FillRectangle(brush, 12, top, 676, 86);
+                int top = 72 + row * rowHeight;
+                using (var brush = new SolidBrush(backgrounds[row])) graphics.FillRectangle(brush, 12, top, 736, rowHeight - 8);
                 TextRenderer.DrawText(graphics, row == 0 ? "Светлый" : "Тёмный", theme.Small, new Point(22, top + 33), row == 0 ? Theme.Secondary : Color.White);
                 for (int state = 0; state < 3; state++)
                 {
                     int left = 130 + state * 180;
-                    graphics.DrawIcon(theme.TrayIcon(state), new Rectangle(left, top + 34, 16, 16));
+                    graphics.DrawIcon(theme.TrayIcon(state), new Rectangle(left, top + (rowHeight - native) / 2, native, native));
                     using (var icon = theme.TrayIcon(state).ToBitmap())
                     {
                         graphics.InterpolationMode = InterpolationMode.NearestNeighbor;
                         graphics.PixelOffsetMode = PixelOffsetMode.Half;
-                        graphics.DrawImage(icon, new Rectangle(left + 36, top + 10, 64, 64));
+                        graphics.DrawImage(icon, new Rectangle(left + native + 16, top + 8, native * 4, native * 4));
                     }
                 }
             }

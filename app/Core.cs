@@ -7,6 +7,7 @@ using System.Runtime.Serialization.Json;
 using System.Security.AccessControl;
 using System.Text.RegularExpressions;
 using System.Threading;
+using System.Globalization;
 
 namespace NoiseReduction.Desktop
 {
@@ -22,8 +23,9 @@ namespace NoiseReduction.Desktop
     public sealed class Settings
     {
         [DataMember] public bool Enabled = true;
+        [DataMember] public string Language = "system";
         [DataMember] public List<Profile> Profiles = new List<Profile>();
-        [OnDeserializing] private void Defaults(StreamingContext context) { Enabled = true; Profiles = new List<Profile>(); }
+        [OnDeserializing] private void Defaults(StreamingContext context) { Enabled = true; Language = "system"; Profiles = new List<Profile>(); }
         public Profile For(string id)
         {
             var profile = Profiles.Find(p => p.Id == id);
@@ -40,6 +42,7 @@ namespace NoiseReduction.Desktop
                     var value = (Settings)new DataContractJsonSerializer(typeof(Settings)).ReadObject(stream);
                     if (value == null || value.Profiles == null) return new Settings();
                     value.Profiles.RemoveAll(p => p == null || String.IsNullOrEmpty(p.Id));
+                    value.Language = LanguagePreference.Normalize(value.Language);
                     return value;
                 }
             }
@@ -53,6 +56,21 @@ namespace NoiseReduction.Desktop
             using (var stream = new FileStream(temporary, FileMode.Create, FileAccess.Write, FileShare.None))
             { new DataContractJsonSerializer(typeof(Settings)).WriteObject(stream, this); stream.Flush(true); }
             if (File.Exists(path)) File.Replace(temporary, path, null); else File.Move(temporary, path);
+        }
+    }
+    public static class LanguagePreference
+    {
+        public static string Normalize(string value)
+        {
+            value = (value ?? "system").Trim().ToLowerInvariant();
+            return value == "ru" || value == "en" ? value : "system";
+        }
+        public static string Resolve(string preference, string systemCulture)
+        {
+            preference = Normalize(preference);
+            if (preference != "system") return preference;
+            try { return CultureInfo.GetCultureInfo(systemCulture ?? "").TwoLetterISOLanguageName == "ru" ? "ru" : "en"; }
+            catch (CultureNotFoundException) { return "en"; }
         }
     }
     public sealed class ControlFile : IDisposable

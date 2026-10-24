@@ -1,0 +1,149 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+
+namespace NoiseReduction.Desktop
+{
+    internal sealed class LanguageOption
+    {
+        internal readonly string Id;
+        internal LanguageOption(string id) { Id = id; }
+        public override string ToString() { return Id == "ru" ? "Русский" : Id == "en" ? "English" : UiText.Get("Как в системе"); }
+    }
+    internal static class UiText
+    {
+        private static readonly string SystemCulture = CultureInfo.CurrentUICulture.Name;
+        internal static string Language = "system";
+        internal static string EffectiveLanguage { get { return LanguagePreference.Resolve(Language, SystemCulture); } }
+        private static readonly Dictionary<string, string> English = new Dictionary<string, string>
+        {
+            { "&Шумоподавление для всех микрофонов", "&Noise reduction for all microphones" },
+            { "Обработка всех микрофонов", "Process all microphones" },
+            { "Шумоподавление для всех микрофонов", "Noise reduction for all microphones" },
+            { "&Микрофоны", "&Microphones" },
+            { "Микрофоны", "Microphones" },
+            { "&Обновить список", "&Refresh list" },
+            { "Обновить", "Refresh" },
+            { "Обновить список микрофонов", "Refresh microphone list" },
+            { "Выберите микрофон", "Select a microphone" },
+            { "Выбранный микрофон", "Selected microphone" },
+            { "Состояние обработки", "Processing status" },
+            { "О&брабатывать этот микрофон", "&Process this microphone" },
+            { "Обрабатывать выбранный микрофон", "Process the selected microphone" },
+            { "Сила подавления", "Noise reduction strength" },
+            { "Сила подавления в децибелах", "Noise attenuation in decibels" },
+            { "Мягче", "Gentler" },
+            { "Сильнее", "Stronger" },
+            { "Сравните на своём голосе", "Compare on your own voice" },
+            { "Одна запись до и после локальной обработки RNNoise", "One recording, before and after local RNNoise processing" },
+            { "Одна запись до и после локальной обработки RNNoise\nЗвук из микрофона не воспроизводится вживую", "One recording, before and after local RNNoise processing\nNo live microphone monitoring" },
+            { "&Записать 5 сек", "R&ecord 5 sec" },
+            { "Д&о", "&Before" },
+            { "&После", "&After" },
+            { "Записать пять секунд для сравнения", "Record five seconds for comparison" },
+            { "Слушать оригинальную запись", "Play the original recording" },
+            { "Слушать обработанную запись", "Play the processed recording" },
+            { "Стоп", "Stop" },
+            { "Остановить воспроизведение", "Stop playback" },
+            { "Подключить", "Connect" },
+            { "Отключить", "Disconnect" },
+            { "Подключить системное шумоподавление", "Connect system noise reduction" },
+            { "Отключить системное шумоподавление", "Disconnect system noise reduction" },
+            { "Подключение и отключение ненадолго\nпрерывают звук Windows", "Connecting or disconnecting briefly\ninterrupts Windows audio" },
+            { "Подключение и отключение ненадолго прерывают звук Windows", "Connecting or disconnecting briefly interrupts Windows audio" },
+            { "Дополнительно", "Advanced" },
+            { "Дополнительные настройки", "Advanced settings" },
+            { "Свернуть дополнительные настройки", "Collapse advanced settings" },
+            { "Развернуть дополнительные настройки", "Expand advanced settings" },
+            { "Сбросить силу до 24 дБ", "Reset strength to 24 dB" },
+            { "RNNoise · формат движка 48 кГц · задержка движка 30 мс", "RNNoise · engine format 48 kHz · engine latency 30 ms" },
+            { "Формат движка: 48 kHz", "Engine format: 48 kHz" },
+            { "Задержка движка: 30 ms", "Engine latency: 30 ms" },
+            { "Скопировать диагностику", "Copy diagnostics" },
+            { "Диагностика", "Diagnostics" },
+            { "Микрофон не выбран", "No microphone selected" },
+            { "Улучшения звука Windows включены", "Windows audio enhancements are on" },
+            { "Запускать при &входе в Windows", "Start when I sign in to &Windows" },
+            { "Запускать при входе в Windows", "Start when I sign in to Windows" },
+            { "Крестик оставляет программу в трее, Выход в меню трея отключает обработку", "Closing keeps the app in the tray, Exit from the tray turns processing off" },
+            { "Общий выключатель сохраняет настройки каждого микрофона", "The global switch preserves each microphone's settings" },
+            { "Максимальное ослабление фонового шума от 0 до 60 дБ", "Maximum background noise attenuation from 0 to 60 dB" },
+            { "Настройки", "Settings" },
+            { "Выход", "Exit" },
+            { "Язык", "Language" },
+            { "Язык интерфейса", "Interface language" },
+            { "Как в системе", "System default" },
+            { "Приостановить обработку", "Pause noise reduction" },
+            { "Возобновить обработку", "Resume noise reduction" },
+            { "Проверка приложений", "Checking applications" },
+            { "Активность неизвестна", "Usage unknown" },
+            { "Используется", "In use" },
+            { "Не используется", "Not in use" },
+            { "По умолчанию", "Default" },
+            { "Приложения", "Applications" },
+            { "дБ", "dB" },
+            { "Дождитесь завершения операции", "Wait for the current operation to finish" },
+            { "Доступные микрофоны не найдены", "No available microphones found" },
+            { "Не удалось обновить микрофоны: ", "Could not refresh microphones: " },
+            { "Основной микрофон не найден", "No default microphone found" },
+            { "Ошибка списка микрофонов", "Could not refresh microphones" },
+            { "Шумоподавление выключено", "Noise reduction is off" },
+            { "Эффект не подключён", "Noise reduction is not connected" },
+            { "Улучшения звука Windows выключены", "Windows audio enhancements are off" },
+            { "Улучшения звука Windows отключены", "Windows audio enhancements are off" },
+            { "Ошибка обработки", "Processing error" },
+            { "Ошибка", "Error" },
+            { "Шумоподавление включено", "Noise reduction is on" },
+            { "Обработка выключена", "Processing is off" },
+            { "Обработка активна", "Processing is active" },
+            { "Ожидание звука, начните запись в приложении", "Waiting for audio, start recording in an app" },
+            { "Ожидание звука", "Waiting for audio" },
+            { "начните запись", "start recording" },
+            { "Подключён к микрофону", "Connected to the microphone" },
+            { "Системная обработка не подключена", "System processing is not connected" },
+            { "Обработка сообщила об ошибке", "The noise reduction engine reported an error" },
+            { "Windows проверяет обработку, звук не сохраняется и не воспроизводится", "Checking processing in Windows, audio is neither saved nor played" },
+            { "Отключение эффекта", "Disconnecting noise reduction" },
+            { "Некорректный ID микрофона", "Invalid microphone ID" },
+            { "Команда не завершена, проверьте сообщение проверки подключения", "The command failed, see the connection check message" },
+            { "Работа модели подтверждена, подключение сохранено", "Model processing verified, connection saved" },
+            { "Эффект отключён", "Noise reduction disconnected" },
+            { "Говорите в выбранный микрофон, запись 5 секунд", "Speak into the selected microphone, recording for 5 seconds" },
+            { "Готово: оригинал и локальная обработка RNNoise, системный эффект здесь не проверяется", "Ready: original and local RNNoise processing, this does not test the system effect" },
+            { "Нужен ID микрофона", "A microphone ID is required" },
+            { "Неизвестная команда", "Unknown command" },
+            { "Микрофон недоступен после восстановления подключения", "The microphone is unavailable after connection recovery" },
+            { "Микрофон недоступен", "The microphone is unavailable" },
+            { "Подключение отменено, не удалось восстановить аудиограф Windows", "Connection rolled back, Windows audio could not be restored" },
+            { "Прежнее подключение сохранено", "The previous connection was preserved" },
+            { "Новое подключение отменено", "The new connection was rolled back" },
+            { "Для сравнения нужны NoiseReduction.Apo.dll и rnnoise.dll рядом с программой", "Comparison requires NoiseReduction.Apo.dll and rnnoise.dll beside the app" },
+            { "Не удалось запустить RNNoise", "Could not start RNNoise" },
+            { "Некорректная задержка движка", "The engine reported an invalid latency" },
+            { "Микрофон не передал запись, проверьте разрешение доступа и занятость устройства", "No audio received, check microphone permission and whether another app is using the device" },
+            { "Не удалось записать выбранный микрофон: ", "Could not record the selected microphone: " },
+            { "Новый control-файл уже содержит данные", "The new control file already contains data" },
+            { "Некорректная длина control-файла, ожидается 64 байта", "Invalid control file size, expected 64 bytes" },
+            { "Некорректный заголовок control-файла", "Invalid control file header" },
+            { "Control-путь содержит ссылку или неподдерживаемый объект", "The control path contains a link or an unsupported object" },
+            { "Не удалось проверить окончательный путь control-файла", "Could not verify the control file's final path" },
+            { "Окончательный control-путь отличается от ожидаемого", "The control file's final path differs from the expected path" },
+            { "Control-файл открыт только для чтения", "The control file is read-only" },
+            { "Сначала включите обработку микрофона в окне программы и повторите подключение", "Enable processing for this microphone in the app, then connect again" },
+            { "Счётчик обработанных моделью кадров не вырос", "The model did not process any new audio frames" },
+            { "Windows не подтвердил работу эффекта", "Windows did not confirm that noise reduction is working" },
+            { "Перезапустите запись в использующем микрофон приложении", "Restart recording in the app that uses the microphone" }
+        };
+        private static readonly List<string> MessageKeys = SortedKeys();
+        private static List<string> SortedKeys()
+        { var keys = new List<string>(English.Keys); keys.Sort((a, b) => b.Length.CompareTo(a.Length)); return keys; }
+        internal static string Get(string source)
+        { string value; return EffectiveLanguage == "en" && English.TryGetValue(source, out value) ? value : source; }
+        internal static string Message(string source)
+        {
+            if (EffectiveLanguage != "en" || source == null) return source;
+            foreach (string key in MessageKeys) source = source.Replace(key, English[key]);
+            return source;
+        }
+    }
+}

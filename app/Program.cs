@@ -20,6 +20,7 @@ namespace NoiseReduction.Desktop
         [STAThread]
         private static int Main(string[] args)
         {
+            UiText.Language = Settings.Load(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NoiseReduction", "settings.json")).Language;
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             if (args.Length > 0 && args[0] != "--tray")
@@ -36,14 +37,14 @@ namespace NoiseReduction.Desktop
                     }
                     return 0;
                 }
-                catch (Exception error) { MessageBox.Show(error.Message, "Noise Reduction", MessageBoxButtons.OK, MessageBoxIcon.Error); return 1; }
+                catch (Exception error) { MessageBox.Show(UiText.Message(error.Message), "Noise Reduction", MessageBoxButtons.OK, MessageBoxIcon.Error); return 1; }
             }
             bool created;
             using (var mutex = new Mutex(true, "Local\\NoiseReduction.Desktop.1", out created))
             {
                 if (!created) { PostMessage(new IntPtr(0xffff), ActivateMessage, IntPtr.Zero, IntPtr.Zero); return 0; }
                 try { Application.Run(new MainWindow(args.Length == 1)); }
-                catch (Exception error) { MessageBox.Show(error.Message, "Noise Reduction", MessageBoxButtons.OK, MessageBoxIcon.Error); return 1; }
+                catch (Exception error) { MessageBox.Show(UiText.Message(error.Message), "Noise Reduction", MessageBoxButtons.OK, MessageBoxIcon.Error); return 1; }
                 finally { mutex.ReleaseMutex(); }
             }
             return 0;
@@ -118,11 +119,14 @@ namespace NoiseReduction.Desktop
         private readonly Theme theme = new Theme();
         private readonly TrayHealth trayHealth = new TrayHealth();
         private readonly ToolTip tips = new ToolTip { AutoPopDelay = 8000 };
+        private readonly Dictionary<Control, string> originalTexts = new Dictionary<Control, string>();
+        private readonly Dictionary<Control, string> originalNames = new Dictionary<Control, string>();
+        private readonly ComboBox language = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 140, AccessibleName = "Язык интерфейса" };
         private readonly NotifyIcon tray = new NotifyIcon();
         private readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
         private readonly ListBox devices = new ListBox();
-        private readonly CheckBox global = new CheckBox { Text = "Шумоподавление включено", AutoSize = true };
-        private readonly CheckBox enabled = new CheckBox { Text = "Обрабатывать этот микрофон", AutoSize = true };
+        private readonly CheckBox global = new FluentToggle { Text = "Шумоподавление включено", AutoSize = true };
+        private readonly CheckBox enabled = new FluentToggle { Text = "Обрабатывать этот микрофон", AutoSize = true };
         private readonly CheckBox startup = new CheckBox { Text = "Запускать при входе в Windows", AutoSize = true };
         private readonly TrackBar attenuation = new TrackBar { Minimum = 0, Maximum = 60, TickFrequency = 10 };
         private readonly Label strength = new Label { AutoSize = true };
@@ -134,6 +138,10 @@ namespace NoiseReduction.Desktop
         private readonly Button record = new Button { Text = "Записать 5 секунд" };
         private readonly Button dry = new Button { Text = "Слушать оригинал", Enabled = false };
         private readonly Button wet = new Button { Text = "Слушать обработку", Enabled = false };
+        private readonly Button advanced = new Button();
+        private readonly SurfacePanel advancedPanel = new SurfacePanel();
+        private readonly Button reset = new Button();
+        private readonly Button copyDiagnostics = new Button();
         private readonly System.Media.SoundPlayer player = new System.Media.SoundPlayer();
         private bool updating;
         private bool exiting;
@@ -143,12 +151,19 @@ namespace NoiseReduction.Desktop
         private DateTime refreshAt;
         private string defaultMicrophoneId;
         private int trayState = -1;
+        private readonly Dictionary<string, CaptureSessionSnapshot> usageSnapshots = new Dictionary<string, CaptureSessionSnapshot>();
+        private ToolStripMenuItem trayMaster, trayDevices;
+        private int menuGeneration;
+        private bool usageQueryPending;
         private DeviceInfo Selected { get { return devices.SelectedItem as DeviceInfo; } }
 
         internal MainWindow(bool hidden)
         {
+            HandleCreated += delegate { WindowAppearance.Apply(Handle); };
             settings = Settings.Load(settingsPath);
+            UiText.Language = settings.Language;
             BuildLayout();
+            RememberTexts(this);
             global.Checked = settings.Enabled;
             using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run")) startup.Checked = key != null && key.GetValue("NoiseReduction") != null;
             global.CheckedChanged += delegate { if (!updating) { settings.Enabled = global.Checked; Persist(); } };
@@ -162,10 +177,27 @@ namespace NoiseReduction.Desktop
             record.Click += delegate { RecordComparison(); };
             dry.Click += delegate { Play("original.wav"); };
             wet.Click += delegate { Play("processed.wav"); };
+            reset.Click += delegate { ResetProfile(); };
+            copyDiagnostics.Click += delegate { Try(delegate { Clipboard.SetText(BuildDiagnostics()); }); };
+            language.SelectedIndexChanged += delegate
+            {
+                if (updating || language.SelectedItem == null) return;
+                settings.Language = ((LanguageOption)language.SelectedItem).Id;
+                ApplyLanguage();
+                Try(delegate { settings.Save(settingsPath); });
+            };
             var menu = new ContextMenuStrip();
-            menu.Items.Add("Настройки", null, delegate { Reveal(); });
-            menu.Items.Add("Выход", null, delegate { if (!busy) { exiting = true; Close(); } else Error("Дождитесь завершения операции"); });
+            menu.ShowItemToolTips = true;
+            menu.Items.Add(new ToolStripMenuItem("Настройки", null, delegate { Reveal(); }) { Name = "TraySettings" });
+            trayMaster = new ToolStripMenuItem();
+            trayMaster.Click += delegate { if (!busy) { settings.Enabled = !settings.Enabled; SaveTrayProfile(); } };
+            menu.Items.Add(trayMaster);
+            trayDevices = new ToolStripMenuItem(); menu.Items.Add(trayDevices);
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(new ToolStripMenuItem("Выход", null, delegate { if (!busy) { exiting = true; Close(); } else Error("Дождитесь завершения операции"); }) { Name = "TrayExit" });
+            menu.Opening += OpenTrayMenu;
             tray.Icon = theme.TrayIcon(0); tray.Text = "Noise Reduction"; tray.ContextMenuStrip = menu; tray.Visible = true;
+            ApplyLanguage();
             tray.DoubleClick += delegate { Reveal(); };
             FormClosing += delegate(object sender, FormClosingEventArgs e)
             {
@@ -183,10 +215,13 @@ namespace NoiseReduction.Desktop
         }
         private void BuildLayout()
         {
+            SuspendLayout();
+            AutoScaleDimensions = new SizeF(96, 96);
+            AutoScaleMode = AutoScaleMode.Dpi;
             Text = "Noise Reduction";
             Font = theme.Body;
             ForeColor = Theme.Ink;
-            BackColor = Color.White;
+            BackColor = Theme.Sidebar;
             Icon = theme.AppIcon;
             Size = new Size(860, 650);
             MinimumSize = new Size(760, 600);
@@ -201,167 +236,194 @@ namespace NoiseReduction.Desktop
             var header = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty, TabIndex = 0 };
             header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
             header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
-            var title = Label("Noise Reduction", theme.Title, Theme.Ink);
-            title.Dock = DockStyle.Fill;
-            header.Controls.Add(title, 0, 0);
-            global.Text = "&Шумоподавление для всех микрофонов";
-            global.Anchor = AnchorStyles.Right | AnchorStyles.Top;
-            global.Margin = new Padding(0, 9, 0, 0);
+            header.Controls.Add(Label("Noise Reduction", theme.Title, Theme.Ink), 0, 0);
+            global.Text = "Обработка всех микрофонов";
             global.AccessibleName = "Шумоподавление для всех микрофонов";
+            global.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            global.Margin = new Padding(0, 3, 0, 0);
             global.TabIndex = 0;
             header.Controls.Add(global, 1, 0);
             shell.Controls.Add(header, 0, 0);
 
-            var body = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty, TabIndex = 1 };
-            body.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 232));
-            body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            shell.Controls.Add(body, 0, 1);
-            var sidebar = new TableLayoutPanel { Dock = DockStyle.Fill, BackColor = Theme.Sidebar, Padding = new Padding(12), Margin = new Padding(0, 0, 20, 0), ColumnCount = 1, RowCount = 3, TabIndex = 0 };
-            sidebar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            sidebar.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
-            sidebar.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            sidebar.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-            sidebar.Controls.Add(Label("&Микрофоны", theme.Section, Theme.Ink), 0, 0);
+            var viewport = new Panel { Dock = DockStyle.Fill, AutoScroll = true, Margin = Padding.Empty, TabIndex = 1 };
+            var stack = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, ColumnCount = 1, Margin = Padding.Empty };
+            stack.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            viewport.Controls.Add(stack);
+            shell.Controls.Add(viewport, 0, 1);
+
+            var microphone = new SurfacePanel { TabIndex = 0 };
+            var microphoneLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty };
+            microphoneLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
+            microphoneLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60));
+            microphone.Controls.Add(microphoneLayout);
+            var selector = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty, TabIndex = 0 };
+            selector.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+            selector.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            var selectorHeading = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty, TabIndex = 1 };
+            selectorHeading.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            selectorHeading.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            selectorHeading.Controls.Add(Label("Микрофоны", theme.Section, Theme.Ink), 0, 0);
+            refresh.Text = "Обновить";
+            Theme.Button(refresh, "Обновить список микрофонов", false);
+            refresh.MinimumSize = new Size(62, 26); refresh.Padding = new Padding(5, 0, 5, 0); refresh.Margin = Padding.Empty;
+            refresh.TabIndex = 1;
+            selectorHeading.Controls.Add(refresh, 1, 0);
+            selector.Controls.Add(selectorHeading, 0, 0);
             devices.DisplayMember = "Name";
             devices.Format += delegate(object sender, ListControlConvertEventArgs e) { e.Value = ((DeviceInfo)e.ListItem).Name; };
             devices.FormattingEnabled = true;
             devices.Dock = DockStyle.Fill;
             devices.Margin = Padding.Empty;
             devices.BorderStyle = BorderStyle.None;
-            devices.BackColor = Theme.Sidebar;
+            devices.BackColor = Color.White;
             devices.DrawMode = DrawMode.OwnerDrawFixed;
             devices.ItemHeight = 58;
             devices.IntegralHeight = false;
             devices.AccessibleName = "Микрофоны";
             devices.TabIndex = 0;
             devices.DrawItem += DrawDevice;
-            sidebar.Controls.Add(devices, 0, 1);
-            refresh.Text = "&Обновить список";
-            Theme.Button(refresh, "Обновить список микрофонов", false);
-            refresh.Dock = DockStyle.Fill;
-            refresh.Margin = new Padding(0, 6, 0, 0);
-            refresh.TabIndex = 1;
-            sidebar.Controls.Add(refresh, 0, 2);
-            body.Controls.Add(sidebar, 0, 0);
-
-            var detail = new TableLayoutPanel { Name = "DeviceProfile", Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 8, Margin = Padding.Empty, TabIndex = 1, AutoScroll = true };
-            detail.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            detail.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
-            detail.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            detail.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
-            detail.RowStyles.Add(new RowStyle(SizeType.Absolute, 64));
-            detail.RowStyles.Add(new RowStyle(SizeType.Absolute, 8));
-            detail.RowStyles.Add(new RowStyle(SizeType.Absolute, 88));
-            detail.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            detail.RowStyles.Add(new RowStyle(SizeType.Absolute, 62));
-            body.Controls.Add(detail, 1, 0);
+            selector.Controls.Add(devices, 0, 1);
+            microphoneLayout.Controls.Add(selector, 0, 0);
+            var profile = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = new Padding(18, 0, 0, 0), TabIndex = 1 };
+            profile.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            profile.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+            profile.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            profile.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
             deviceName.Text = "Выберите микрофон";
-            deviceName.Font = theme.Device;
-            deviceName.AutoEllipsis = true;
-            deviceName.Dock = DockStyle.Fill;
-            deviceName.Margin = Padding.Empty;
+            deviceName.Font = theme.Device; deviceName.AutoEllipsis = true; deviceName.Dock = DockStyle.Fill; deviceName.Margin = Padding.Empty;
             deviceName.AccessibleName = "Выбранный микрофон";
-            detail.Controls.Add(deviceName, 0, 0);
-            status.Dock = DockStyle.Fill;
-            status.Font = theme.Small;
-            status.AutoSize = true;
-            status.MinimumSize = new Size(0, 42);
-            status.ForeColor = Theme.Secondary;
-            status.Margin = new Padding(0, 2, 0, 0);
+            profile.Controls.Add(deviceName, 0, 0);
+            status.Dock = DockStyle.Fill; status.Font = theme.Small; status.ForeColor = Theme.Secondary; status.Margin = Padding.Empty;
             status.AccessibleName = "Состояние обработки";
-            detail.Controls.Add(status, 0, 1);
-            enabled.Text = "О&брабатывать этот микрофон";
-            enabled.AccessibleName = "Обрабатывать выбранный микрофон";
-            enabled.Margin = Padding.Empty;
-            enabled.TabIndex = 0;
-            detail.Controls.Add(enabled, 0, 2);
+            profile.Controls.Add(status, 0, 1);
+            enabled.Text = "О&брабатывать этот микрофон"; enabled.AccessibleName = "Обрабатывать выбранный микрофон";
+            enabled.Dock = DockStyle.Fill; enabled.Margin = Padding.Empty; enabled.TabIndex = 0;
+            profile.Controls.Add(enabled, 0, 2);
+            microphoneLayout.Controls.Add(profile, 1, 0);
+            AddSection(stack, microphone, 144);
 
-            var level = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3, Margin = Padding.Empty, TabIndex = 1 };
-            level.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            level.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 70));
-            level.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
-            level.RowStyles.Add(new RowStyle(SizeType.Absolute, 26));
-            level.RowStyles.Add(new RowStyle(SizeType.Absolute, 16));
+            var strengthSurface = new SurfacePanel { TabIndex = 1 };
+            var level = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 3, Margin = Padding.Empty };
+            level.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); level.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 70));
+            level.RowStyles.Add(new RowStyle(SizeType.Absolute, 24)); level.RowStyles.Add(new RowStyle(SizeType.Absolute, 26)); level.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
             level.Controls.Add(Label("Сила подавления", theme.Section, Theme.Ink), 0, 0);
-            strength.Font = theme.Section;
-            strength.TextAlign = ContentAlignment.TopRight;
-            strength.Dock = DockStyle.Fill;
-            strength.Margin = Padding.Empty;
+            strength.Font = theme.Section; strength.TextAlign = ContentAlignment.TopRight; strength.Dock = DockStyle.Fill; strength.Margin = Padding.Empty;
             level.Controls.Add(strength, 1, 0);
-            attenuation.TickStyle = TickStyle.None;
-            attenuation.AutoSize = false;
-            attenuation.Dock = DockStyle.Fill;
-            attenuation.Margin = Padding.Empty;
-            attenuation.AccessibleName = "Сила подавления в децибелах";
-            attenuation.TabIndex = 0;
+            attenuation.TickStyle = TickStyle.None; attenuation.AutoSize = false; attenuation.Dock = DockStyle.Fill; attenuation.Margin = Padding.Empty;
+            attenuation.AccessibleName = "Сила подавления в децибелах"; attenuation.TabIndex = 0;
             level.Controls.Add(attenuation, 0, 1); level.SetColumnSpan(attenuation, 2);
             level.Controls.Add(Label("Мягче", theme.Small, Theme.Secondary), 0, 2);
             var stronger = Label("Сильнее", theme.Small, Theme.Secondary); stronger.Dock = DockStyle.Fill; stronger.TextAlign = ContentAlignment.TopRight;
             level.Controls.Add(stronger, 1, 2);
-            detail.Controls.Add(level, 0, 3);
+            strengthSurface.Controls.Add(level);
+            AddSection(stack, strengthSurface, 106);
 
-            var comparison = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = Padding.Empty, TabIndex = 2 };
-            comparison.RowStyles.Add(new RowStyle(SizeType.Absolute, 22));
-            comparison.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));
-            comparison.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+            var comparisonSurface = new SurfacePanel { TabIndex = 2 };
+            var comparison = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 3, Margin = Padding.Empty };
+            comparison.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            comparison.RowStyles.Add(new RowStyle(SizeType.Absolute, 24)); comparison.RowStyles.Add(new RowStyle(SizeType.Absolute, 24)); comparison.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
             comparison.Controls.Add(Label("Сравните на своём голосе", theme.Section, Theme.Ink), 0, 0);
-            var comparisonHelp = Label("Одна запись до и после локальной обработки RNNoise\nЗвук из микрофона не воспроизводится вживую", theme.Small, Theme.Secondary);
-            comparisonHelp.Dock = DockStyle.Fill;
-            comparison.Controls.Add(comparisonHelp, 0, 1);
+            comparison.Controls.Add(Label("Одна запись до и после локальной обработки RNNoise", theme.Small, Theme.Secondary), 0, 1);
             var playback = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty };
             record.Text = "&Записать 5 сек"; dry.Text = "Д&о"; wet.Text = "&После";
-            Theme.Button(record, "Записать пять секунд для сравнения", true);
-            Theme.Button(dry, "Слушать оригинальную запись", false);
-            Theme.Button(wet, "Слушать обработанную запись", false);
-            var stop = new Button { Text = "Стоп" };
-            Theme.Button(stop, "Остановить воспроизведение", false);
+            Theme.Button(record, "Записать пять секунд для сравнения", true); Theme.Button(dry, "Слушать оригинальную запись", false); Theme.Button(wet, "Слушать обработанную запись", false);
+            var stop = new Button { Text = "Стоп" }; Theme.Button(stop, "Остановить воспроизведение", false);
             record.TabIndex = 0; dry.TabIndex = 1; wet.TabIndex = 2; stop.TabIndex = 3;
             playback.Controls.Add(record); playback.Controls.Add(dry); playback.Controls.Add(wet); playback.Controls.Add(stop);
             stop.Click += delegate { player.Stop(); };
-            comparison.Controls.Add(playback, 0, 2);
-            detail.Controls.Add(comparison, 0, 5);
+            comparison.Controls.Add(playback, 0, 2); comparisonSurface.Controls.Add(comparison);
+            AddSection(stack, comparisonSurface, 128);
 
-            var integration = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty, TabIndex = 3 };
-            integration.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-            integration.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+            advanced.Text = "Дополнительно"; Theme.Button(advanced, "Дополнительные настройки", false); advanced.Dock = DockStyle.Left;
+            advanced.TabIndex = 3;
+            advanced.Click += delegate { advancedPanel.Visible = !advancedPanel.Visible; advanced.AccessibleDescription = UiText.Get(advancedPanel.Visible ? "Свернуть дополнительные настройки" : "Развернуть дополнительные настройки"); };
+            AddSection(stack, advanced, 44);
+            advancedPanel.Visible = false;
+            var advancedLayout = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Margin = Padding.Empty };
+            advancedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42)); advancedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28)); advancedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42)); advancedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
             var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, Margin = Padding.Empty, WrapContents = false };
-            Theme.Button(attach, "Подключить системное шумоподавление", false);
-            Theme.Button(detach, "Отключить системное шумоподавление", false);
-            attach.TabIndex = 0; detach.TabIndex = 1;
-            actions.Controls.Add(attach); actions.Controls.Add(detach);
-            integration.Controls.Add(actions, 0, 0);
-            var interruption = Label("Подключение и отключение ненадолго\nпрерывают звук Windows", theme.Small, Theme.Secondary);
-            interruption.Dock = DockStyle.Fill;
-            integration.Controls.Add(interruption, 0, 1);
-            detail.Controls.Add(integration, 0, 7);
+            Theme.Button(attach, "Подключить системное шумоподавление", false); Theme.Button(detach, "Отключить системное шумоподавление", false);
+            reset.Text = "Сбросить силу до 24 дБ"; Theme.Button(reset, "Сбросить силу до 24 дБ", false);
+            attach.TabIndex = 0; detach.TabIndex = 1; reset.TabIndex = 2;
+            actions.Controls.Add(attach); actions.Controls.Add(detach); actions.Controls.Add(reset);
+            advancedLayout.Controls.Add(actions, 0, 0);
+            advancedLayout.Controls.Add(Label("RNNoise · формат движка 48 кГц · задержка движка 30 мс", theme.Small, Theme.Secondary), 0, 1);
+            copyDiagnostics.Text = "Скопировать диагностику"; Theme.Button(copyDiagnostics, "Скопировать диагностику", false); copyDiagnostics.Dock = DockStyle.Left; copyDiagnostics.TabIndex = 3;
+            advancedLayout.Controls.Add(copyDiagnostics, 0, 2);
+            advancedLayout.Controls.Add(Label("Подключение и отключение ненадолго прерывают звук Windows", theme.Small, Theme.Secondary), 0, 3);
+            advancedPanel.Controls.Add(advancedLayout); advancedPanel.TabIndex = 4;
+            AddSection(stack, advancedPanel, 178);
 
-            var footer = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = new Padding(0, 8, 0, 0), TabIndex = 2 };
-            footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));
-            footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
-            startup.Text = "Запускать при &входе в Windows";
-            startup.AccessibleName = "Запускать при входе в Windows";
-            startup.Margin = Padding.Empty;
-            startup.TabIndex = 0;
+            var footer = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 2, Margin = new Padding(0, 8, 0, 0), TabIndex = 2 };
+            footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize)); footer.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 24)); footer.RowStyles.Add(new RowStyle(SizeType.Absolute, 18));
+            startup.Text = "Запускать при &входе в Windows"; startup.AccessibleName = "Запускать при входе в Windows"; startup.Margin = Padding.Empty; startup.TabIndex = 0;
             footer.Controls.Add(startup, 0, 0);
-            footer.Controls.Add(Label("Крестик оставляет программу в трее, Выход в меню трея отключает обработку", theme.Small, Theme.Secondary), 0, 1);
+            var languageLabel = Label("Язык", theme.Small, Theme.Secondary); languageLabel.Margin = new Padding(0, 4, 8, 0);
+            footer.Controls.Add(languageLabel, 1, 0); language.Margin = Padding.Empty; language.TabIndex = 1; footer.Controls.Add(language, 2, 0);
+            var trayHelp = Label("Крестик оставляет программу в трее, Выход в меню трея отключает обработку", theme.Small, Theme.Secondary);
+            footer.Controls.Add(trayHelp, 0, 1); footer.SetColumnSpan(trayHelp, 3);
             shell.Controls.Add(footer, 0, 2);
             tips.SetToolTip(global, "Общий выключатель сохраняет настройки каждого микрофона");
             tips.SetToolTip(attenuation, "Максимальное ослабление фонового шума от 0 до 60 дБ");
+
+            ResumeLayout(true);
         }
         private static Label Label(string text, Font font, Color color)
         { return new Label { Text = text, Font = font, ForeColor = color, AutoSize = true, Margin = Padding.Empty, TabStop = false }; }
+        private static void AddSection(TableLayoutPanel stack, Control section, int height)
+        {
+            int row = stack.Controls.Count;
+            stack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            section.Dock = DockStyle.Top; section.Height = height - 10; section.Margin = new Padding(0, 0, 0, 10);
+            stack.Controls.Add(section, 0, row);
+        }
         private void DrawDevice(object sender, DrawItemEventArgs e)
         {
             if (e.Index < 0 || e.Index >= devices.Items.Count) return;
             bool selected = (e.State & DrawItemState.Selected) != 0;
             using (var brush = new SolidBrush(selected ? Theme.Selection : Theme.Sidebar)) e.Graphics.FillRectangle(brush, e.Bounds);
-            var area = new Rectangle(e.Bounds.X + 9, e.Bounds.Y + 9, e.Bounds.Width - 18, e.Bounds.Height - 16);
+            int inset = Math.Max(1, 9 * devices.DeviceDpi / 96);
+            var area = Rectangle.Inflate(e.Bounds, -inset, -inset);
             TextRenderer.DrawText(e.Graphics, ((DeviceInfo)devices.Items[e.Index]).Name, theme.Body, area, Theme.Ink, TextFormatFlags.WordBreak | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
             if ((e.State & DrawItemState.Focus) != 0) ControlPaint.DrawFocusRectangle(e.Graphics, Rectangle.Inflate(e.Bounds, -2, -2), Theme.Ink, selected ? Theme.Selection : Theme.Sidebar);
         }
         protected override void WndProc(ref Message message) { if ((uint)message.Msg == Program.ActivateMessage) Reveal(); base.WndProc(ref message); }
         private void Reveal() { Show(); WindowState = FormWindowState.Normal; Activate(); }
-        private void Error(string message) { MessageBox.Show(this, message, "Noise Reduction", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+        private void RememberTexts(Control parent)
+        {
+            foreach (Control control in parent.Controls)
+            {
+                if (control != deviceName && control != status && control != strength && !(control is ComboBox) && !String.IsNullOrEmpty(control.Text)) originalTexts[control] = control.Text;
+                if (control != deviceName && !String.IsNullOrEmpty(control.AccessibleName)) originalNames[control] = control.AccessibleName;
+                RememberTexts(control);
+            }
+        }
+        private void ApplyLanguage()
+        {
+            UiText.Language = settings.Language;
+            bool previous = updating; updating = true;
+            SuspendLayout();
+            try
+            {
+                foreach (var pair in originalTexts) pair.Key.Text = UiText.Get(pair.Value);
+                foreach (var pair in originalNames) pair.Key.AccessibleName = UiText.Get(pair.Value);
+                language.Items.Clear();
+                language.Items.Add(new LanguageOption("system")); language.Items.Add(new LanguageOption("ru")); language.Items.Add(new LanguageOption("en"));
+                language.SelectedIndex = settings.Language == "ru" ? 1 : settings.Language == "en" ? 2 : 0;
+                if (tray.ContextMenuStrip != null)
+                {
+                    tray.ContextMenuStrip.Items["TraySettings"].Text = UiText.Get("Настройки");
+                    tray.ContextMenuStrip.Items["TrayExit"].Text = UiText.Get("Выход");
+                }
+                advanced.AccessibleDescription = UiText.Get(advancedPanel.Visible ? "Свернуть дополнительные настройки" : "Развернуть дополнительные настройки");
+                tips.SetToolTip(global, UiText.Get("Общий выключатель сохраняет настройки каждого микрофона"));
+                tips.SetToolTip(attenuation, UiText.Get("Максимальное ослабление фонового шума от 0 до 60 дБ"));
+            }
+            finally { updating = previous; ResumeLayout(true); }
+            ShowProfile(); UpdateTray(); RebuildTrayDevices();
+        }
+        private void Error(string message) { MessageBox.Show(this, UiText.Message(message), "Noise Reduction", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
         private void Try(Action action) { try { action(); } catch (Exception error) { Error(error.Message); } }
         private void RefreshDevices()
         {
@@ -391,7 +453,7 @@ namespace NoiseReduction.Desktop
                 finally { updating = false; }
                 ShowProfile();
                 UpdateTray();
-                if (devices.Items.Count == 0) status.Text = "Доступные микрофоны не найдены";
+                if (devices.Items.Count == 0) status.Text = UiText.Get("Доступные микрофоны не найдены");
             }
             catch (Exception error) { state.RefreshError = "Не удалось обновить микрофоны: " + error.Message; RenderStatus(); UpdateTray(); }
         }
@@ -400,16 +462,17 @@ namespace NoiseReduction.Desktop
             if (updating) return;
             updating = true;
             var device = Selected;
-            deviceName.Text = device == null ? "Выберите микрофон" : device.Name;
+            deviceName.Text = device == null ? UiText.Get("Выберите микрофон") : device.Name;
             deviceName.AccessibleName = deviceName.Text;
             tips.SetToolTip(deviceName, deviceName.Text);
-            devices.Enabled = global.Enabled = startup.Enabled = !busy;
+            devices.Enabled = global.Enabled = startup.Enabled = language.Enabled = !busy;
+            reset.Enabled = copyDiagnostics.Enabled = device != null && !busy;
             refresh.Enabled = !busy;
             enabled.Enabled = attenuation.Enabled = attach.Enabled = detach.Enabled = record.Enabled = device != null && !busy;
             if (device != null)
             {
                 var profile = settings.For(device.Id); enabled.Checked = profile.Enabled; attenuation.Value = profile.Attenuation;
-                strength.Text = profile.Attenuation + " дБ";
+                strength.Text = profile.Attenuation + " " + UiText.Get("дБ");
                 attach.Enabled = !device.Attached && !busy; detach.Enabled = device.Attached && !busy;
             }
             dry.Enabled = wet.Enabled = !busy && device != null && device.Id == comparisonId;
@@ -420,7 +483,18 @@ namespace NoiseReduction.Desktop
         {
             if (updating || Selected == null) return;
             var profile = settings.For(Selected.Id); profile.Enabled = enabled.Checked; profile.Attenuation = attenuation.Value;
-            strength.Text = profile.Attenuation + " дБ"; Persist();
+            strength.Text = profile.Attenuation + " " + UiText.Get("дБ"); Persist();
+        }
+        private void ResetProfile()
+        {
+            if (Selected == null || busy) return;
+            settings.For(Selected.Id).Attenuation = 24;
+            Persist(); ShowProfile();
+        }
+        private string BuildDiagnostics()
+        {
+            var device = Selected;
+            return UiText.Get("Диагностика") + "\n" + (device == null ? UiText.Get("Микрофон не выбран") : device.Name + "\n" + device.Id) + "\nRNNoise\n" + UiText.Get("Формат движка: 48 kHz") + "\n" + UiText.Get("Задержка движка: 30 ms") + "\n" + UiText.Get(device != null && device.Attached ? "Подключён к микрофону" : "Системная обработка не подключена") + "\n" + UiText.Get(device != null && device.EnhancementsEnabled ? "Улучшения звука Windows включены" : "Улучшения звука Windows отключены");
         }
         private void Persist()
         {
@@ -467,12 +541,70 @@ namespace NoiseReduction.Desktop
                 else { next = 1; reason = "Шумоподавление включено"; }
             }
             if (next != trayState) { tray.Icon = theme.TrayIcon(next); trayState = next; }
-            string text = reason + (current == null ? "" : "\n" + current.Name);
+            string text = UiText.Get(reason) + (current == null ? "" : "\n" + current.Name);
             tray.Text = text.Length > 63 ? text.Substring(0, 62) + "…" : text;
+        }
+        private async void OpenTrayMenu(object sender, CancelEventArgs args)
+        {
+            int generation = ++menuGeneration;
+            var microphones = new List<DeviceInfo>();
+            foreach (DeviceInfo device in devices.Items) microphones.Add(device);
+            usageQueryPending = true; usageSnapshots.Clear(); RebuildTrayDevices();
+            Dictionary<string, CaptureSessionSnapshot> results;
+            try
+            {
+                results = await System.Threading.Tasks.Task.Run(delegate
+                {
+                    var snapshots = new Dictionary<string, CaptureSessionSnapshot>();
+                    foreach (var device in microphones) snapshots[device.Id] = CaptureSessions.TryGetSnapshot(device.Id);
+                    return snapshots;
+                });
+            }
+            catch { results = new Dictionary<string, CaptureSessionSnapshot>(); }
+            if (generation != menuGeneration || IsDisposed) return;
+            usageQueryPending = false;
+            usageSnapshots.Clear(); foreach (var pair in results) usageSnapshots[pair.Key] = pair.Value;
+            if (tray.ContextMenuStrip.Visible) RebuildTrayDevices();
+        }
+        private void RebuildTrayDevices()
+        {
+            if (trayMaster == null || trayDevices == null) return;
+            trayMaster.Text = UiText.Get(settings.Enabled ? "Приостановить обработку" : "Возобновить обработку");
+            trayMaster.Checked = settings.Enabled; trayMaster.Enabled = !busy;
+            trayDevices.Text = UiText.Get("Микрофоны");
+            while (trayDevices.DropDownItems.Count > 0) { var old = trayDevices.DropDownItems[0]; trayDevices.DropDownItems.RemoveAt(0); old.Dispose(); }
+            foreach (DeviceInfo device in devices.Items)
+            {
+                string id = device.Id;
+                CaptureSessionSnapshot snapshot;
+                usageSnapshots.TryGetValue(id, out snapshot);
+                string usage = usageQueryPending ? "Проверка приложений" : snapshot == null || !snapshot.Available ? "Активность неизвестна" : snapshot.Sessions.Count > 0 ? "Используется" : "Не используется";
+                string name = device.Name + (id == defaultMicrophoneId ? " (" + UiText.Get("По умолчанию") + ")" : "") + " · " + UiText.Get(usage);
+                var item = new ToolStripMenuItem(name) { Checked = settings.Enabled && settings.For(id).Enabled, Enabled = !busy, Tag = id };
+                var applications = new List<string>();
+                if (snapshot != null && snapshot.Available) foreach (var session in snapshot.Sessions) if (!applications.Contains(session.ApplicationName)) applications.Add(session.ApplicationName);
+                item.ToolTipText = applications.Count > 0 ? UiText.Get("Приложения") + ": " + String.Join(", ", applications.ToArray()) : UiText.Get(usage);
+                item.Click += delegate
+                {
+                    if (busy) return;
+                    var profile = settings.For(id);
+                    bool turnOn = !(settings.Enabled && profile.Enabled);
+                    profile.Enabled = turnOn;
+                    if (turnOn) settings.Enabled = true;
+                    SaveTrayProfile();
+                };
+                trayDevices.DropDownItems.Add(item);
+            }
+            if (trayDevices.DropDownItems.Count == 0) trayDevices.DropDownItems.Add(new ToolStripMenuItem(UiText.Get("Доступные микрофоны не найдены")) { Enabled = false });
+        }
+        private void SaveTrayProfile()
+        {
+            bool wasUpdating = updating; updating = true; global.Checked = settings.Enabled; updating = wasUpdating;
+            Persist(); ShowProfile(); RebuildTrayDevices();
         }
         private void RenderStatus()
         {
-            if (state.RefreshError != null) { status.Text = state.Status(null); return; }
+            if (state.RefreshError != null) { status.Text = UiText.Message(state.Status(null)); return; }
             if (Selected == null || busy) return;
             ControlFile control;
             if (!controls.TryGetValue(Selected.Id, out control)) return;
@@ -480,7 +612,7 @@ namespace NoiseReduction.Desktop
             var profile = settings.For(Selected.Id);
             string processing = !settings.Enabled || !profile.Enabled ? "Обработка выключена" : active ? "Обработка активна" : "Ожидание звука, начните запись в приложении";
             status.ForeColor = active && settings.Enabled && profile.Enabled ? Theme.Accent : Theme.Secondary;
-            status.Text = (Selected.Attached ? "Подключён к микрофону" : "Системная обработка не подключена") + "\n" + processing + (Selected.EnhancementsEnabled ? "" : "\nУлучшения звука Windows отключены") + (trayHealth.Failed(Selected.Id) ? "\nОбработка сообщила об ошибке" : "");
+            status.Text = UiText.Message((Selected.Attached ? "Подключён к микрофону" : "Системная обработка не подключена") + "\n" + processing + (Selected.EnhancementsEnabled ? "" : "\nУлучшения звука Windows отключены") + (trayHealth.Failed(Selected.Id) ? "\nОбработка сообщила об ошибке" : ""));
         }
         private async void Integrate(bool install)
         {
@@ -489,7 +621,7 @@ namespace NoiseReduction.Desktop
             bool succeeded = false;
             state.Integrating = true;
             ShowProfile();
-            status.Text = install ? "Windows проверяет обработку, звук не сохраняется и не воспроизводится" : "Отключение эффекта";
+            status.Text = UiText.Get(install ? "Windows проверяет обработку, звук не сохраняется и не воспроизводится" : "Отключение эффекта");
             try
             {
                 if (id.IndexOf('"') >= 0) throw new InvalidOperationException("Некорректный ID микрофона");
@@ -507,7 +639,7 @@ namespace NoiseReduction.Desktop
                 state.Integrating = false;
                 ShowProfile();
                 RefreshDevices();
-                if (succeeded) status.Text = install ? "Работа модели подтверждена, подключение сохранено" : "Эффект отключён";
+                if (succeeded) status.Text = UiText.Get(install ? "Работа модели подтверждена, подключение сохранено" : "Эффект отключён");
             }
         }
         private async void RecordComparison()
@@ -522,11 +654,11 @@ namespace NoiseReduction.Desktop
             {
                 Directory.CreateDirectory(directory);
                 ApplyControls(false);
-                status.Text = "Говорите в выбранный микрофон, запись 5 секунд";
+                status.Text = UiText.Get("Говорите в выбранный микрофон, запись 5 секунд");
                 await System.Threading.Tasks.Task.Run(delegate { Comparison.Create(device.Id, directory, profile.Attenuation); });
                 if (recordingDirectory != null) try { Directory.Delete(recordingDirectory, true); } catch (IOException) { }
                 recordingDirectory = directory; comparisonId = device.Id;
-                status.Text = "Готово: оригинал и локальная обработка RNNoise, системный эффект здесь не проверяется";
+                status.Text = UiText.Get("Готово: оригинал и локальная обработка RNNoise, системный эффект здесь не проверяется");
             }
             catch (Exception error) { Error(error.Message); try { Directory.Delete(directory, true); } catch (IOException) { } }
             finally

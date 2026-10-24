@@ -6,6 +6,7 @@ $distPath = Join-Path $repoPath 'dist/setup'
 New-Item -ItemType Directory -Force $buildPath, $distPath | Out-Null
 $payload = @{
     'NoiseReduction.exe' = Join-Path $repoPath 'dist/app/NoiseReduction.exe'
+    'NoiseReduction.exe.config' = Join-Path $repoPath 'dist/app/NoiseReduction.exe.config'
     'NoiseReduction.Apo.dll' = Join-Path $buildPath 'NoiseReduction.Apo.dll'
     'rnnoise.dll' = Join-Path $buildPath 'rnnoise.dll'
 }

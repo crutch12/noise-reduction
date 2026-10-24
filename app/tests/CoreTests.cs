@@ -47,6 +47,16 @@ class CoreTests
             SecurityTests.Run(root);
             string path = Path.Combine(root, "settings.json");
             Settings settings = Settings.Load(path);
+            Check(settings.Language == "system", "new settings follow system UI language");
+            Check(LanguagePreference.Resolve("system", "ru-RU") == "ru" && LanguagePreference.Resolve("system", "en-US") == "en" && LanguagePreference.Resolve("system", "de-DE") == "en", "system language resolves Russian or English fallback");
+            Check(LanguagePreference.Resolve("en", "ru-RU") == "en" && LanguagePreference.Resolve("ru", "en-US") == "ru", "explicit language overrides system UI language");
+            Check(LanguagePreference.Normalize("invalid") == "system" && LanguagePreference.Resolve("system", "invalid-culture") == "en", "invalid language settings fall back safely");
+            settings.Language = "en"; settings.Save(path);
+            Check(Settings.Load(path).Language == "en", "English language selection persists");
+            settings.Language = "ru"; settings.Save(path);
+            Check(Settings.Load(path).Language == "ru", "Russian language selection persists");
+            settings.Language = "system"; settings.Save(path);
+            Check(Settings.Load(path).Language == "system", "system language choice persists without becoming a fixed locale");
             Check(settings.Enabled && settings.For("mic-a").Attenuation == 24, "new profile defaults");
             settings.For("mic-a").Attenuation = 37;
             settings.For("mic-a").Enabled = false;
@@ -60,7 +70,7 @@ class CoreTests
             Check(Settings.Load(path).For("mic-a").Attenuation == 24, "corrupt settings fallback");
             File.WriteAllText(path, "{\"Profiles\":[{\"Id\":\"mic-a\"}]}");
             settings = Settings.Load(path);
-            Check(settings.Enabled && settings.For("mic-a").Enabled && settings.For("mic-a").Attenuation == 24, "missing persisted fields use safe defaults");
+            Check(settings.Enabled && settings.For("mic-a").Enabled && settings.For("mic-a").Attenuation == 24 && settings.Language == "system", "missing persisted fields use safe defaults");
             string guid = "a2345678-1234-1234-1234-123456789abc";
             using (var control = new ControlFile(root, guid))
             {

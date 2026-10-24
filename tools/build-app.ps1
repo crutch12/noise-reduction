@@ -5,11 +5,13 @@ $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
 $output = Join-Path $repoRoot 'dist/app'
 New-Item -ItemType Directory -Force $output | Out-Null
 $sources = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'app') -Filter '*.cs' | ForEach-Object FullName)
-$integration = Join-Path $repoRoot 'platform/Integration.cs'
+$integration = @((Join-Path $repoRoot 'platform/Integration.cs'), (Join-Path $repoRoot 'platform/CaptureSessions.cs'))
 $icon = Join-Path $repoRoot 'app/assets/NoiseReduction.ico'
-if (!(Test-Path -LiteralPath $integration)) { throw 'platform/Integration.cs is required' }
-& $compiler /nologo /target:winexe /platform:x64 /optimize+ "/win32icon:$icon" "/out:$output/NoiseReduction.exe" /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Runtime.Serialization.dll /r:System.ServiceProcess.dll $sources $integration
+$manifest = Join-Path $repoRoot 'app/NoiseReduction.manifest'
+foreach ($source in $integration) { if (!(Test-Path -LiteralPath $source)) { throw "Required platform source is missing: $source" } }
+& $compiler /nologo /target:winexe /platform:x64 /optimize+ "/win32icon:$icon" "/win32manifest:$manifest" "/out:$output/NoiseReduction.exe" /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Runtime.Serialization.dll /r:System.ServiceProcess.dll $sources $integration
 if ($LASTEXITCODE -ne 0) { throw 'App compilation failed' }
+Copy-Item -LiteralPath (Join-Path $repoRoot 'app/NoiseReduction.exe.config') -Destination "$output/NoiseReduction.exe.config" -Force
 foreach ($library in @('NoiseReduction.Apo.dll', 'rnnoise.dll')) {
     $librarySource = Join-Path $repoRoot "build/$library"
     if (Test-Path -LiteralPath $librarySource) { Copy-Item -LiteralPath $librarySource -Destination $output -Force }
@@ -26,8 +28,9 @@ Write-Output "Built $output/NoiseReduction.exe"
 if ($UiTest) {
     $testOutput = Join-Path $repoRoot '.local'
     New-Item -ItemType Directory -Force $testOutput | Out-Null
-    & $compiler /nologo /target:exe /platform:x64 /main:UiTests "/win32icon:$icon" "/out:$testOutput/UiTests.exe" /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Runtime.Serialization.dll /r:System.ServiceProcess.dll $sources $integration (Join-Path $repoRoot 'app/tests/UiTests.cs')
+    & $compiler /nologo /target:exe /platform:x64 /main:UiTests "/win32icon:$icon" "/win32manifest:$manifest" "/out:$testOutput/UiTests.exe" /r:System.Drawing.dll /r:System.Windows.Forms.dll /r:System.Runtime.Serialization.dll /r:System.ServiceProcess.dll $sources $integration (Join-Path $repoRoot 'app/tests/UiTests.cs')
     if ($LASTEXITCODE -ne 0) { throw 'UI test compilation failed' }
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'app/NoiseReduction.exe.config') -Destination "$testOutput/UiTests.exe.config" -Force
     & "$testOutput/UiTests.exe" "$output/NoiseReduction.exe"
     if ($LASTEXITCODE -ne 0) { throw 'UI smoke test failed' }
 }

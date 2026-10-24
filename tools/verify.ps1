@@ -21,6 +21,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Integration test compilation failed' }
     & ./build/IntegrationTests.exe
     if ($LASTEXITCODE -ne 0) { throw 'Registry integration tests failed' }
+    & $compiler /nologo /platform:x64 /warnaserror+ /out:build\CaptureSessionsTests.exe platform\CaptureSessions.cs platform\CaptureSessionsTests.cs
+    if ($LASTEXITCODE -ne 0) { throw 'Capture session test compilation failed' }
+    & ./build/CaptureSessionsTests.exe
+    if ($LASTEXITCODE -ne 0) { throw 'Capture session tests failed' }
     & ./tools/build-app.ps1 -Test -NativeTest -UiTest
     if ($LASTEXITCODE -ne 0) { throw 'Desktop tests failed' }
     & ./tools/build-installer.ps1
