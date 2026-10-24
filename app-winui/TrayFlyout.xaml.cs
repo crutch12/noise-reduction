@@ -14,16 +14,15 @@ using static NoiseReduction.WinUI.MicrophoneText;
 
 namespace NoiseReduction.WinUI
 {
-    // Быстрая панель над треем: у каждого микрофона переключатель и сила
+    // Быстрая панель над треем: общий выключатель и переключатель каждого микрофона
     public sealed partial class TrayFlyout : Window
     {
         private sealed class Row
         {
             internal string Id;
-            internal TextBlock Name, Details, Value;
+            internal TextBlock Name, Details;
             internal Ellipse Dot;
             internal ToggleSwitch Toggle;
-            internal StrengthPresets Presets;
             internal HyperlinkButton Enable;
         }
 
@@ -143,7 +142,6 @@ namespace NoiseReduction.WinUI
                     SettingsLabel.Text = T("Настройки");
                     ToolTipService.SetToolTip(GlobalSwitch, T("Для всех микрофонов, клавиша Ctrl+Alt+N"));
                     Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(SettingsButton, T("Настройки"));
-                    foreach (var row in rows) row.Presets.Localize();
                     renderedLanguage = controller.Language;
                 }
                 bool idle = !controller.Busy;
@@ -165,10 +163,6 @@ namespace NoiseReduction.WinUI
                     row.Dot.Opacity = state == MicrophoneState.Waiting ? 0.5 : 1;
                     row.Toggle.IsOn = controller.ProfileEnabled(row.Id);
                     row.Toggle.IsEnabled = idle;
-                    int value = controller.Attenuation(row.Id);
-                    row.Presets.Update(value, idle && controller.IsEnabled(row.Id));
-                    row.Value.Text = Array.IndexOf(StrengthPresets.Values, value) < 0 ? value + " " + T("дБ") : "";
-                    row.Value.Visibility = row.Value.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
                     Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row.Toggle, device.Name);
                 }
             }
@@ -182,16 +176,14 @@ namespace NoiseReduction.WinUI
                 Id = id,
                 Name = new TextBlock { Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center },
                 Details = new TextBlock { Style = (Style)FlyoutRoot.Resources["FlyoutDetailsStyle"], TextTrimming = TextTrimming.CharacterEllipsis },
-                Value = new TextBlock { Style = (Style)FlyoutRoot.Resources["FlyoutValueStyle"], TextAlignment = TextAlignment.Right, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center },
                 Dot = new Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center },
-                Toggle = new ToggleSwitch { MinWidth = 0, OnContent = "", OffContent = "", Margin = new Thickness(0, 0, -12, 0), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center },
-                Presets = new StrengthPresets(compact: true)
+                Toggle = new ToggleSwitch { MinWidth = 0, OnContent = "", OffContent = "", Margin = new Thickness(0, 0, -12, 0), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center }
             };
-            // одна сетка на микрофон: слева имя и ползунок, справа переключатель и значение на одном крае
+            // одна сетка на микрофон: слева имя и состояние, справа переключатель
             var block = new Grid { ColumnSpacing = 12, RowSpacing = 0 };
             block.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             block.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            for (int index = 0; index < 3; index++) block.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            for (int index = 0; index < 2; index++) block.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             var details = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
             row.Enable = new HyperlinkButton { Padding = new Thickness(4, 0, 4, 0), MinHeight = 0, FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
             details.Children.Add(row.Dot); details.Children.Add(row.Details); details.Children.Add(row.Enable);
@@ -199,10 +191,6 @@ namespace NoiseReduction.WinUI
             block.Children.Add(row.Name);
             Grid.SetRow(details, 1); block.Children.Add(details);
             Grid.SetColumn(row.Toggle, 1); Grid.SetRowSpan(row.Toggle, 2); block.Children.Add(row.Toggle);
-            row.Presets.View.Margin = new Thickness(0, 6, 0, 0);
-            row.Presets.Localize();
-            Grid.SetRow(row.Presets.View, 2); block.Children.Add(row.Presets.View);
-            Grid.SetRow(row.Value, 2); Grid.SetColumn(row.Value, 1); block.Children.Add(row.Value);
             MicrophoneRows.Children.Add(block);
             row.Toggle.Toggled += (_, _) =>
             {
@@ -211,7 +199,6 @@ namespace NoiseReduction.WinUI
                 var device = controller.Devices.FirstOrDefault(value => value.Id == id);
                 if (row.Toggle.IsOn && device != null && !device.Attached) { Dismiss(); _ = controller.IntegrateAsync(id, true); }
             };
-            row.Presets.Selected += value => controller.SetAttenuation(id, value);
             return row;
         }
 
