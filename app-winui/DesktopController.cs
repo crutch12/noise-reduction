@@ -145,7 +145,10 @@ namespace NoiseReduction.WinUI
         public void SetLowCut(string id, bool enabled) { Change(() => Settings.For(id).LowCut = enabled); }
         public bool Economy(string id) => Settings.For(id).Economy;
         public void SetEconomy(string id, bool enabled) { Change(() => Settings.For(id).Economy = enabled); }
-        public void ResetProfile(string id) { SetAttenuation(id, 24); }
+        public void ResetProfile(string id) { Change(() => { var profile = Settings.For(id); profile.Attenuation = 24; profile.LowCut = false; profile.Economy = false; }); }
+        public string WindowTheme => Settings.WindowTheme ?? "system";
+        public string TrayTheme => Settings.TrayTheme ?? "system";
+        public void SetThemes(string window, string tray) { Change(() => { Settings.WindowTheme = window; Settings.TrayTheme = tray; }); }
         public void ToggleMicrophone(string id) { if (devices.Any(device => device.Id == id)) SetProfile(id, !IsEnabled(id)); }
         // до подписки трея новые микрофоны копятся, иначе подключённые до запуска потеряются
         public void AnnounceNewMicrophones()

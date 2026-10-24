@@ -1,5 +1,4 @@
 using System;
-using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -11,43 +10,39 @@ using static NoiseReduction.WinUI.MicrophoneText;
 
 namespace NoiseReduction.WinUI
 {
-    // Карточка микрофона в окне: заголовок с переключателем, внутри сила, проверка и подключение
+    // Карточка микрофона: сверху сила и проверка, редкое спрятано в Дополнительно
     internal sealed class MicrophoneCard
     {
         private readonly DesktopController controller;
-        private readonly Action<Func<System.Threading.Tasks.Task>> run;
         private readonly TextBlock name = new TextBlock { Style = Style("BodyStrongTextBlockStyle"), TextTrimming = TextTrimming.CharacterEllipsis };
         private readonly TextBlock details = new TextBlock { Style = Style("CaptionTextBlockStyle"), TextTrimming = TextTrimming.CharacterEllipsis };
         private readonly Ellipse dot = new Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center };
         private readonly ToggleSwitch toggle = new ToggleSwitch { MinWidth = 0, VerticalAlignment = VerticalAlignment.Center };
-        private readonly TextBlock strengthLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
+        private readonly Button enable = new Button { VerticalAlignment = VerticalAlignment.Center };
+        private readonly TextBlock strengthLabel = new TextBlock { Style = Style("BodyStrongTextBlockStyle"), VerticalAlignment = VerticalAlignment.Center };
         private readonly TextBlock strengthValue = new TextBlock { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = Brush("TextFillColorSecondaryBrush") };
-        private readonly Slider slider = new Slider { Minimum = 0, Maximum = 60, StepFrequency = 1, TickFrequency = 12, TickPlacement = TickPlacement.None, Visibility = Visibility.Collapsed };
         private readonly StrengthPresets presets = new StrengthPresets(true);
-        private readonly ToggleSwitch lowCut = new ToggleSwitch();
-        private readonly ToggleSwitch economy = new ToggleSwitch { Visibility = Visibility.Collapsed };
-        private readonly TextBlock compareLabel = new TextBlock();
+        private readonly Slider slider = new Slider { Minimum = 0, Maximum = 60, StepFrequency = 1, Visibility = Visibility.Collapsed };
+        private readonly TextBlock compareLabel = new TextBlock { Style = Style("BodyStrongTextBlockStyle") };
         private readonly Button record = new Button { MinWidth = 150 }, listen = new Button { MinWidth = 96 };
         private readonly ToggleSwitch listenSwitch = new ToggleSwitch { MinWidth = 0, Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
-        private readonly TextBlock note = new TextBlock { Style = Style("CaptionTextBlockStyle"), Foreground = Brush("TextFillColorSecondaryBrush"), TextWrapping = TextWrapping.Wrap };
-        private readonly TextBlock connection = new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
-        private readonly Button connect = new Button();
-        private readonly Button enable = new Button { VerticalAlignment = VerticalAlignment.Center };
-        private readonly MenuFlyoutItem reset = new MenuFlyoutItem(), diagnostics = new MenuFlyoutItem();
-        private readonly Button more = new Button { Content = new FontIcon { Glyph = "", FontSize = 14 }, Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0), Padding = new Thickness(8, 6, 8, 6) };
         private readonly WaveformView waveform = new WaveformView();
+        private readonly TextBlock note = new TextBlock { Style = Style("CaptionTextBlockStyle"), Foreground = Brush("TextFillColorSecondaryBrush"), TextWrapping = TextWrapping.Wrap };
+        private readonly Button advanced = new Button { Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0), Padding = new Thickness(0, 4, 8, 4) };
+        private readonly TextBlock advancedLabel = new TextBlock();
+        private readonly FontIcon advancedChevron = new FontIcon { Glyph = "", FontSize = 12 };
+        private readonly StackPanel extra = new StackPanel { Spacing = 8, Visibility = Visibility.Collapsed };
+        private readonly ToggleSwitch lowCut = new ToggleSwitch(), economy = new ToggleSwitch { Visibility = Visibility.Collapsed };
+        private readonly Button connect = new Button(), reset = new Button(), diagnostics = new Button();
         private bool updating;
         internal readonly string Id;
         internal readonly Expander View;
 
         internal MicrophoneCard(DesktopController controller, string id, Action<Func<System.Threading.Tasks.Task>> run)
         {
-            this.controller = controller; this.run = run; Id = id;
+            this.controller = controller; Id = id;
             var header = new Grid { ColumnSpacing = 16, Padding = new Thickness(0, 8, 0, 8) };
-            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            foreach (var width in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto }) header.ColumnDefinitions.Add(new ColumnDefinition { Width = width });
             header.Children.Add(new FontIcon { Glyph = "", FontSize = 20, VerticalAlignment = VerticalAlignment.Center });
             var caption = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
             caption.Children.Add(dot); caption.Children.Add(details);
@@ -63,36 +58,48 @@ namespace NoiseReduction.WinUI
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
             record.Style = Style("AccentButtonStyle");
             buttons.Children.Add(record); buttons.Children.Add(listen); buttons.Children.Add(listenSwitch);
-            var connectRow = new Grid { ColumnSpacing = 8 };
-            connectRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            connectRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            connectRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            connectRow.Children.Add(connection);
-            Grid.SetColumn(connect, 1); connectRow.Children.Add(connect);
-            Grid.SetColumn(more, 2); connectRow.Children.Add(more);
-            more.Flyout = new MenuFlyout { Items = { reset, diagnostics } };
+
+            var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            tools.Children.Add(reset); tools.Children.Add(diagnostics); tools.Children.Add(connect);
+            extra.Children.Add(lowCut); extra.Children.Add(economy); extra.Children.Add(tools);
+            var advancedContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            advancedContent.Children.Add(advancedLabel); advancedContent.Children.Add(advancedChevron);
+            advanced.Content = advancedContent;
+            advanced.Click += (_, _) =>
+            {
+                bool open = extra.Visibility != Visibility.Visible;
+                extra.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+                advancedChevron.Glyph = open ? "" : "";
+            };
 
             var body = new StackPanel { Spacing = 8 };
-            body.Children.Add(strengthHead); body.Children.Add(presets.View); body.Children.Add(slider); body.Children.Add(lowCut); body.Children.Add(economy);
+            body.Children.Add(strengthHead); body.Children.Add(presets.View); body.Children.Add(slider);
             body.Children.Add(Divider());
             body.Children.Add(compareLabel); body.Children.Add(buttons); body.Children.Add(waveform.View); body.Children.Add(note);
             body.Children.Add(Divider());
-            body.Children.Add(connectRow);
+            body.Children.Add(advanced); body.Children.Add(extra);
 
             View = new Expander { Header = header, Content = body, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
 
-            toggle.Toggled += (_, _) => { if (!updating) controller.SetProfile(Id, toggle.IsOn); };
+            toggle.Toggled += (_, _) =>
+            {
+                if (updating) return;
+                controller.SetProfile(Id, toggle.IsOn);
+                // включение микрофона сразу встраивает шумоподавление, если его ещё нет
+                var device = Device;
+                if (toggle.IsOn && device != null && !device.Attached) run(() => controller.IntegrateAsync(Id, true));
+            };
             presets.Selected += value => { presets.CustomOpen = false; controller.SetAttenuation(Id, value); };
             presets.CustomClicked += () => { presets.CustomOpen = true; Update(); };
+            slider.ValueChanged += (_, args) => { if (!updating) controller.SetAttenuation(Id, (int)Math.Round(args.NewValue)); };
             lowCut.Toggled += (_, _) => { if (!updating) controller.SetLowCut(Id, lowCut.IsOn); };
             economy.Toggled += (_, _) => { if (!updating) controller.SetEconomy(Id, economy.IsOn); };
-            slider.ValueChanged += (_, args) => { if (!updating) controller.SetAttenuation(Id, (int)Math.Round(args.NewValue)); };
             record.Click += (_, _) => { if (controller.RecordingId == Id) controller.StopRecording(); else run(() => controller.RecordAsync(Id)); };
             listen.Click += (_, _) => controller.TogglePlayback(Id);
             listenSwitch.Toggled += (_, _) => { if (!updating) controller.SetListenProcessed(listenSwitch.IsOn); };
-            connect.Click += (_, _) => { var device = Device; if (device != null) run(() => controller.IntegrateAsync(Id, !device.Attached)); };
+            connect.Click += (_, _) => run(() => controller.IntegrateAsync(Id, false));
             enable.Click += (_, _) => run(() => controller.IntegrateAsync(Id, true));
-            reset.Click += (_, _) => controller.ResetProfile(Id);
+            reset.Click += (_, _) => { presets.CustomOpen = false; controller.ResetProfile(Id); };
             diagnostics.Click += (_, _) => { var data = new DataPackage(); data.SetText(controller.BuildDiagnostics(Id)); Clipboard.SetContent(data); };
         }
 
@@ -103,22 +110,30 @@ namespace NoiseReduction.WinUI
 
         internal void Localize()
         {
-            Label(toggle);
+            Label(toggle); Label(lowCut); Label(economy);
             strengthLabel.Text = T("Сила подавления");
             presets.Localize();
+            compareLabel.Text = T("Проверка на своём голосе");
+            listenSwitch.OnContent = T("Обработано");
+            listenSwitch.OffContent = T("Оригинал");
+            advancedLabel.Text = T("Дополнительно");
             lowCut.Header = T("Срезать низкий гул");
-            Label(lowCut);
             economy.Header = T("Экономный режим");
-            Label(economy);
-            ToolTipService.SetToolTip(lowCut, T("Убирает гудение сети, вентиляторов и стола ниже 80 Гц"));
-            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(slider, T("Сила подавления в децибелах"));
-            compareLabel.Text = T("Сравните на своём голосе");
-            listenSwitch.OnContent = T("С шумодавом");
-            listenSwitch.OffContent = T("Без шумодава");
-            reset.Text = T("Сбросить силу до 24 дБ");
-            diagnostics.Text = T("Скопировать диагностику");
-            ToolTipService.SetToolTip(more, T("Ещё"));
-            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(more, T("Ещё"));
+            reset.Content = T("Сбросить настройки");
+            diagnostics.Content = T("Скопировать диагностику");
+            Tip(enable, "Звук Windows прервётся на пару секунд");
+            Tip(slider, "Сила в децибелах");
+            Tip(listenSwitch, "Переключение на ходу");
+            Tip(lowCut, "Гул ниже 80 Гц: сеть, вентиляторы");
+            Tip(economy, "Каналы обрабатываются вместе, нагрузка ниже");
+            Tip(connect, "Шумоподавление перестанет работать в программах, звук Windows прервётся на пару секунд");
+            Tip(reset, "Обычная сила, остальное выключено");
+        }
+
+        private static void Tip(FrameworkElement control, string text)
+        {
+            ToolTipService.SetToolTip(control, T(text));
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(control, T(text));
         }
 
         internal void Update()
@@ -133,55 +148,53 @@ namespace NoiseReduction.WinUI
                 name.Text = device.Name;
                 ToolTipService.SetToolTip(name, device.Name);
                 details.Text = Details(controller, device);
+                ToolTipService.SetToolTip(details, details.Text);
                 details.Foreground = Brush(state == MicrophoneState.Error ? "SystemFillColorCriticalBrush" : "TextFillColorSecondaryBrush");
                 dot.Fill = StateBrush(state, View);
                 dot.Opacity = state == MicrophoneState.Waiting ? 0.5 : 1;
                 toggle.IsOn = controller.ProfileEnabled(Id);
                 toggle.IsEnabled = idle;
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(toggle, device.Name);
-                int value = controller.Attenuation(Id);
-                if ((int)slider.Value != value) slider.Value = value;
-                slider.IsEnabled = idle;
-                lowCut.IsOn = controller.LowCut(Id);
-                // ползунок виден в режиме Своё, значение вне пресетов открывает его само
-                if (Array.IndexOf(StrengthPresets.Values, value) < 0) presets.CustomOpen = true;
-                presets.Update(value, idle);
-                slider.Visibility = presets.CustomOpen ? Visibility.Visible : Visibility.Collapsed;
-                // своё значение вне пресетов сразу показываем ползунком
-                lowCut.IsEnabled = idle;
-                // у многоканального массива модель иначе считается на каждом канале
-                economy.Visibility = device.Channels > 1 ? Visibility.Visible : Visibility.Collapsed;
-                economy.IsOn = controller.Economy(Id);
-                economy.IsEnabled = idle;
-                ToolTipService.SetToolTip(economy, string.Format(T("Все {0} канала микрофона обрабатываются вместе, нагрузка ниже примерно в {0} раза"), device.Channels));
-                strengthValue.Text = value + " " + T("дБ");
-                bool recording = controller.RecordingId == Id;
-                UpdateWaveform();
-                var elapsed = DateTime.UtcNow - controller.RecordingStarted;
-                record.IsEnabled = idle || recording;
-                record.Content = recording ? T("Остановить") + " " + (int)elapsed.TotalMinutes + ":" + elapsed.Seconds.ToString("00") : T("Записать");
-                bool ready = controller.CanCompare(Id);
-                bool playing = ready && controller.Playing;
-                listen.IsEnabled = ready;
-                listen.Content = T(playing ? "Стоп" : "Слушать");
-                listenSwitch.IsEnabled = ready;
-                listenSwitch.IsOn = controller.ListenProcessed;
-                string message = controller.Note(Id);
-                note.Text = message == null ? T("Запишите фразу и слушайте, переключая шумодав на ходу") : UiText(message);
-                // переключатель включён, но фильтр не встроен в микрофон, явно просим включить
                 bool enabling = controller.IntegratingId == Id;
                 enable.Visibility = state == MicrophoneState.Detached || enabling ? Visibility.Visible : Visibility.Collapsed;
                 enable.Content = T(enabling ? "Включение…" : "Включить");
                 enable.IsEnabled = idle;
-                ToolTipService.SetToolTip(enable, T("Встроит шумодав в этот микрофон для всех программ, звук прервётся на пару секунд"));
-                connection.Text = T(device.Attached ? "Встроен в звук Windows" : "Не встроен в звук Windows");
-                ToolTipService.SetToolTip(connect, T("Подключение и отключение ненадолго прерывают звук Windows"));
-                connect.Content = T(device.Attached ? "Отключить" : "Включить");
+
+                int value = controller.Attenuation(Id);
+                // значение вне пресетов сразу открывает ползунок
+                if (Array.IndexOf(StrengthPresets.Values, value) < 0) presets.CustomOpen = true;
+                presets.Update(value, idle);
+                if ((int)slider.Value != value) slider.Value = value;
+                slider.IsEnabled = idle;
+                slider.Visibility = presets.CustomOpen ? Visibility.Visible : Visibility.Collapsed;
+                strengthValue.Text = presets.CustomOpen ? value + " " + T("дБ") : "";
+
+                bool recording = controller.RecordingId == Id;
+                var elapsed = DateTime.UtcNow - controller.RecordingStarted;
+                record.IsEnabled = idle || recording;
+                record.Content = recording ? T("Остановить") + " " + (int)elapsed.TotalMinutes + ":" + elapsed.Seconds.ToString("00") : T("Записать");
+                bool ready = controller.CanCompare(Id);
+                listen.IsEnabled = ready;
+                listen.Content = T(ready && controller.Playing ? "Стоп" : "Слушать");
+                listenSwitch.IsEnabled = ready;
+                listenSwitch.IsOn = controller.ListenProcessed;
+                UpdateWaveform();
+                string message = controller.Note(Id);
+                note.Text = message == null ? T("Запишите фразу, затем слушайте и переключайте Оригинал и Обработано") : NoiseReduction.Desktop.UiText.Message(message);
+
+                lowCut.IsOn = controller.LowCut(Id);
+                lowCut.IsEnabled = idle;
+                economy.Visibility = device.Channels > 1 ? Visibility.Visible : Visibility.Collapsed;
+                economy.IsOn = controller.Economy(Id);
+                economy.IsEnabled = idle;
+                connect.Content = T("Отключить от Windows");
+                connect.Visibility = device.Attached ? Visibility.Visible : Visibility.Collapsed;
                 connect.IsEnabled = idle;
                 reset.IsEnabled = idle;
             }
             finally { updating = false; }
         }
+
         private void UpdateWaveform()
         {
             bool recording = controller.RecordingId == Id;
@@ -190,6 +203,5 @@ namespace NoiseReduction.WinUI
             else if (ready) waveform.ShowResult(controller.OriginalPeaks, controller.ProcessedPeaks, controller.ListenProcessed, () => controller.PlaybackProgress);
             else waveform.Hide();
         }
-        private static string UiText(string message) => NoiseReduction.Desktop.UiText.Message(message);
     }
 }

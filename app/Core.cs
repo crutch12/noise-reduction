@@ -28,7 +28,9 @@ namespace NoiseReduction.Desktop
         [DataMember] public string Language = "system";
         [DataMember] public List<Profile> Profiles = new List<Profile>();
         [DataMember] public bool EnableNewMicrophones = true;
-        [OnDeserializing] private void Defaults(StreamingContext context) { Enabled = true; Language = "system"; Profiles = new List<Profile>(); EnableNewMicrophones = true; }
+        [DataMember] public string WindowTheme = "system";
+        [DataMember] public string TrayTheme = "system";
+        [OnDeserializing] private void Defaults(StreamingContext context) { Enabled = true; Language = "system"; Profiles = new List<Profile>(); EnableNewMicrophones = true; WindowTheme = "system"; TrayTheme = "system"; }
         public bool Has(string id) { return Profiles.Exists(p => p.Id == id); }
         public Profile For(string id)
         {

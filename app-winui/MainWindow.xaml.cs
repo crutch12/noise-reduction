@@ -69,11 +69,15 @@ namespace NoiseReduction.WinUI
         {
             UiText.Language = controller.Language;
             Label(MasterSwitch); Label(StartupSwitch); Label(NewMicrophonesSwitch);
-            NewMicrophonesLabel.Text = T("Включать шумодав на новых микрофонах");
-            NewMicrophonesHelp.Text = T("Когда подключите микрофон, предложим встроить шумодав");
-            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(NewMicrophonesSwitch, T("Включать шумодав на новых микрофонах"));
+            NewMicrophonesLabel.Text = T("Включать шумоподавление для новых микрофонов");
+            NewMicrophonesHelp.Text = T("При подключении нового микрофона появится уведомление");
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(NewMicrophonesSwitch, T("Включать шумоподавление для новых микрофонов"));
             GlobalTitle.Text = T("Шумоподавление");
-            GlobalHelp.Text = T("Пауза сохраняет настройки каждого микрофона");
+            GlobalHelp.Text = T("Общий выключатель, настройки микрофонов сохраняются");
+            Tip(MasterSwitch, "Для всех микрофонов, клавиша Ctrl+Alt+N");
+            WindowThemeLabel.Text = T("Тема окна");
+            TrayThemeLabel.Text = T("Тема панели трея");
+            FillThemes(WindowThemePicker); FillThemes(TrayThemePicker);
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(MasterSwitch, T("Шумоподавление"));
             MicrophonesHeading.Text = T("Микрофоны");
             ToolTipService.SetToolTip(RefreshButton, T("Обновить список микрофонов"));
@@ -81,16 +85,49 @@ namespace NoiseReduction.WinUI
             EmptyText.Text = T("Доступные микрофоны не найдены");
             AppHeading.Text = T("Приложение");
             LanguageLabel.Text = T("Язык");
-            LanguagePicker.Items.Clear();
-            LanguagePicker.Items.Add(new ComboBoxItem { Content = T("Как в системе"), Tag = "system" });
-            LanguagePicker.Items.Add(new ComboBoxItem { Content = "English", Tag = "en" });
-            LanguagePicker.Items.Add(new ComboBoxItem { Content = "Русский", Tag = "ru" });
+            // пункты не пересоздаём, смена языка идёт прямо из этого списка
+            if (LanguagePicker.Items.Count == 0)
+            {
+                LanguagePicker.Items.Add(new ComboBoxItem { Tag = "system" });
+                LanguagePicker.Items.Add(new ComboBoxItem { Content = "English", Tag = "en" });
+                LanguagePicker.Items.Add(new ComboBoxItem { Content = "Русский", Tag = "ru" });
+            }
+            ((ComboBoxItem)LanguagePicker.Items[0]).Content = T("Как в системе");
+            Reselect(LanguagePicker);
             StartupLabel.Text = T("Запускать при входе в Windows");
-            TrayHelp.Text = T("Крестик оставляет программу в трее") + (NativeTray.HotkeyRegistered ? ", Ctrl+Alt+N " + T("ставит шумодав на паузу") : "");
+            TrayHelp.Text = T("Закрытое окно остаётся в трее") + (NativeTray.HotkeyRegistered ? "\n" + T("Ctrl+Alt+N включает и выключает шумоподавление") : "");
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(StartupSwitch, T("Запускать при входе в Windows"));
-            EngineText.Text = T("RNNoise · формат движка 48 кГц · задержка движка 30 мс");
             foreach (var card in cards) card.Localize();
             renderedLanguage = controller.Language;
+        }
+
+        private static void Tip(FrameworkElement control, string text)
+        {
+            ToolTipService.SetToolTip(control, T(text));
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(control, T(text));
+        }
+
+        // пункты создаются один раз, пересоздание во время выбора роняет WinUI
+        private static readonly string[] ThemeIds = { "system", "light", "dark" };
+        private static void FillThemes(ComboBox picker)
+        {
+            if (picker.Items.Count == 0) foreach (string id in ThemeIds) picker.Items.Add(new ComboBoxItem { Tag = id });
+            string[] names = { "Как в системе", "Светлая", "Тёмная" };
+            for (int index = 0; index < names.Length; index++) ((ComboBoxItem)picker.Items[index]).Content = T(names[index]);
+            Reselect(picker);
+        }
+
+        // ComboBox не перерисовывает выбранный пункт после смены текста, выбираем заново
+        private static void Reselect(ComboBox picker)
+        {
+            int index = picker.SelectedIndex;
+            picker.SelectedIndex = -1;
+            picker.SelectedIndex = index;
+        }
+
+        private void ApplyTheme()
+        {
+            if (Content is FrameworkElement root) root.RequestedTheme = controller.WindowTheme == "light" ? ElementTheme.Light : controller.WindowTheme == "dark" ? ElementTheme.Dark : ElementTheme.Default;
         }
 
         private void Render()
@@ -125,6 +162,9 @@ namespace NoiseReduction.WinUI
                 NewMicrophonesSwitch.IsOn = controller.EnableNewMicrophones;
                 NewMicrophonesSwitch.IsEnabled = !controller.Busy;
                 LanguagePicker.SelectedIndex = controller.Language == "en" ? 1 : controller.Language == "ru" ? 2 : 0;
+                WindowThemePicker.SelectedIndex = Math.Max(0, Array.IndexOf(ThemeIds, controller.WindowTheme));
+                TrayThemePicker.SelectedIndex = Math.Max(0, Array.IndexOf(ThemeIds, controller.TrayTheme));
+                ApplyTheme();
             }
             finally { updating = false; }
         }
@@ -138,6 +178,11 @@ namespace NoiseReduction.WinUI
         }
         private void MasterToggled(object sender, RoutedEventArgs args) { if (!updating) controller.SetGlobal(MasterSwitch.IsOn); }
         private void LanguageChanged(object sender, SelectionChangedEventArgs args) { if (!updating && LanguagePicker.SelectedItem is ComboBoxItem item) controller.SetLanguage((string)item.Tag); }
+        private void ThemeChanged(object sender, SelectionChangedEventArgs args)
+        {
+            if (updating || WindowThemePicker.SelectedItem is not ComboBoxItem window || TrayThemePicker.SelectedItem is not ComboBoxItem tray) return;
+            controller.SetThemes((string)window.Tag, (string)tray.Tag);
+        }
         private void StartupToggled(object sender, RoutedEventArgs args) { if (!updating) controller.SetStartup(StartupSwitch.IsOn); }
         private void NewMicrophonesToggled(object sender, RoutedEventArgs args) { if (!updating) controller.SetEnableNewMicrophones(NewMicrophonesSwitch.IsOn); }
         private void RefreshClicked(object sender, RoutedEventArgs args) { controller.Refresh(); _ = controller.ScanUsageAsync(); }

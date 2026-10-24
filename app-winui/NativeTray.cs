@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Microsoft.Win32;
@@ -72,7 +73,7 @@ namespace NoiseReduction.WinUI
             {
                 if (disposed) return;
                 balloonId = device.Id;
-                tray.ShowBalloonTip(10000, T("Новый микрофон"), ShortName(device.Name) + "\n" + T("Нажмите, чтобы включить шумодав"), ToolTipIcon.None);
+                tray.ShowBalloonTip(10000, T("Новый микрофон"), ShortName(device.Name) + "\n" + T("Нажмите, чтобы включить шумоподавление"), ToolTipIcon.None);
             };
             tray.BalloonTipClicked += (_, _) => { if (balloonId != null) _ = controller.IntegrateAsync(balloonId, true); balloonId = null; };
             tray.BalloonTipClosed += (_, _) => balloonId = null;
@@ -106,6 +107,9 @@ namespace NoiseReduction.WinUI
 
         internal static bool HotkeyRegistered { get; private set; }
 
+        // тема трея из настроек, по умолчанию как у панели задач
+        internal static bool TrayLight(DesktopController controller) => controller.TrayTheme == "light" || controller.TrayTheme != "dark" && SystemLight();
+
         internal static bool SystemLight()
         {
             try { using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")) return key?.GetValue("SystemUsesLightTheme") is int value && value != 0; }
@@ -138,7 +142,7 @@ namespace NoiseReduction.WinUI
                 await controller.ScanUsageAsync();
                 if (disposed) return;
                 // меню следует теме панели задач, как у системных значков
-                try { SetPreferredAppMode(SystemLight() ? 3 : 2); FlushMenuThemes(); } catch (Exception) { }
+                try { SetPreferredAppMode(TrayLight(controller) ? 3 : 2); FlushMenuThemes(); } catch (Exception) { }
                 IntPtr menu = CreatePopupMenu();
                 var ids = new List<string>();
                 try
@@ -167,7 +171,12 @@ namespace NoiseReduction.WinUI
                     if (command == CommandGlobal) controller.SetGlobal(!controller.GlobalEnabled);
                     else if (command == CommandSettings) reveal();
                     else if (command == CommandExit) exit();
-                    else if (command >= CommandMicrophone && command - CommandMicrophone < ids.Count) controller.ToggleMicrophone(ids[command - CommandMicrophone]);
+                    else if (command >= CommandMicrophone && command - CommandMicrophone < ids.Count) {
+                        string id = ids[command - CommandMicrophone];
+                        controller.ToggleMicrophone(id);
+                        var device = controller.Devices.FirstOrDefault(value => value.Id == id);
+                        if (controller.IsEnabled(id) && device != null && !device.Attached) _ = controller.IntegrateAsync(id, true);
+                    }
                 }
                 finally { DestroyMenu(menu); }
             }

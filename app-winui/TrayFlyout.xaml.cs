@@ -49,7 +49,8 @@ namespace NoiseReduction.WinUI
         {
             this.controller = controller; this.openSettings = openSettings;
             InitializeComponent();
-            FlyoutRoot.RequestedTheme = NativeTray.SystemLight() ? ElementTheme.Light : ElementTheme.Dark;
+            FlyoutRoot.RequestedTheme = NativeTray.TrayLight(controller) ? ElementTheme.Light : ElementTheme.Dark;
+            FlyoutIcon.Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(new Uri(System.IO.Path.Combine(AppContext.BaseDirectory, "Microphone.png")));
             SystemBackdrop = new ThinAcrylic(true);
             ExtendsContentIntoTitleBar = true;
             var presenter = OverlappedPresenter.Create();
@@ -68,7 +69,7 @@ namespace NoiseReduction.WinUI
             // клик по значку сначала снимает фокус с панели, повторно её не открываем
             if ((DateTime.UtcNow - hiddenAt).TotalMilliseconds < 350) return;
             // как системные панели трея, следуем теме панели задач
-            FlyoutRoot.RequestedTheme = NativeTray.SystemLight() ? ElementTheme.Light : ElementTheme.Dark;
+            FlyoutRoot.RequestedTheme = NativeTray.TrayLight(controller) ? ElementTheme.Light : ElementTheme.Dark;
             Render();
             Place();
             AppWindow.Show();
@@ -139,7 +140,8 @@ namespace NoiseReduction.WinUI
                 {
                     GlobalLabel.Text = T("Шумоподавление");
                     Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(GlobalSwitch, T("Шумоподавление"));
-                    ToolTipService.SetToolTip(SettingsButton, T("Настройки"));
+                    SettingsLabel.Text = T("Настройки");
+                    ToolTipService.SetToolTip(GlobalSwitch, T("Для всех микрофонов, клавиша Ctrl+Alt+N"));
                     Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(SettingsButton, T("Настройки"));
                     foreach (var row in rows) row.Presets.Localize();
                     renderedLanguage = controller.Language;
@@ -157,6 +159,7 @@ namespace NoiseReduction.WinUI
                     bool enabling = controller.IntegratingId == row.Id;
                     row.Enable.Visibility = state == MicrophoneState.Detached || enabling ? Visibility.Visible : Visibility.Collapsed;
                     row.Enable.Content = T(enabling ? "Включение…" : "Включить");
+                    ToolTipService.SetToolTip(row.Enable, T("Звук Windows прервётся на пару секунд"));
                     row.Enable.IsEnabled = idle;
                     row.Dot.Fill = StateBrush(state, FlyoutRoot);
                     row.Dot.Opacity = state == MicrophoneState.Waiting ? 0.5 : 1;
@@ -182,7 +185,7 @@ namespace NoiseReduction.WinUI
                 Value = new TextBlock { Style = (Style)FlyoutRoot.Resources["FlyoutValueStyle"], TextAlignment = TextAlignment.Right, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center },
                 Dot = new Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center },
                 Toggle = new ToggleSwitch { MinWidth = 0, OnContent = "", OffContent = "", Margin = new Thickness(0, 0, -12, 0), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center },
-                Presets = new StrengthPresets()
+                Presets = new StrengthPresets(compact: true)
             };
             // одна сетка на микрофон: слева имя и ползунок, справа переключатель и значение на одном крае
             var block = new Grid { ColumnSpacing = 12, RowSpacing = 0 };
@@ -196,12 +199,18 @@ namespace NoiseReduction.WinUI
             block.Children.Add(row.Name);
             Grid.SetRow(details, 1); block.Children.Add(details);
             Grid.SetColumn(row.Toggle, 1); Grid.SetRowSpan(row.Toggle, 2); block.Children.Add(row.Toggle);
-            row.Presets.View.Margin = new Thickness(0, 8, 0, 0);
+            row.Presets.View.Margin = new Thickness(0, 6, 0, 0);
             row.Presets.Localize();
             Grid.SetRow(row.Presets.View, 2); block.Children.Add(row.Presets.View);
             Grid.SetRow(row.Value, 2); Grid.SetColumn(row.Value, 1); block.Children.Add(row.Value);
             MicrophoneRows.Children.Add(block);
-            row.Toggle.Toggled += (_, _) => { if (!updating) controller.SetProfile(id, row.Toggle.IsOn); };
+            row.Toggle.Toggled += (_, _) =>
+            {
+                if (updating) return;
+                controller.SetProfile(id, row.Toggle.IsOn);
+                var device = controller.Devices.FirstOrDefault(value => value.Id == id);
+                if (row.Toggle.IsOn && device != null && !device.Attached) { Dismiss(); _ = controller.IntegrateAsync(id, true); }
+            };
             row.Presets.Selected += value => controller.SetAttenuation(id, value);
             return row;
         }

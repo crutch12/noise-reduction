@@ -20,12 +20,14 @@ namespace NoiseReduction.WinUI
         internal bool CustomOpen;
 
         // withCustom добавляет кнопку Своё для точной настройки, в панели трея её нет
-        internal StrengthPresets(bool withCustom = false)
+        internal StrengthPresets(bool withCustom = false, bool compact = false)
         {
             for (int index = 0; index < buttons.Length; index++)
             {
                 int value = Values[index];
                 var button = new ToggleButton { HorizontalAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(8, 4, 8, 5) };
+                // в панели трея кнопки мельче, чтобы не перевешивали название микрофона
+                if (compact) { button.Padding = new Thickness(6, 1, 6, 2); button.MinHeight = 0; button.Height = 24; button.FontSize = 12; }
                 button.Click += (_, _) => { if (!updating) Selected?.Invoke(value); };
                 View.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 Grid.SetColumn(button, index); View.Children.Add(button);
@@ -40,7 +42,7 @@ namespace NoiseReduction.WinUI
 
         internal void Localize()
         {
-            for (int index = 0; index < buttons.Length; index++) buttons[index].Content = T(Names[index]);
+            for (int index = 0; index < buttons.Length; index++) { buttons[index].Content = T(Names[index]); ToolTipService.SetToolTip(buttons[index], Values[index] + " " + T("дБ")); }
             if (custom != null) custom.Content = T("Своё");
         }
 
