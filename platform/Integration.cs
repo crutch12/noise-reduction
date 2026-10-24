@@ -26,7 +26,7 @@ namespace NoiseReduction.Platform {
   public static string ControlRoot { get { return Path.Combine(DataRoot, "Endpoints"); } }
   public sealed class OperationLease : IDisposable {
    readonly Mutex mutex;
-   public OperationLease() { mutex=new Mutex(false,@"Global\NoiseReduction.Integration"); try { if(!mutex.WaitOne(0)) { mutex.Dispose(); throw new InvalidOperationException("Another NoiseReduction integration operation is running"); } } catch(AbandonedMutexException) { } }
+   public OperationLease() { mutex=new Mutex(false,@"Global\NoiseReduction.Integration"); try { if(!mutex.WaitOne(10000)) { mutex.Dispose(); throw new InvalidOperationException("Сейчас идёт установка или другое подключение, повторите после него"); } } catch(AbandonedMutexException) { } }
    public void Dispose() { mutex.ReleaseMutex(); mutex.Dispose(); }
   }
   static RegistryKey Machine() { return RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64); }

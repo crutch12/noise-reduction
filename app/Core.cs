@@ -25,11 +25,13 @@ namespace NoiseReduction.Desktop
         [DataMember] public bool Enabled = true;
         [DataMember] public string Language = "system";
         [DataMember] public List<Profile> Profiles = new List<Profile>();
-        [OnDeserializing] private void Defaults(StreamingContext context) { Enabled = true; Language = "system"; Profiles = new List<Profile>(); }
+        [DataMember] public bool EnableNewMicrophones = true;
+        [OnDeserializing] private void Defaults(StreamingContext context) { Enabled = true; Language = "system"; Profiles = new List<Profile>(); EnableNewMicrophones = true; }
+        public bool Has(string id) { return Profiles.Exists(p => p.Id == id); }
         public Profile For(string id)
         {
             var profile = Profiles.Find(p => p.Id == id);
-            if (profile == null) { profile = new Profile { Id = id }; Profiles.Add(profile); }
+            if (profile == null) { profile = new Profile { Id = id, Enabled = EnableNewMicrophones }; Profiles.Add(profile); }
             profile.Attenuation = Math.Max(0, Math.Min(60, profile.Attenuation));
             return profile;
         }

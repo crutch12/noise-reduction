@@ -328,9 +328,10 @@ class Setup {
    if(!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator)) { var elevated=Process.Start(new ProcessStartInfo(Assembly.GetExecutingAssembly().Location,String.Join(" ",args.Select(a=>"\""+a+"\""))) { UseShellExecute=true,Verb="runas" }); elevated.WaitForExit(); return elevated.ExitCode; }
    RequireAdmin();
    if(args.Contains("--uninstall-worker")) { int index=Array.IndexOf(args,"--uninstall-worker"); int pid=Int32.Parse(args[index+1]); try { using(var parent=Process.GetProcessById(pid)) if(!parent.WaitForExit(30000)) throw new IOException("Original setup process did not exit"); } catch(ArgumentException) { } }
-   using(var operation = new Integration.OperationLease()) {
+   // спрашиваем до блокировки, иначе ожидающее окно мешает подключать микрофоны
    bool remove=args.Contains("--uninstall") || args.Contains("--uninstall-worker");
    if(!silent && !args.Contains("--uninstall-worker") && MessageBox.Show(remove?"Remove Noise Reduction and restore microphone effects?":"Install Noise Reduction? Windows audio protections will remain enabled", "Noise Reduction",MessageBoxButtons.OKCancel,MessageBoxIcon.Question)!=DialogResult.OK) return 1;
+   using(var operation = new Integration.OperationLease()) {
    if(args.Contains("--uninstall") && String.Equals(Path.GetFullPath(Assembly.GetExecutingAssembly().Location),Path.Combine(InstallRoot,"NoiseReduction.Setup.exe"),StringComparison.OrdinalIgnoreCase)) {
     string temp=StageUninstallWorker();
     var process=Process.Start(new ProcessStartInfo(temp,"--uninstall-worker "+Process.GetCurrentProcess().Id+" --silent") {UseShellExecute=false,CreateNoWindow=true}); if(process==null) throw new IOException("Cannot launch uninstall worker"); return 0;

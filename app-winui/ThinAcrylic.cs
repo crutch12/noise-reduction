@@ -6,7 +6,7 @@ using Microsoft.UI.Xaml.Media;
 
 namespace NoiseReduction.WinUI
 {
-    // Тонкий акрил прозрачнее стандартного и сильнее показывает размытый фон
+    // Акрил с размытым фоном, плотность подобрана под читаемость текста
     internal sealed class ThinAcrylic : SystemBackdrop
     {
         private readonly bool dense;
@@ -24,7 +24,7 @@ namespace NoiseReduction.WinUI
             controllers[target] = controller;
         }
 
-        private DesktopAcrylicKind KindFor(object content) => dense ? DesktopAcrylicKind.Base : content is FrameworkElement element && element.ActualTheme == ElementTheme.Light ? DesktopAcrylicKind.Default : DesktopAcrylicKind.Thin;
+        private DesktopAcrylicKind KindFor(object content) => dense || content is FrameworkElement element && element.ActualTheme == ElementTheme.Light ? DesktopAcrylicKind.Base : DesktopAcrylicKind.Default;
 
         protected override void OnTargetDisconnected(ICompositionSupportsSystemBackdrop target)
         {

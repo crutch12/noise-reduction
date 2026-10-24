@@ -68,7 +68,10 @@ namespace NoiseReduction.WinUI
         private void Localize()
         {
             UiText.Language = controller.Language;
-            Label(MasterSwitch); Label(StartupSwitch);
+            Label(MasterSwitch); Label(StartupSwitch); Label(NewMicrophonesSwitch);
+            NewMicrophonesLabel.Text = T("Включать шумодав на новых микрофонах");
+            NewMicrophonesHelp.Text = T("Когда подключите микрофон, предложим встроить шумодав");
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(NewMicrophonesSwitch, T("Включать шумодав на новых микрофонах"));
             GlobalTitle.Text = T("Шумоподавление");
             GlobalHelp.Text = T("Пауза сохраняет настройки каждого микрофона");
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(MasterSwitch, T("Шумоподавление"));
@@ -119,6 +122,8 @@ namespace NoiseReduction.WinUI
                 ErrorBar.Message = string.IsNullOrEmpty(error) ? "" : UiText.Message(error);
                 ErrorBar.IsOpen = !string.IsNullOrEmpty(error) && !dismissed;
                 StartupSwitch.IsOn = controller.StartupEnabled;
+                NewMicrophonesSwitch.IsOn = controller.EnableNewMicrophones;
+                NewMicrophonesSwitch.IsEnabled = !controller.Busy;
                 LanguagePicker.SelectedIndex = controller.Language == "en" ? 1 : controller.Language == "ru" ? 2 : 0;
             }
             finally { updating = false; }
@@ -134,6 +139,7 @@ namespace NoiseReduction.WinUI
         private void MasterToggled(object sender, RoutedEventArgs args) { if (!updating) controller.SetGlobal(MasterSwitch.IsOn); }
         private void LanguageChanged(object sender, SelectionChangedEventArgs args) { if (!updating && LanguagePicker.SelectedItem is ComboBoxItem item) controller.SetLanguage((string)item.Tag); }
         private void StartupToggled(object sender, RoutedEventArgs args) { if (!updating) controller.SetStartup(StartupSwitch.IsOn); }
+        private void NewMicrophonesToggled(object sender, RoutedEventArgs args) { if (!updating) controller.SetEnableNewMicrophones(NewMicrophonesSwitch.IsOn); }
         private void RefreshClicked(object sender, RoutedEventArgs args) { controller.Refresh(); _ = controller.ScanUsageAsync(); }
         private void ErrorClosed(InfoBar sender, InfoBarClosedEventArgs args) { if (!updating) { dismissed = true; localError = null; } }
     }

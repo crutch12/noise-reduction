@@ -22,6 +22,7 @@ namespace NoiseReduction.WinUI
         private readonly Icon[] icons = new Icon[6];
         private readonly Action reveal, flyout, exit;
         private bool disposed, menuOpen;
+        private string balloonId;
         [DllImport("user32.dll")] private static extern int GetSystemMetrics(int index);
         [DllImport("user32.dll")] private static extern bool DestroyIcon(IntPtr icon);
         [DllImport("user32.dll")] private static extern IntPtr CreatePopupMenu();
@@ -45,7 +46,18 @@ namespace NoiseReduction.WinUI
                 if (args.Button == MouseButtons.Left) flyout();
                 else if (args.Button == MouseButtons.Right) ShowMenu();
             };
+            // окно настроек забирает фокус, панель от первого клика при этом закрывается сама
+            tray.MouseDoubleClick += (_, args) => { if (args.Button == MouseButtons.Left) reveal(); };
             controller.Changed += Update;
+            controller.NewMicrophone += device =>
+            {
+                if (disposed) return;
+                balloonId = device.Id;
+                tray.ShowBalloonTip(10000, T("Новый микрофон"), ShortName(device.Name) + "\n" + T("Нажмите, чтобы включить шумодав"), ToolTipIcon.None);
+            };
+            tray.BalloonTipClicked += (_, _) => { if (balloonId != null) _ = controller.IntegrateAsync(balloonId, true); balloonId = null; };
+            tray.BalloonTipClosed += (_, _) => balloonId = null;
+            controller.AnnounceNewMicrophones();
             Update();
             Promote();
             _ = System.Threading.Tasks.Task.Delay(3000).ContinueWith(_ => { if (!disposed) Promote(); }, System.Threading.Tasks.TaskScheduler.FromCurrentSynchronizationContext());

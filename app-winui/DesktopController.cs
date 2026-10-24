@@ -44,10 +44,12 @@ namespace NoiseReduction.WinUI
         private readonly DispatcherQueueTimer timer;
         private List<DeviceInfo> devices = new List<DeviceInfo>();
         private DateTime refreshAt;
+        private readonly List<DeviceInfo> pendingNew = new List<DeviceInfo>();
         private string recordingDirectory, comparisonId;
         private bool disposed, scanning;
         internal Settings Settings { get; }
         public event Action Changed;
+        public event Action<DeviceInfo> NewMicrophone;
         public IReadOnlyList<DeviceInfo> Devices => devices.AsReadOnly();
         public string DefaultId { get; private set; }
         public string RecordingId => state.CaptureEndpoint;
@@ -56,6 +58,7 @@ namespace NoiseReduction.WinUI
         public bool GlobalEnabled => Settings.Enabled;
         public bool Busy => !state.CanRefresh;
         public bool StartupEnabled { get; private set; }
+        public bool EnableNewMicrophones => Settings.EnableNewMicrophones;
         public string Language => Settings.Language;
         public string Error { get; private set; }
         public string RefreshError => state.RefreshError;
@@ -118,6 +121,14 @@ namespace NoiseReduction.WinUI
         public void SetAttenuation(string id, int attenuation) { Change(() => Settings.For(id).Attenuation = Math.Clamp(attenuation, 0, 60)); }
         public void ResetProfile(string id) { SetAttenuation(id, 24); }
         public void ToggleMicrophone(string id) { if (devices.Any(device => device.Id == id)) SetProfile(id, !IsEnabled(id)); }
+        // до подписки трея новые микрофоны копятся, иначе подключённые до запуска потеряются
+        public void AnnounceNewMicrophones()
+        {
+            if (NewMicrophone == null) return;
+            var ready = pendingNew.ToList(); pendingNew.Clear();
+            foreach (var device in ready) NewMicrophone(device);
+        }
+        public void SetEnableNewMicrophones(bool enabled) { Change(() => Settings.EnableNewMicrophones = enabled); }
         public void SetLanguage(string language)
         {
             Change(() => { Settings.Language = LanguagePreference.Normalize(language); UiText.Language = Settings.Language; });
@@ -151,6 +162,7 @@ namespace NoiseReduction.WinUI
         {
             if (Busy || disposed) return;
             refreshAt = DateTime.UtcNow.AddSeconds(3);
+            var announce = new List<DeviceInfo>();
             try
             {
                 var next = Integration.EnumerateMicrophones().FindAll(device => device.Active);
@@ -161,12 +173,19 @@ namespace NoiseReduction.WinUI
                         controls.Add(device.Id, new ControlFile(Integration.ControlRoot, device.Guid));
                         samples.Add(device.Id, new Sample());
                     }
+                // при самом первом запуске все микрофоны новые, спрашивать про каждый не нужно
+                bool known = Settings.Profiles.Count > 0;
+                var fresh = next.FindAll(device => !Settings.Has(device.Id));
+                if (fresh.Count > 0) { foreach (var device in fresh) Settings.For(device.Id); Settings.Save(settingsPath); }
+                if (known && Settings.EnableNewMicrophones) announce.AddRange(fresh.FindAll(device => !device.Attached));
                 devices = next; DefaultId = nextDefault;
                 state.SetPresent(devices.Select(device => device.Id));
                 ApplyControls(false);
                 foreach (var pair in controls) samples[pair.Key].Observe(pair.Value);
             }
             catch (Exception error) { state.RefreshError = "Не удалось обновить микрофоны: " + error.Message; }
+            pendingNew.AddRange(announce);
+            AnnounceNewMicrophones();
             if (WatchUsage) _ = ScanUsageAsync();
             Notify();
         }

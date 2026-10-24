@@ -70,7 +70,9 @@ class CoreTests
             Check(Settings.Load(path).For("mic-a").Attenuation == 24, "corrupt settings fallback");
             File.WriteAllText(path, "{\"Profiles\":[{\"Id\":\"mic-a\"}]}");
             settings = Settings.Load(path);
-            Check(settings.Enabled && settings.For("mic-a").Enabled && settings.For("mic-a").Attenuation == 24 && settings.Language == "system", "missing persisted fields use safe defaults");
+            Check(settings.Enabled && settings.For("mic-a").Enabled && settings.For("mic-a").Attenuation == 24 && settings.Language == "system" && settings.EnableNewMicrophones, "missing persisted fields use safe defaults");
+            settings.EnableNewMicrophones = false;
+            Check(settings.Has("mic-a") && !settings.Has("mic-c") && !settings.For("mic-c").Enabled && settings.For("mic-a").Enabled, "new microphones follow the default without touching saved ones");
             string guid = "a2345678-1234-1234-1234-123456789abc";
             using (var control = new ControlFile(root, guid))
             {
