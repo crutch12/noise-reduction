@@ -20,7 +20,7 @@ namespace NoiseReduction.WinUI
         {
             MicrophoneState.Paused => "Пауза",
             MicrophoneState.Off => "Выключен",
-            MicrophoneState.Detached => "Не подключён к Windows",
+            MicrophoneState.Detached => "Не работает в программах",
             MicrophoneState.Error => "Ошибка обработки",
             MicrophoneState.Active => "Работает",
             _ => "Ждёт звука"

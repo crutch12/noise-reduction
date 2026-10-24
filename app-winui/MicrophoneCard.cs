@@ -28,6 +28,7 @@ namespace NoiseReduction.WinUI
         private readonly TextBlock note = new TextBlock { Style = Style("CaptionTextBlockStyle"), Foreground = Brush("TextFillColorSecondaryBrush"), TextWrapping = TextWrapping.Wrap };
         private readonly TextBlock connection = new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
         private readonly Button connect = new Button();
+        private readonly Button enable = new Button { VerticalAlignment = VerticalAlignment.Center };
         private readonly MenuFlyoutItem reset = new MenuFlyoutItem(), diagnostics = new MenuFlyoutItem();
         private readonly Button more = new Button { Content = new FontIcon { Glyph = "", FontSize = 14 }, Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0), Padding = new Thickness(8, 6, 8, 6) };
         private bool updating;
@@ -41,13 +42,16 @@ namespace NoiseReduction.WinUI
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             header.Children.Add(new FontIcon { Glyph = "", FontSize = 20, VerticalAlignment = VerticalAlignment.Center });
             var caption = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
             caption.Children.Add(dot); caption.Children.Add(details);
             var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 2 };
             text.Children.Add(name); text.Children.Add(caption);
             Grid.SetColumn(text, 1); header.Children.Add(text);
-            Grid.SetColumn(toggle, 2); header.Children.Add(toggle);
+            enable.Style = Style("AccentButtonStyle");
+            Grid.SetColumn(enable, 2); header.Children.Add(enable);
+            Grid.SetColumn(toggle, 3); header.Children.Add(toggle);
 
             var strengthHead = new Grid();
             strengthHead.Children.Add(strengthLabel); strengthHead.Children.Add(strengthValue);
@@ -79,6 +83,7 @@ namespace NoiseReduction.WinUI
             after.Click += (_, _) => controller.Play(Id, true);
             stop.Click += (_, _) => controller.Stop();
             connect.Click += (_, _) => { var device = Device; if (device != null) run(() => controller.IntegrateAsync(Id, !device.Attached)); };
+            enable.Click += (_, _) => run(() => controller.IntegrateAsync(Id, true));
             reset.Click += (_, _) => controller.ResetProfile(Id);
             diagnostics.Click += (_, _) => { var data = new DataPackage(); data.SetText(controller.BuildDiagnostics(Id)); Clipboard.SetContent(data); };
         }
@@ -133,9 +138,15 @@ namespace NoiseReduction.WinUI
                 stop.IsEnabled = controller.CanCompare(Id);
                 string message = controller.Note(Id);
                 note.Text = message == null ? T("Одна запись до и после, живой звук не воспроизводится") : UiText(message);
-                connection.Text = T(device.Attached ? "Подключён к звуку Windows" : "Не подключён к звуку Windows");
+                // переключатель включён, но фильтр не встроен в микрофон, явно просим включить
+                bool enabling = controller.IntegratingId == Id;
+                enable.Visibility = state == MicrophoneState.Detached || enabling ? Visibility.Visible : Visibility.Collapsed;
+                enable.Content = T(enabling ? "Включение…" : "Включить");
+                enable.IsEnabled = idle;
+                ToolTipService.SetToolTip(enable, T("Встроит шумодав в этот микрофон для всех программ, звук прервётся на пару секунд"));
+                connection.Text = T(device.Attached ? "Встроен в звук Windows" : "Не встроен в звук Windows");
                 ToolTipService.SetToolTip(connect, T("Подключение и отключение ненадолго прерывают звук Windows"));
-                connect.Content = T(device.Attached ? "Отключить" : "Подключить");
+                connect.Content = T(device.Attached ? "Отключить" : "Включить");
                 connect.IsEnabled = idle;
                 reset.IsEnabled = idle;
             }

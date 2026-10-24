@@ -51,6 +51,7 @@ namespace NoiseReduction.WinUI
         public IReadOnlyList<DeviceInfo> Devices => devices.AsReadOnly();
         public string DefaultId { get; private set; }
         public string RecordingId => state.CaptureEndpoint;
+        public string IntegratingId { get; private set; }
         public bool WatchUsage { get; set; }
         public bool GlobalEnabled => Settings.Enabled;
         public bool Busy => !state.CanRefresh;
@@ -222,7 +223,7 @@ namespace NoiseReduction.WinUI
         {
             if (Busy || disposed || !devices.Any(device => device.Id == id)) return;
             bool succeeded = false;
-            state.Integrating = true; Error = null;
+            state.Integrating = true; IntegratingId = id; Error = null;
             notes[id] = attach ? "Windows проверяет обработку, звук не сохраняется и не воспроизводится" : "Отключение эффекта"; Notify();
             try
             {
@@ -241,7 +242,7 @@ namespace NoiseReduction.WinUI
             catch (Exception error) { if (!disposed) Error = error.Message; }
             finally
             {
-                state.Integrating = false;
+                state.Integrating = false; IntegratingId = null;
                 if (!disposed)
                 {
                     notes.Remove(id);

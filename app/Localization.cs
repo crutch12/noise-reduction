@@ -153,8 +153,12 @@ namespace NoiseReduction.Desktop
             { "Ещё", "More" },
             { "Одна запись до и после, живой звук не воспроизводится", "One recording before and after, no live monitoring" },
             { "Говорите в микрофон, запись 5 секунд", "Speak into the microphone, recording for 5 seconds" },
-            { "Подключён к звуку Windows", "Connected to Windows audio" },
-            { "Не подключён к звуку Windows", "Not connected to Windows audio" },
+            { "Не работает в программах", "Not active in apps" },
+            { "Включить", "Turn on" },
+            { "Включение…", "Turning on…" },
+            { "Встроит шумодав в этот микрофон для всех программ, звук прервётся на пару секунд", "Adds noise reduction to this microphone for all apps, audio pauses for a couple of seconds" },
+            { "Встроен в звук Windows", "Built into Windows audio" },
+            { "Не встроен в звук Windows", "Not built into Windows audio" },
             { "Крестик оставляет программу в трее", "Closing the window keeps the app in the tray" }
         };
         private static readonly List<string> MessageKeys = SortedKeys();
