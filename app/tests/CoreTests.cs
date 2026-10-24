@@ -84,8 +84,10 @@ class CoreTests
                 Check(bytes.Length == 64 && BitConverter.ToUInt32(bytes, 0) == 0x3143524e && BitConverter.ToUInt32(bytes, 8) == 6145 && control.Frames == 1234, "protocol preserves native counters");
                 control.Set(false, 90);
                 Check(BitConverter.ToUInt32(ReadShared(Path.Combine(root, guid + ".bin")), 8) == 15360, "disable and attenuation clamp");
-                control.Set(true, 24, true);
+                control.Set(true, 24, true, false);
                 Check(BitConverter.ToUInt32(ReadShared(Path.Combine(root, guid + ".bin")), 8) == 6147, "low cut uses its own bit");
+                control.Set(true, 24, false, true);
+                Check(BitConverter.ToUInt32(ReadShared(Path.Combine(root, guid + ".bin")), 8) == 6149, "economy uses its own bit");
                 string token = "b2345678-1234-1234-1234-123456789abc";
                 string marker = guid + "." + token + ".notify";
                 Check(ControlFile.NotificationName(marker) == "Global\\NoiseReduction.Changed." + guid + "." + token, "canonical notification name");

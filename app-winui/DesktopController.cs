@@ -143,6 +143,8 @@ namespace NoiseReduction.WinUI
         public void SetAttenuation(string id, int attenuation) { Change(() => Settings.For(id).Attenuation = Math.Clamp(attenuation, 0, 60)); }
         public bool LowCut(string id) => Settings.For(id).LowCut;
         public void SetLowCut(string id, bool enabled) { Change(() => Settings.For(id).LowCut = enabled); }
+        public bool Economy(string id) => Settings.For(id).Economy;
+        public void SetEconomy(string id, bool enabled) { Change(() => Settings.For(id).Economy = enabled); }
         public void ResetProfile(string id) { SetAttenuation(id, 24); }
         public void ToggleMicrophone(string id) { if (devices.Any(device => device.Id == id)) SetProfile(id, !IsEnabled(id)); }
         // до подписки трея новые микрофоны копятся, иначе подключённые до запуска потеряются
@@ -256,7 +258,7 @@ namespace NoiseReduction.WinUI
             foreach (var pair in controls)
             {
                 var profile = Settings.For(pair.Key);
-                try { pair.Value.Set(state.Enabled(pair.Key, Settings.Enabled && !bypass, profile.Enabled), profile.Attenuation, profile.LowCut); }
+                try { pair.Value.Set(state.Enabled(pair.Key, Settings.Enabled && !bypass, profile.Enabled), profile.Attenuation, profile.LowCut, profile.Economy); }
                 catch (Exception error) { if (!bypass) throw; failure ??= error; }
             }
             if (failure != null) throw failure;

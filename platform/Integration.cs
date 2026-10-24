@@ -14,7 +14,7 @@ using Microsoft.Win32;
 using Microsoft.Win32.SafeHandles;
 
 namespace NoiseReduction.Platform {
- public class DeviceInfo { public string Id, Name, Guid; public bool Attached, EnhancementsEnabled, Active; }
+ public class DeviceInfo { public string Id, Name, Guid; public bool Attached, EnhancementsEnabled, Active; public int Channels = 1; }
  public static class Integration {
   public const string Clsid = "{752DE85C-174D-42C2-A92C-631A4F77D08B}";
   public const string CompositeKey = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},15";
@@ -70,7 +70,10 @@ namespace NoiseReduction.Platform {
       try { var key = new PropertyKey(new Guid("a45c254e-df1c-4efd-8020-67d146a850e0"),14); PropVariant value; Marshal.ThrowExceptionForHR(store.GetValue(ref key, out value)); try { if(value.Type == 31) name = Marshal.PtrToStringUni(value.Pointer); } finally { PropVariantClear(ref value); } } finally { Marshal.ReleaseComObject(store); }
       bool attached = false, enabled = true;
       using(var fx = root.OpenSubKey(Fx(id))) if(fx != null) { attached = RegistryEngine.Contains(fx.GetValue(CompositeKey), Clsid) || RegistryEngine.Contains(fx.GetValue(LegacyKey), Clsid); object disabled = fx.GetValue("{1DA5D803-D492-4EDD-8C23-E0C0FFEE7F0E},5"); enabled = disabled == null || Convert.ToInt32(disabled) == 0; }
-      result.Add(new DeviceInfo { Id = id, Guid = guid.Trim('{','}').ToLowerInvariant(), Name = name, Attached = attached, EnhancementsEnabled = enabled, Active = state == 1 });
+      // число каналов из формата устройства, WAVEFORMATEX начинается после 8 байт заголовка
+      int channels = 1;
+      using(var properties = root.OpenSubKey(Capture + "\\" + EndpointGuid(id) + "\\Properties")) if(properties != null) { var format = properties.GetValue("{f19f064d-082c-4e27-bc73-6882a1bb8e4c},0") as byte[]; if(format != null && format.Length >= 12) channels = Math.Max(1, (int)BitConverter.ToUInt16(format, 10)); }
+      result.Add(new DeviceInfo { Id = id, Guid = guid.Trim('{','}').ToLowerInvariant(), Name = name, Attached = attached, EnhancementsEnabled = enabled, Active = state == 1, Channels = channels });
      } finally { Marshal.ReleaseComObject(device); }
     }
    } finally { if(collection != null) Marshal.ReleaseComObject(collection); Marshal.ReleaseComObject(enumerator); }

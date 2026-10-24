@@ -24,6 +24,16 @@ int wmain(int argc, wchar_t** argv) {
             for (int i = 0; i < 48000; ++i) { float y = tone.process(0.5f * std::sin(6.2831853f * 1000 * float(i) / 48000)); if (i > 4800) peak = std::max(peak, std::abs(y)); }
             require(peak > 0.48f && peak < 0.52f, "Low cut changes voice band");
         }
+        {
+            // два канала с голосом и два молчащих: уровень после сведения не падает
+            std::vector<float> frames(480 * 4), mono(480);
+            float energy[4] = {};
+            for (size_t i = 0; i < 480; ++i) frames[i * 4] = frames[i * 4 + 1] = 0.3f * std::sin(float(i) * 0.05f);
+            for (int round = 0; round < 200; ++round) nr::mix_active(frames.data(), 480, 4, energy, mono.data());
+            float peak = 0;
+            for (float x : mono) peak = std::max(peak, std::abs(x));
+            require(peak > 0.29f && peak < 0.31f, "Silent channels lower the mixed voice");
+        }
         std::vector<float> input(48000), whole(input.size()), chunks(input.size());
         for (size_t i = 0; i < input.size(); ++i) input[i] = 0.1f * std::sin(float(i) * 0.03f);
         nr::Processor first(backend.api()), second(backend.api());

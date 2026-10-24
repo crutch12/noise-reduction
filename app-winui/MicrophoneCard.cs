@@ -23,9 +23,9 @@ namespace NoiseReduction.WinUI
         private readonly TextBlock strengthLabel = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
         private readonly TextBlock strengthValue = new TextBlock { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = Brush("TextFillColorSecondaryBrush") };
         private readonly Slider slider = new Slider { Minimum = 0, Maximum = 60, StepFrequency = 1, TickFrequency = 12, TickPlacement = TickPlacement.None, Visibility = Visibility.Collapsed };
-        private readonly StrengthPresets presets = new StrengthPresets();
-        private readonly ToggleSwitch lowCut = new ToggleSwitch { Visibility = Visibility.Collapsed };
-        private readonly HyperlinkButton precise = new HyperlinkButton { Padding = new Thickness(0, 2, 0, 2) };
+        private readonly StrengthPresets presets = new StrengthPresets(true);
+        private readonly ToggleSwitch lowCut = new ToggleSwitch();
+        private readonly ToggleSwitch economy = new ToggleSwitch { Visibility = Visibility.Collapsed };
         private readonly TextBlock compareLabel = new TextBlock();
         private readonly Button record = new Button { MinWidth = 120 }, listen = new Button { MinWidth = 96 };
         private readonly ToggleSwitch listenSwitch = new ToggleSwitch { MinWidth = 0, Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
@@ -74,7 +74,7 @@ namespace NoiseReduction.WinUI
             more.Flyout = new MenuFlyout { Items = { reset, diagnostics } };
 
             var body = new StackPanel { Spacing = 8 };
-            body.Children.Add(strengthHead); body.Children.Add(presets.View); body.Children.Add(precise); body.Children.Add(slider); body.Children.Add(lowCut);
+            body.Children.Add(strengthHead); body.Children.Add(presets.View); body.Children.Add(slider); body.Children.Add(lowCut); body.Children.Add(economy);
             body.Children.Add(Divider());
             body.Children.Add(compareLabel); body.Children.Add(buttons); body.Children.Add(waveform.View); body.Children.Add(note);
             body.Children.Add(Divider());
@@ -83,9 +83,10 @@ namespace NoiseReduction.WinUI
             View = new Expander { Header = header, Content = body, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
 
             toggle.Toggled += (_, _) => { if (!updating) controller.SetProfile(Id, toggle.IsOn); };
-            presets.Selected += value => controller.SetAttenuation(Id, value);
-            precise.Click += (_, _) => slider.Visibility = lowCut.Visibility = slider.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+            presets.Selected += value => { presets.CustomOpen = false; controller.SetAttenuation(Id, value); };
+            presets.CustomClicked += () => { presets.CustomOpen = true; Update(); };
             lowCut.Toggled += (_, _) => { if (!updating) controller.SetLowCut(Id, lowCut.IsOn); };
+            economy.Toggled += (_, _) => { if (!updating) controller.SetEconomy(Id, economy.IsOn); };
             slider.ValueChanged += (_, args) => { if (!updating) controller.SetAttenuation(Id, (int)Math.Round(args.NewValue)); };
             record.Click += (_, _) => { if (controller.RecordingId == Id) controller.StopRecording(); else run(() => controller.RecordAsync(Id)); };
             listen.Click += (_, _) => controller.TogglePlayback(Id);
@@ -106,9 +107,10 @@ namespace NoiseReduction.WinUI
             Label(toggle);
             strengthLabel.Text = T("Сила подавления");
             presets.Localize();
-            precise.Content = T("Точная настройка");
             lowCut.Header = T("Срезать низкий гул");
             Label(lowCut);
+            economy.Header = T("Экономный режим");
+            Label(economy);
             ToolTipService.SetToolTip(lowCut, T("Убирает гудение сети, вентиляторов и стола ниже 80 Гц"));
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(slider, T("Сила подавления в децибелах"));
             compareLabel.Text = T("Сравните на своём голосе");
@@ -141,11 +143,18 @@ namespace NoiseReduction.WinUI
                 int value = controller.Attenuation(Id);
                 if ((int)slider.Value != value) slider.Value = value;
                 slider.IsEnabled = idle;
-                presets.Update(value, idle);
-                // своё значение вне пресетов сразу показываем ползунком
                 lowCut.IsOn = controller.LowCut(Id);
+                // ползунок виден в режиме Своё, значение вне пресетов открывает его само
+                if (Array.IndexOf(StrengthPresets.Values, value) < 0) presets.CustomOpen = true;
+                presets.Update(value, idle);
+                slider.Visibility = presets.CustomOpen ? Visibility.Visible : Visibility.Collapsed;
+                // своё значение вне пресетов сразу показываем ползунком
                 lowCut.IsEnabled = idle;
-                if (Array.IndexOf(StrengthPresets.Values, value) < 0 || lowCut.IsOn) slider.Visibility = lowCut.Visibility = Visibility.Visible;
+                // у многоканального массива модель иначе считается на каждом канале
+                economy.Visibility = device.Channels > 1 ? Visibility.Visible : Visibility.Collapsed;
+                economy.IsOn = controller.Economy(Id);
+                economy.IsEnabled = idle;
+                ToolTipService.SetToolTip(economy, string.Format(T("Все {0} канала микрофона обрабатываются вместе, нагрузка ниже примерно в {0} раза"), device.Channels));
                 strengthValue.Text = value + " " + T("дБ");
                 bool recording = controller.RecordingId == Id;
                 UpdateWaveform();

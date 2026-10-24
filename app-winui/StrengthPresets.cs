@@ -12,11 +12,15 @@ namespace NoiseReduction.WinUI
         internal static readonly int[] Values = { 12, 24, 40 };
         private static readonly string[] Names = { "Мягко", "Обычно", "Сильно" };
         private readonly ToggleButton[] buttons = new ToggleButton[3];
+        private readonly ToggleButton custom;
         private bool updating;
         internal readonly Grid View = new Grid { ColumnSpacing = 4 };
         internal event Action<int> Selected;
+        internal event Action CustomClicked;
+        internal bool CustomOpen;
 
-        internal StrengthPresets()
+        // withCustom добавляет кнопку Своё для точной настройки, в панели трея её нет
+        internal StrengthPresets(bool withCustom = false)
         {
             for (int index = 0; index < buttons.Length; index++)
             {
@@ -27,14 +31,25 @@ namespace NoiseReduction.WinUI
                 Grid.SetColumn(button, index); View.Children.Add(button);
                 buttons[index] = button;
             }
+            if (!withCustom) return;
+            custom = new ToggleButton { HorizontalAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(8, 4, 8, 5) };
+            custom.Click += (_, _) => { if (!updating) CustomClicked?.Invoke(); };
+            View.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            Grid.SetColumn(custom, buttons.Length); View.Children.Add(custom);
         }
 
-        internal void Localize() { for (int index = 0; index < buttons.Length; index++) buttons[index].Content = T(Names[index]); }
+        internal void Localize()
+        {
+            for (int index = 0; index < buttons.Length; index++) buttons[index].Content = T(Names[index]);
+            if (custom != null) custom.Content = T("Своё");
+        }
 
         internal void Update(int value, bool enabled)
         {
             updating = true;
-            for (int index = 0; index < buttons.Length; index++) { buttons[index].IsChecked = Values[index] == value; buttons[index].IsEnabled = enabled; }
+            bool preset = Array.IndexOf(Values, value) >= 0;
+            for (int index = 0; index < buttons.Length; index++) { buttons[index].IsChecked = Values[index] == value && !CustomOpen; buttons[index].IsEnabled = enabled; }
+            if (custom != null) { custom.IsChecked = CustomOpen || !preset; custom.IsEnabled = enabled; }
             updating = false;
         }
     }

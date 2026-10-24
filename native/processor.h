@@ -26,6 +26,24 @@ private:
     float z1_ = 0, z2_ = 0;
 };
 
+// Экономный режим: среднее только по каналам с сигналом, молчащие каналы не снижают уровень голоса
+inline void mix_active(const float* interleaved, size_t frames, size_t channels, float* energy, float* mono) noexcept {
+    float loudest = 0;
+    for (size_t c = 0; c < channels; ++c) {
+        double sum = 0;
+        for (size_t i = 0; i < frames; ++i) { const float x = interleaved[i * channels + c]; sum += x == x ? double(x) * x : 0; }
+        energy[c] = 0.98f * energy[c] + 0.02f * float(frames ? sum / frames : 0);
+        if (energy[c] > loudest) loudest = energy[c];
+    }
+    size_t active = 0;
+    for (size_t c = 0; c < channels; ++c) if (energy[c] >= loudest * 0.01f) ++active;
+    for (size_t i = 0; i < frames; ++i) {
+        float sum = 0;
+        for (size_t c = 0; c < channels; ++c) if (energy[c] >= loudest * 0.01f) sum += interleaved[i * channels + c];
+        mono[i] = active ? sum / float(active) : 0;
+    }
+}
+
 class Processor {
 public:
     static constexpr size_t frame_size = 480;

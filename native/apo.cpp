@@ -206,6 +206,7 @@ public:
                 for (UINT32 i = 0; i < channels_; ++i) fresh.push_back(std::make_unique<nr::Processor>(backend_ ? backend_->api() : nr::Backend{}, effective_enabled()));
                 processors_ = std::move(fresh);
                 highpass_.assign(channels_, nr::HighPass{});
+                energy_.assign(channels_, 0.0f);
                 update_model_status();
                 previous_settings_ = UINT32_MAX;
             }
@@ -237,6 +238,7 @@ public:
             scratch_out_.resize(in[0]->u32MaxFrameCount);
             processors_ = std::move(fresh);
             highpass_.assign(input_format.dwSamplesPerFrame, nr::HighPass{});
+            energy_.assign(input_format.dwSamplesPerFrame, 0.0f);
             update_model_status();
             previous_settings_ = UINT32_MAX;
         }
@@ -272,6 +274,26 @@ public:
         const bool low_cut = enabled && (settings & 2u);
         uint64_t inferred = 0;
         bool silent = true;
+        if (enabled && (settings & 4u) && channels_ > 1 && input) {
+            // одна модель на все каналы, результат одинаково во все каналы
+            nr::mix_active(input, source.u32ValidFrameCount, channels_, energy_.data(), scratch_in_.data());
+            if (low_cut) for (UINT32 i = 0; i < source.u32ValidFrameCount; ++i) scratch_in_[i] = highpass_[0].process(scratch_in_[i]);
+            else if (previous_settings_ & 2u) highpass_[0].reset();
+            processors_[0]->set_enabled(true);
+            if (settings != previous_settings_) processors_[0]->set_attenuation(static_cast<float>(std::min(60u, (settings >> 8) & 255u)));
+            const uint64_t before = processors_[0]->processed_frames();
+            processors_[0]->process(scratch_in_.data(), scratch_out_.data(), source.u32ValidFrameCount);
+            inferred = processors_[0]->processed_frames() - before;
+            for (UINT32 i = 0; i < source.u32ValidFrameCount; ++i) {
+                for (UINT32 channel = 0; channel < channels_; ++channel) output[static_cast<size_t>(i) * channels_ + channel] = scratch_out_[i];
+                silent = silent && scratch_out_[i] == 0;
+            }
+            previous_settings_ = settings;
+            controls_.account(source.u32ValidFrameCount, inferred);
+            dest.u32ValidFrameCount = source.u32ValidFrameCount;
+            dest.u32BufferFlags = silent ? BUFFER_SILENT : BUFFER_VALID;
+            return;
+        }
         for (UINT32 channel = 0; channel < channels_; ++channel) {
             if (!low_cut && ((previous_settings_ & 2u) || previous_settings_ == UINT32_MAX)) highpass_[channel].reset();
             processors_[channel]->set_enabled(enabled);
@@ -361,6 +383,7 @@ private:
     std::vector<std::unique_ptr<nr::Processor>> processors_;
     std::vector<float> scratch_in_, scratch_out_;
     std::vector<nr::HighPass> highpass_;
+    std::vector<float> energy_;
     UINT32 channels_ = 1;
     UINT32 max_frames_ = 0;
     nr::ControlView controls_;
