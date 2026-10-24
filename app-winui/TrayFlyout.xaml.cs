@@ -50,7 +50,7 @@ namespace NoiseReduction.WinUI
             this.controller = controller; this.openSettings = openSettings;
             InitializeComponent();
             FlyoutRoot.RequestedTheme = NativeTray.SystemLight() ? ElementTheme.Light : ElementTheme.Dark;
-            SystemBackdrop = new ThinAcrylic();
+            SystemBackdrop = new ThinAcrylic(true);
             ExtendsContentIntoTitleBar = true;
             var presenter = OverlappedPresenter.Create();
             presenter.SetBorderAndTitleBar(true, false);
