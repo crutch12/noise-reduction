@@ -27,7 +27,7 @@ namespace NoiseReduction.WinUI
         private readonly ToggleSwitch lowCut = new ToggleSwitch();
         private readonly ToggleSwitch economy = new ToggleSwitch { Visibility = Visibility.Collapsed };
         private readonly TextBlock compareLabel = new TextBlock();
-        private readonly Button record = new Button { MinWidth = 120 }, listen = new Button { MinWidth = 96 };
+        private readonly Button record = new Button { MinWidth = 150 }, listen = new Button { MinWidth = 96 };
         private readonly ToggleSwitch listenSwitch = new ToggleSwitch { MinWidth = 0, Margin = new Thickness(8, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
         private readonly TextBlock note = new TextBlock { Style = Style("CaptionTextBlockStyle"), Foreground = Brush("TextFillColorSecondaryBrush"), TextWrapping = TextWrapping.Wrap };
         private readonly TextBlock connection = new TextBlock { VerticalAlignment = VerticalAlignment.Center, TextWrapping = TextWrapping.Wrap };
@@ -36,7 +36,6 @@ namespace NoiseReduction.WinUI
         private readonly MenuFlyoutItem reset = new MenuFlyoutItem(), diagnostics = new MenuFlyoutItem();
         private readonly Button more = new Button { Content = new FontIcon { Glyph = "", FontSize = 14 }, Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent), BorderThickness = new Thickness(0), Padding = new Thickness(8, 6, 8, 6) };
         private readonly WaveformView waveform = new WaveformView();
-        private Microsoft.UI.Dispatching.DispatcherQueueTimer animation;
         private bool updating;
         internal readonly string Id;
         internal readonly Expander View;
@@ -158,16 +157,6 @@ namespace NoiseReduction.WinUI
                 strengthValue.Text = value + " " + T("дБ");
                 bool recording = controller.RecordingId == Id;
                 UpdateWaveform();
-                bool animate = recording || controller.CanCompare(Id) && controller.Playing;
-                if (animate && animation == null)
-                {
-                    // волну и таймер обновляем часто только во время записи и прослушивания
-                    animation = View.DispatcherQueue.CreateTimer();
-                    animation.Interval = TimeSpan.FromMilliseconds(40);
-                    animation.Tick += (_, _) => { UpdateWaveform(); UpdateRecordButton(); };
-                    animation.Start();
-                }
-                else if (!animate && animation != null) { animation.Stop(); animation = null; }
                 var elapsed = DateTime.UtcNow - controller.RecordingStarted;
                 record.IsEnabled = idle || recording;
                 record.Content = recording ? T("Остановить") + " " + (int)elapsed.TotalMinutes + ":" + elapsed.Seconds.ToString("00") : T("Записать");
@@ -197,15 +186,9 @@ namespace NoiseReduction.WinUI
         {
             bool recording = controller.RecordingId == Id;
             bool ready = controller.CanCompare(Id) && controller.OriginalPeaks != null;
-            waveform.View.Visibility = recording || ready ? Visibility.Visible : Visibility.Collapsed;
-            if (recording) waveform.Live(controller.LivePeaks);
-            else if (ready) waveform.Result(controller.OriginalPeaks, controller.ProcessedPeaks, controller.ListenProcessed, controller.PlaybackProgress);
-        }
-        private void UpdateRecordButton()
-        {
-            if (controller.RecordingId != Id) return;
-            var elapsed = DateTime.UtcNow - controller.RecordingStarted;
-            record.Content = T("Остановить") + " " + (int)elapsed.TotalMinutes + ":" + elapsed.Seconds.ToString("00");
+            if (recording) waveform.ShowLive(() => controller.LivePeaks, controller.RecordingStarted);
+            else if (ready) waveform.ShowResult(controller.OriginalPeaks, controller.ProcessedPeaks, controller.ListenProcessed, () => controller.PlaybackProgress);
+            else waveform.Hide();
         }
         private static string UiText(string message) => NoiseReduction.Desktop.UiText.Message(message);
     }

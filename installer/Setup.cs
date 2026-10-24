@@ -128,6 +128,8 @@ class Setup {
      if(!(error is IOException) && !(error is UnauthorizedAccessException)) throw;
      int remaining=timeoutMilliseconds-(int)clock.ElapsedMilliseconds;
      if(remaining<=0) throw new IOException("Close applications using "+name+" and retry the update; the original installation is preserved",error);
+     // программа могла успеть запуститься после прошлой установки, закрываем её снова
+     StopApp();
      Thread.Sleep(Math.Min(100,remaining));
     }
    }
