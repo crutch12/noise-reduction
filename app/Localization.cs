@@ -135,6 +135,8 @@ namespace NoiseReduction.Desktop
             { "Windows не подтвердил работу эффекта", "Windows did not confirm that noise reduction is working" },
             { "Перезапустите запись в использующем микрофон приложении", "Restart recording in the app that uses the microphone" },
             { "Шумоподавление", "Noise reduction" },
+            { "Вкл", "On" },
+            { "Откл", "Off" },
             { "Пауза сохраняет настройки каждого микрофона", "Pausing keeps each microphone's settings" },
             { "Пауза", "Paused" },
             { "Выключен", "Off" },

@@ -48,6 +48,7 @@ namespace NoiseReduction.WinUI
         {
             this.controller = controller; this.openSettings = openSettings;
             InitializeComponent();
+            FlyoutRoot.RequestedTheme = NativeTray.SystemLight() ? ElementTheme.Light : ElementTheme.Dark;
             SystemBackdrop = new ThinAcrylic();
             ExtendsContentIntoTitleBar = true;
             var presenter = OverlappedPresenter.Create();
@@ -65,11 +66,14 @@ namespace NoiseReduction.WinUI
             if (AppWindow.IsVisible) { Dismiss(); return; }
             // клик по значку сначала снимает фокус с панели, повторно её не открываем
             if ((DateTime.UtcNow - hiddenAt).TotalMilliseconds < 350) return;
+            // как системные панели трея, следуем теме панели задач
+            FlyoutRoot.RequestedTheme = NativeTray.SystemLight() ? ElementTheme.Light : ElementTheme.Dark;
             Render();
             Place();
             AppWindow.Show();
             Activate();
             SetForegroundWindow(Handle);
+            DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, Fit);
             _ = controller.ScanUsageAsync();
         }
 
@@ -86,7 +90,6 @@ namespace NoiseReduction.WinUI
             IntPtr monitor = MonitorFromPoint(cursor, 2);
             // берём DPI монитора с треем, панель может быть ещё на другом экране
             double scale = GetDpiForMonitor(monitor, 0, out uint dpi, out _) == 0 ? dpi / 96.0 : 1;
-            FlyoutRoot.Width = WidthDip;
             FlyoutRoot.Measure(new Windows.Foundation.Size(WidthDip, double.PositiveInfinity));
             double heightDip = FlyoutRoot.DesiredSize.Height;
             if (heightDip < 40) heightDip = 52 + Math.Max(1, rows.Count) * 96;
@@ -103,6 +106,20 @@ namespace NoiseReduction.WinUI
             AppWindow.MoveAndResize(new RectInt32(x, Math.Max(work.Top, y), width, Math.Min(height, work.Bottom - work.Top - gap * 2)));
         }
 
+        // окно без заголовка всё равно резервирует служебную область, подгоняем по фактическому месту под XAML
+        private void Fit()
+        {
+            var root = FlyoutRoot.XamlRoot;
+            if (root == null || !AppWindow.IsVisible) return;
+            FlyoutRoot.Measure(new Windows.Foundation.Size(WidthDip, double.PositiveInfinity));
+            double scale = root.RasterizationScale;
+            int dw = (int)Math.Round((WidthDip - root.Size.Width) * scale), dh = (int)Math.Round((FlyoutRoot.DesiredSize.Height - root.Size.Height) * scale);
+            if (Math.Abs(dw) < 2 && Math.Abs(dh) < 2) return;
+            var position = AppWindow.Position; var size = AppWindow.Size;
+            bool bottom = position.Y + size.Height / 2 > root.Size.Height * scale;
+            AppWindow.MoveAndResize(new RectInt32(position.X - dw / 2, bottom ? position.Y - dh : position.Y, size.Width + dw, size.Height + dh));
+        }
+
         private void Render()
         {
             updating = true;
@@ -114,7 +131,7 @@ namespace NoiseReduction.WinUI
                 {
                     rows.Clear(); MicrophoneRows.Children.Clear();
                     foreach (string id in ids) { var row = CreateRow(id); rows.Add(row); }
-                    if (rows.Count == 0) MicrophoneRows.Children.Add(new TextBlock { Text = T("Доступные микрофоны не найдены"), Foreground = Brush("TextFillColorSecondaryBrush") });
+                    if (rows.Count == 0) MicrophoneRows.Children.Add(new TextBlock { Text = T("Доступные микрофоны не найдены"), Style = (Style)FlyoutRoot.Resources["FlyoutValueStyle"] });
                 }
                 else if (rows.Count == 0 && renderedLanguage != controller.Language && MicrophoneRows.Children.FirstOrDefault() is TextBlock empty) empty.Text = T("Доступные микрофоны не найдены");
                 if (renderedLanguage != controller.Language)
@@ -135,7 +152,7 @@ namespace NoiseReduction.WinUI
                     row.Name.Text = device.Name;
                     ToolTipService.SetToolTip(row.Name, device.Name);
                     row.Details.Text = Details(controller, device);
-                    row.Dot.Fill = StateBrush(state);
+                    row.Dot.Fill = StateBrush(state, FlyoutRoot);
                     row.Dot.Opacity = state == MicrophoneState.Waiting ? 0.5 : 1;
                     row.Toggle.IsOn = controller.ProfileEnabled(row.Id);
                     row.Toggle.IsEnabled = idle;
@@ -156,28 +173,24 @@ namespace NoiseReduction.WinUI
             {
                 Id = id,
                 Name = new TextBlock { Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center },
-                Details = new TextBlock { Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"], Foreground = Brush("TextFillColorSecondaryBrush"), TextTrimming = TextTrimming.CharacterEllipsis },
-                Value = new TextBlock { Width = 28, TextAlignment = TextAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = Brush("TextFillColorSecondaryBrush") },
+                Details = new TextBlock { Style = (Style)FlyoutRoot.Resources["FlyoutDetailsStyle"], TextTrimming = TextTrimming.CharacterEllipsis },
+                Value = new TextBlock { Style = (Style)FlyoutRoot.Resources["FlyoutValueStyle"], TextAlignment = TextAlignment.Right, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center },
                 Dot = new Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center },
-                Toggle = new ToggleSwitch { MinWidth = 0, OnContent = "", OffContent = "", VerticalAlignment = VerticalAlignment.Center },
-                Slider = new Slider { Minimum = 0, Maximum = 60, StepFrequency = 1, VerticalAlignment = VerticalAlignment.Center }
+                Toggle = new ToggleSwitch { MinWidth = 0, OnContent = "", OffContent = "", Margin = new Thickness(0, 0, -12, 0), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center },
+                Slider = new Slider { Minimum = 0, Maximum = 60, StepFrequency = 1, Margin = new Thickness(0, 2, 0, 0), VerticalAlignment = VerticalAlignment.Center }
             };
-            var head = new Grid { ColumnSpacing = 8 };
-            head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            head.Children.Add(row.Dot);
-            var text = new StackPanel();
-            text.Children.Add(row.Name); text.Children.Add(row.Details);
-            Grid.SetColumn(text, 1); head.Children.Add(text);
-            Grid.SetColumn(row.Toggle, 2); head.Children.Add(row.Toggle);
-            var strength = new Grid { ColumnSpacing = 12, Margin = new Thickness(16, -4, 4, 0) };
-            strength.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            strength.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            strength.Children.Add(row.Slider);
-            Grid.SetColumn(row.Value, 1); strength.Children.Add(row.Value);
-            var block = new StackPanel();
-            block.Children.Add(head); block.Children.Add(strength);
+            // одна сетка на микрофон: слева имя и ползунок, справа переключатель и значение на одном крае
+            var block = new Grid { ColumnSpacing = 12, RowSpacing = 0 };
+            block.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            block.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            for (int index = 0; index < 3; index++) block.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            var details = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+            details.Children.Add(row.Dot); details.Children.Add(row.Details);
+            block.Children.Add(row.Name);
+            Grid.SetRow(details, 1); block.Children.Add(details);
+            Grid.SetColumn(row.Toggle, 1); Grid.SetRowSpan(row.Toggle, 2); block.Children.Add(row.Toggle);
+            Grid.SetRow(row.Slider, 2); block.Children.Add(row.Slider);
+            Grid.SetRow(row.Value, 2); Grid.SetColumn(row.Value, 1); block.Children.Add(row.Value);
             MicrophoneRows.Children.Add(block);
             row.Toggle.Toggled += (_, _) => { if (!updating) controller.SetProfile(id, row.Toggle.IsOn); };
             row.Slider.ValueChanged += (_, args) => { if (!updating) { row.Value.Text = ((int)args.NewValue).ToString(); controller.SetAttenuation(id, (int)Math.Round(args.NewValue)); } };

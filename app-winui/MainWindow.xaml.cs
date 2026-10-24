@@ -68,6 +68,7 @@ namespace NoiseReduction.WinUI
         private void Localize()
         {
             UiText.Language = controller.Language;
+            Label(MasterSwitch); Label(StartupSwitch);
             GlobalTitle.Text = T("Шумоподавление");
             GlobalHelp.Text = T("Пауза сохраняет настройки каждого микрофона");
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(MasterSwitch, T("Шумоподавление"));

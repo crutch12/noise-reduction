@@ -22,20 +22,23 @@ public static class MicrophoneIconBuilder {
   foreach(int size in sizes) using(var bitmap=new Bitmap(size,size,PixelFormat.Format32bppArgb)) {
    using(var g=Graphics.FromImage(bitmap)) {
     g.Clear(Color.Transparent); g.SmoothingMode=SmoothingMode.AntiAlias; g.PixelOffsetMode=PixelOffsetMode.HighQuality; g.ScaleTransform(size/64f,size/64f);
-    bool small=size<=24; float stroke=small?6.5f:5f;
-    using(var tile=Round(1,1,62,62,small?12:14))
-    using(var fill=new LinearGradientBrush(new PointF(0,0),new PointF(64,64),ColorTranslator.FromHtml("#3C9BF0"),ColorTranslator.FromHtml("#0B4FB3"))) {
+    bool small=size<=24; Color top=ColorTranslator.FromHtml("#17C3B2"), bottom=ColorTranslator.FromHtml("#2D46D6");
+    using(var tile=Round(1,1,62,62,small?13:15))
+    using(var fill=new LinearGradientBrush(new PointF(8,0),new PointF(56,64),top,bottom)) {
      g.FillPath(fill,tile);
-     if(!small) using(var shine=new LinearGradientBrush(new PointF(0,0),new PointF(0,64),Color.FromArgb(60,255,255,255),Color.FromArgb(0,255,255,255))) { shine.Blend=new Blend { Factors=new[]{0f,1f,1f}, Positions=new[]{0f,0.5f,1f} }; g.FillPath(shine,tile); }
-     if(size>=32) using(var edge=new Pen(Color.FromArgb(48,0,20,60),1.2f)) g.DrawPath(edge,tile);
+     if(size>=32) using(var shine=new LinearGradientBrush(new PointF(0,0),new PointF(0,64),Color.FromArgb(70,255,255,255),Color.FromArgb(0,255,255,255))) { shine.Blend=new Blend { Factors=new[]{0f,1f,1f}, Positions=new[]{0f,0.45f,1f} }; g.FillPath(shine,tile); }
+     if(size>=32) using(var edge=new Pen(Color.FromArgb(60,10,20,80),1.2f)) g.DrawPath(edge,tile);
     }
-    using(var white=new SolidBrush(Color.White)) using(var capsule=small?Round(22,6,20,30,10):Round(23,9,18,30,9)) g.FillPath(white,capsule);
-    using(var bracket=new GraphicsPath()) using(var pen=new Pen(Color.White,stroke)) {
-     pen.StartCap=pen.EndCap=LineCap.Round;
-     if(small) { bracket.AddLine(12,26,12,31); bracket.AddArc(12,12,40,38,180,-180); bracket.AddLine(52,31,52,26); }
-     else { bracket.AddLine(15,27,15,32); bracket.AddArc(15,15,34,34,180,-180); bracket.AddLine(49,32,49,27); }
-     g.DrawPath(pen,bracket);
-     if(small) g.DrawLine(pen,32,50,32,56); else { g.DrawLine(pen,32,50,32,55); g.DrawLine(pen,24,55.5f,40,55.5f); }
+    // тот же знак, что в трее: контур микрофона и волна внутри
+    float stroke=small?6.5f:4.6f;
+    using(var pen=new Pen(Color.White,stroke){StartCap=LineCap.Round,EndCap=LineCap.Round,LineJoin=LineJoin.Round}) {
+     using(var capsule=Round(21,6,22,33,11)) g.DrawPath(pen,capsule);
+     using(var stand=new GraphicsPath()) { stand.AddLine(12,28,12,32); stand.AddArc(12,14,40,37,180,-180); stand.AddLine(52,32,52,28); g.DrawPath(pen,stand); }
+     g.DrawLine(pen,32,51,32,57); if(!small) g.DrawLine(pen,23,57.5f,41,57.5f);
+    }
+    if(size>=20) using(var pen=new Pen(Color.White,small?5f:4.6f){StartCap=LineCap.Round,EndCap=LineCap.Round,LineJoin=LineJoin.Round}) {
+     var points=new PointF[25]; for(int i=0;i<points.Length;i++){ float t=i/24f; points[i]=new PointF(25.5f+13*t,22.5f-(float)Math.Sin(t*Math.PI*2)*(small?5f:6.5f)); }
+     g.DrawLines(pen,points);
     }
    }
    using(var stream=new MemoryStream()) { bitmap.Save(stream,ImageFormat.Png); images.Add(stream.ToArray()); }

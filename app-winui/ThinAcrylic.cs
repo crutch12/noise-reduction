@@ -14,11 +14,15 @@ namespace NoiseReduction.WinUI
         protected override void OnTargetConnected(ICompositionSupportsSystemBackdrop target, XamlRoot root)
         {
             base.OnTargetConnected(target, root);
-            var controller = new DesktopAcrylicController { Kind = DesktopAcrylicKind.Thin };
+            // в светлой теме тонкий акрил над тёмными окнами становится серым, там берём плотный
+            var controller = new DesktopAcrylicController { Kind = KindFor(root.Content) };
+            if (root.Content is FrameworkElement content) content.ActualThemeChanged += (sender, _) => controller.Kind = KindFor(sender);
             controller.SetSystemBackdropConfiguration(GetDefaultSystemBackdropConfiguration(target, root));
             controller.AddSystemBackdropTarget(target);
             controllers[target] = controller;
         }
+
+        private static DesktopAcrylicKind KindFor(object content) => content is FrameworkElement element && element.ActualTheme == ElementTheme.Light ? DesktopAcrylicKind.Default : DesktopAcrylicKind.Thin;
 
         protected override void OnTargetDisconnected(ICompositionSupportsSystemBackdrop target)
         {

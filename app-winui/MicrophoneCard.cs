@@ -90,6 +90,7 @@ namespace NoiseReduction.WinUI
 
         internal void Localize()
         {
+            Label(toggle);
             strengthLabel.Text = T("Сила подавления");
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(slider, T("Сила подавления в децибелах"));
             compareLabel.Text = T("Сравните на своём голосе");
@@ -116,7 +117,7 @@ namespace NoiseReduction.WinUI
                 ToolTipService.SetToolTip(name, device.Name);
                 details.Text = Details(controller, device);
                 details.Foreground = Brush(state == MicrophoneState.Error ? "SystemFillColorCriticalBrush" : "TextFillColorSecondaryBrush");
-                dot.Fill = StateBrush(state);
+                dot.Fill = StateBrush(state, View);
                 dot.Opacity = state == MicrophoneState.Waiting ? 0.5 : 1;
                 toggle.IsOn = controller.ProfileEnabled(Id);
                 toggle.IsEnabled = idle;

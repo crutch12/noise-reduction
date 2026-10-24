@@ -36,7 +36,7 @@ $hashLines = $payload.Keys | Sort-Object | ForEach-Object { "$_|$((Get-FileHash 
 $hashPath = Join-Path $buildPath 'payload-sha256.txt'
 $hashLines | Set-Content -LiteralPath $hashPath -Encoding Ascii
 $payload['payload-sha256.txt'] = $hashPath
-$arguments = @('/nologo', '/target:exe', '/platform:x64', '/optimize+', '/warnaserror+', '/r:System.Windows.Forms.dll', '/r:System.ServiceProcess.dll', '/r:Microsoft.CSharp.dll', "/win32icon:$(Join-Path $repoPath 'app/assets/NoiseReduction.ico')", "/win32manifest:$(Join-Path $repoPath 'installer/Setup.manifest')", "/out:$(Join-Path $distPath 'NoiseReduction.Setup.exe')")
+$arguments = @('/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/warnaserror+', '/r:System.Windows.Forms.dll', '/r:System.ServiceProcess.dll', '/r:Microsoft.CSharp.dll', "/win32icon:$(Join-Path $repoPath 'app/assets/NoiseReduction.ico')", "/win32manifest:$(Join-Path $repoPath 'installer/Setup.manifest')", "/out:$(Join-Path $distPath 'NoiseReduction.Setup.exe')")
 foreach ($name in ($payload.Keys | Sort-Object)) { $arguments += "/resource:$($payload[$name]),payload.$name" }
 $arguments += Join-Path $repoPath 'platform/Integration.cs'
 $arguments += Join-Path $repoPath 'installer/Setup.cs'
@@ -44,6 +44,8 @@ $responsePath = Join-Path $buildPath 'setup.rsp'
 $arguments | ForEach-Object { '"' + $_ + '"' } | Set-Content -LiteralPath $responsePath -Encoding UTF8
 & $cscPath "@$responsePath"
 if ($LASTEXITCODE -ne 0) { throw 'Setup compilation failed' }
-& (Join-Path $distPath 'NoiseReduction.Setup.exe') --self-test --silent
-if ($LASTEXITCODE -ne 0) { throw 'Setup self-test failed' }
+$selfTestLog = Join-Path $buildPath 'setup-self-test.txt'
+$selfTest = Start-Process -FilePath (Join-Path $distPath 'NoiseReduction.Setup.exe') -ArgumentList '--self-test', '--silent' -Wait -PassThru -NoNewWindow -RedirectStandardOutput $selfTestLog -RedirectStandardError "$selfTestLog.err"
+Get-Content -LiteralPath $selfTestLog, "$selfTestLog.err"
+if ($selfTest.ExitCode -ne 0) { throw 'Setup self-test failed' }
 Write-Output (Join-Path $distPath 'NoiseReduction.Setup.exe')

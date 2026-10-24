@@ -19,7 +19,7 @@ namespace NoiseReduction.WinUI
         private readonly DesktopController controller;
         private readonly NotifyIcon tray;
         private readonly NativeWindow owner = new NativeWindow();
-        private readonly Icon[] icons = new Icon[3];
+        private readonly Icon[] icons = new Icon[6];
         private readonly Action reveal, flyout, exit;
         private bool disposed, menuOpen;
         [DllImport("user32.dll")] private static extern int GetSystemMetrics(int index);
@@ -47,6 +47,36 @@ namespace NoiseReduction.WinUI
             };
             controller.Changed += Update;
             Update();
+            Promote();
+            _ = System.Threading.Tasks.Task.Delay(3000).ContinueWith(_ => { if (!disposed) Promote(); }, System.Threading.Tasks.TaskScheduler.FromCurrentSynchronizationContext());
+        }
+
+        // Windows прячет новые значки в скрытые, показываем свой один раз, пока пользователь сам не выбрал
+        private void Promote()
+        {
+            try
+            {
+                using (var root = Registry.CurrentUser.OpenSubKey(@"Control Panel\NotifyIconSettings"))
+                {
+                    if (root == null) return;
+                    foreach (string name in root.GetSubKeyNames())
+                        using (var key = root.OpenSubKey(name, true))
+                        {
+                            if (!(key?.GetValue("ExecutablePath") is string path) || key.GetValue("IsPromoted") != null) continue;
+                            path = path.Replace("{6D809377-6AF0-444B-8957-A3773F02200E}", Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), StringComparison.OrdinalIgnoreCase);
+                            if (!string.Equals(path, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase)) continue;
+                            key.SetValue("IsPromoted", 1, RegistryValueKind.DWord);
+                            tray.Visible = false; tray.Visible = true;
+                        }
+                }
+            }
+            catch (Exception) { }
+        }
+
+        internal static bool SystemLight()
+        {
+            try { using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")) return key?.GetValue("SystemUsesLightTheme") is int value && value != 0; }
+            catch (Exception) { return false; }
         }
 
         private static string T(string value) => UiText.Get(value).Replace("&", "");
@@ -58,7 +88,7 @@ namespace NoiseReduction.WinUI
             DeviceInfo current = null;
             foreach (var device in controller.Devices) if (device.Id == controller.DefaultId) { current = device; break; }
             int state = !string.IsNullOrEmpty(controller.Error) ? 2 : current != null && controller.IsEnabled(current.Id) ? controller.HasProcessingError(current.Id) ? 2 : current.Attached ? 1 : 0 : 0;
-            var icon = GetIcon(state);
+            var icon = GetIcon(state, SystemLight());
             if (tray.Icon != icon) tray.Icon = icon;
             string hint = "Noise Reduction\n" + T(state == 2 ? "Ошибка обработки" : state == 1 ? "Шумоподавление включено" : "Шумоподавление выключено");
             if (current != null) hint += "\n" + current.Name;
@@ -74,10 +104,8 @@ namespace NoiseReduction.WinUI
             {
                 await controller.ScanUsageAsync();
                 if (disposed) return;
-                // меню следует светлой или тёмной теме Windows
-                bool light = true;
-                try { using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")) light = !(key?.GetValue("AppsUseLightTheme") is int value) || value != 0; } catch (Exception) { }
-                try { SetPreferredAppMode(light ? 3 : 2); FlushMenuThemes(); } catch (Exception) { }
+                // меню следует теме панели задач, как у системных значков
+                try { SetPreferredAppMode(SystemLight() ? 3 : 2); FlushMenuThemes(); } catch (Exception) { }
                 IntPtr menu = CreatePopupMenu();
                 var ids = new List<string>();
                 try
@@ -113,26 +141,44 @@ namespace NoiseReduction.WinUI
             finally { menuOpen = false; }
         }
 
-        private Icon GetIcon(int state)
+        // тонкий контур микрофона с волной внутри, цвет волны показывает состояние
+        private Icon GetIcon(int state, bool light)
         {
-            if (icons[state] != null) return icons[state];
+            int index = state * 2 + (light ? 1 : 0);
+            if (icons[index] != null) return icons[index];
             int size = Math.Max(16, GetSystemMetrics(49));
-            using (var source = new Icon(Path.Combine(AppContext.BaseDirectory, "NoiseReduction.ico"), size, size))
-            using (var bitmap = source.ToBitmap())
+            using (var bitmap = new Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format32bppArgb))
             {
                 using (var graphics = Graphics.FromImage(bitmap))
                 {
                     graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                    float unit = size / 16f;
-                    using (var border = new SolidBrush(Color.White)) graphics.FillEllipse(border, 8.5f * unit, 8.5f * unit, 7.5f * unit, 7.5f * unit);
-                    Color color = state == 1 ? Color.FromArgb(16, 137, 62) : state == 2 ? Color.FromArgb(196, 43, 28) : Color.FromArgb(138, 138, 138);
-                    using (var badge = new SolidBrush(color)) graphics.FillEllipse(badge, 9.25f * unit, 9.25f * unit, 6 * unit, 6 * unit);
+                    graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    graphics.ScaleTransform(size / 16f, size / 16f);
+                    var ink = light ? Color.FromArgb(26, 26, 26) : Color.White;
+                    var wave = state == 1 ? (light ? Color.FromArgb(10, 140, 128) : Color.FromArgb(23, 210, 190)) : state == 2 ? (light ? Color.FromArgb(196, 43, 28) : Color.FromArgb(255, 110, 110)) : Color.FromArgb(140, 140, 140);
+                    using (var pen = new Pen(ink, 1.15f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
+                    using (var path = new GraphicsPath())
+                    {
+                        path.AddArc(4.5f, 0.75f, 7, 7, 180, 180); path.AddArc(4.5f, 3.75f, 7, 7, 0, 180); path.CloseFigure();
+                        graphics.DrawPath(pen, path);
+                        path.Reset();
+                        path.AddLine(2, 6.5f, 2, 8); path.AddArc(2, 2.25f, 12, 11.25f, 180, -180); path.AddLine(14, 8, 14, 6.5f);
+                        graphics.DrawPath(pen, path);
+                        graphics.DrawLine(pen, 8, 13.6f, 8, 15.25f);
+                        graphics.DrawLine(pen, 5.5f, 15.25f, 10.5f, 15.25f);
+                    }
+                    using (var pen = new Pen(wave, 1.35f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
+                    {
+                        var points = new PointF[17];
+                        for (int i = 0; i < points.Length; i++) { float t = i / 16f; points[i] = new PointF(5.9f + 4.2f * t, 6.2f - (float)Math.Sin(t * Math.PI * 2) * 1.9f); }
+                        graphics.DrawLines(pen, points);
+                    }
                 }
                 IntPtr handle = bitmap.GetHicon();
-                try { using (var icon = Icon.FromHandle(handle)) icons[state] = (Icon)icon.Clone(); }
+                try { using (var icon = Icon.FromHandle(handle)) icons[index] = (Icon)icon.Clone(); }
                 finally { DestroyIcon(handle); }
             }
-            return icons[state];
+            return icons[index];
         }
 
         public void Dispose()

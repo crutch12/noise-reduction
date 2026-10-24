@@ -4,22 +4,30 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Noise Reduction">
     <Grid x:Name="FlyoutRoot" KeyDown="FlyoutKeyDown">
+        <Grid.Resources>
+            <Style x:Key="FlyoutDetailsStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            </Style>
+            <Style x:Key="FlyoutValueStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            </Style>
+        </Grid.Resources>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
-        <StackPanel x:Name="MicrophoneRows" Padding="16,12,16,8" Spacing="12" />
-        <Grid Grid.Row="1" Padding="16,6,8,6" ColumnSpacing="8" Background="{ThemeResource LayerFillColorDefaultBrush}" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0">
+        <StackPanel x:Name="MicrophoneRows" Padding="16,14,16,10" Spacing="14" />
+        <Grid Grid.Row="1" Padding="16,8,16,8" ColumnSpacing="4" Background="{ThemeResource LayerFillColorDefaultBrush}" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBlock x:Name="GlobalLabel" VerticalAlignment="Center" />
-            <ToggleSwitch x:Name="GlobalSwitch" Grid.Column="1" MinWidth="0" OnContent="" OffContent="" Toggled="GlobalToggled" />
-            <Button x:Name="SettingsButton" Grid.Column="2" Padding="8,6" Background="Transparent" BorderThickness="0" Click="SettingsClicked">
+            <Button x:Name="SettingsButton" Grid.Column="1" Padding="8,6" Margin="0,0,8,0" Background="Transparent" BorderThickness="0" Click="SettingsClicked">
                 <FontIcon Glyph="&#xE713;" FontSize="16" />
             </Button>
+            <ToggleSwitch x:Name="GlobalSwitch" Grid.Column="2" MinWidth="0" Margin="0,0,-12,0" OnContent="" OffContent="" HorizontalAlignment="Right" Toggled="GlobalToggled" />
         </Grid>
     </Grid>
 </Window>

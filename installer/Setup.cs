@@ -308,6 +308,18 @@ class Setup {
    Console.WriteLine("PASS nested package extraction, upgrade/failure/crash rollback, v2/v3 recovery, obsolete runtime removal, checkpoint validation, committed cleanup retry, stopped upgrade rollback/service recovery, ownership conflict, uninstall preservation, traversal/reparse validation: "+names.Length+" files"); return 0;
   } finally { foreach(var name in PayloadNames()) RemoveFile(directory,name); PruneEmptyDirectories(directory,PayloadNames()); if(Directory.Exists(directory) && Directory.GetFileSystemEntries(directory).Length==0) Directory.Delete(directory); }
  }
+ // установленная копия держит файлы, перед заменой её нужно закрыть
+ static void StopApp() {
+  string target=Path.Combine(InstallRoot,"NoiseReduction.exe");
+  foreach(var process in Process.GetProcessesByName("NoiseReduction")) using(process) {
+   try { if(!String.Equals(process.MainModule.FileName,target,StringComparison.OrdinalIgnoreCase)) continue; process.Kill(); process.WaitForExit(10000); } catch(Exception) { }
+  }
+ }
+ // explorer запускает программу без повышенных прав, как обычный ярлык
+ static void StartApp() {
+  string target=Path.Combine(InstallRoot,"NoiseReduction.exe");
+  if(File.Exists(target)) try { using(Process.Start(new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),"explorer.exe"),"\""+target+"\""))) { } } catch(Exception) { }
+ }
  [STAThread] static int Main(string[] args) {
   silent=args.Contains("--silent");
   try {
@@ -318,15 +330,16 @@ class Setup {
    if(args.Contains("--uninstall-worker")) { int index=Array.IndexOf(args,"--uninstall-worker"); int pid=Int32.Parse(args[index+1]); try { using(var parent=Process.GetProcessById(pid)) if(!parent.WaitForExit(30000)) throw new IOException("Original setup process did not exit"); } catch(ArgumentException) { } }
    using(var operation = new Integration.OperationLease()) {
    bool remove=args.Contains("--uninstall") || args.Contains("--uninstall-worker");
-   if(!silent && !args.Contains("--uninstall-worker") && MessageBox.Show(remove?"Remove NoiseReduction and restore microphone effects?":"Install NoiseReduction microphone controls? Windows audio protections will remain enabled", "NoiseReduction",MessageBoxButtons.OKCancel,MessageBoxIcon.Question)!=DialogResult.OK) return 1;
+   if(!silent && !args.Contains("--uninstall-worker") && MessageBox.Show(remove?"Remove Noise Reduction and restore microphone effects?":"Install Noise Reduction? Windows audio protections will remain enabled", "Noise Reduction",MessageBoxButtons.OKCancel,MessageBoxIcon.Question)!=DialogResult.OK) return 1;
    if(args.Contains("--uninstall") && String.Equals(Path.GetFullPath(Assembly.GetExecutingAssembly().Location),Path.Combine(InstallRoot,"NoiseReduction.Setup.exe"),StringComparison.OrdinalIgnoreCase)) {
     string temp=StageUninstallWorker();
     var process=Process.Start(new ProcessStartInfo(temp,"--uninstall-worker "+Process.GetCurrentProcess().Id+" --silent") {UseShellExecute=false,CreateNoWindow=true}); if(process==null) throw new IOException("Cannot launch uninstall worker"); return 0;
    }
-   if(args.Contains("--uninstall-worker")) Uninstall(InstallRoot,false);
-   else if(remove) Uninstall(InstallRoot,false); else Install(InstallRoot,false);
-   if(!silent) MessageBox.Show(remove?"NoiseReduction was removed":"NoiseReduction installed. Open settings and select a microphone to enable processing", "NoiseReduction",MessageBoxButtons.OK,MessageBoxIcon.Information);
+   if(args.Contains("--uninstall-worker")) { StopApp(); Uninstall(InstallRoot,false); }
+   else if(remove) { StopApp(); Uninstall(InstallRoot,false); } else { StopApp(); Install(InstallRoot,false); }
+   if(remove) { if(!silent) MessageBox.Show("Noise Reduction was removed","Noise Reduction",MessageBoxButtons.OK,MessageBoxIcon.Information); }
+   else StartApp();
    return 0; }
-  } catch(Exception ex) { Console.Error.WriteLine(args.Contains("--self-test") ? ex.ToString() : ex.Message); try { if(!args.Contains("--self-test") && !args.Contains("--extract")) { Directory.CreateDirectory(DataRoot); File.AppendAllText(Path.Combine(DataRoot,"setup-errors.log"),DateTime.UtcNow.ToString("o")+" "+ex+Environment.NewLine); } } catch { } if(!silent) MessageBox.Show(ex.Message,"NoiseReduction setup",MessageBoxButtons.OK,MessageBoxIcon.Error); return 2; }
+  } catch(Exception ex) { Console.Error.WriteLine(args.Contains("--self-test") ? ex.ToString() : ex.Message); try { if(!args.Contains("--self-test") && !args.Contains("--extract")) { Directory.CreateDirectory(DataRoot); File.AppendAllText(Path.Combine(DataRoot,"setup-errors.log"),DateTime.UtcNow.ToString("o")+" "+ex+Environment.NewLine); } } catch { } if(!silent) MessageBox.Show(ex.Message,"Noise Reduction setup",MessageBoxButtons.OK,MessageBoxIcon.Error); return 2; }
  }
 }

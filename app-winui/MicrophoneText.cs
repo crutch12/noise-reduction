@@ -10,6 +10,12 @@ namespace NoiseReduction.WinUI
     {
         internal static string T(string source) => UiText.Get(source).Replace("&", "");
 
+        internal static void Label(Microsoft.UI.Xaml.Controls.ToggleSwitch toggle)
+        {
+            toggle.OnContent = T("Вкл");
+            toggle.OffContent = T("Откл");
+        }
+
         internal static string StateText(MicrophoneState state) => T(state switch
         {
             MicrophoneState.Paused => "Пауза",
@@ -29,16 +35,18 @@ namespace NoiseReduction.WinUI
             return string.Join(" · ", parts);
         }
 
-        internal static Brush StateBrush(MicrophoneState state)
+        // цвета Fluent для светлой и тёмной темы, тема берётся у самого элемента, а не у приложения
+        internal static Brush StateBrush(MicrophoneState state, FrameworkElement owner)
         {
-            string key = state switch
+            bool dark = owner.ActualTheme == ElementTheme.Dark;
+            string color = state switch
             {
-                MicrophoneState.Active or MicrophoneState.Waiting => "SystemFillColorSuccessBrush",
-                MicrophoneState.Error => "SystemFillColorCriticalBrush",
-                MicrophoneState.Detached => "SystemFillColorCautionBrush",
-                _ => "TextFillColorTertiaryBrush"
+                MicrophoneState.Active or MicrophoneState.Waiting => dark ? "#6CCB5F" : "#0F7B0F",
+                MicrophoneState.Error => dark ? "#FF99A4" : "#C42B1C",
+                MicrophoneState.Detached => dark ? "#FCE100" : "#9D5D00",
+                _ => dark ? "#9D9D9D" : "#8A8A8A"
             };
-            return (Brush)Application.Current.Resources[key];
+            return new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, System.Convert.ToByte(color.Substring(1, 2), 16), System.Convert.ToByte(color.Substring(3, 2), 16), System.Convert.ToByte(color.Substring(5, 2), 16)));
         }
     }
 }
