@@ -1,0 +1,217 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Security.AccessControl;
+using System.Security.Principal;
+using System.Xml.Serialization;
+using System.Threading;
+using Microsoft.Win32;
+
+namespace NoiseReduction.Platform {
+ public class DeviceInfo { public string Id, Name, Guid; public bool Attached, EnhancementsEnabled, Active; }
+ public static class Integration {
+  public const string Clsid = "{752DE85C-174D-42C2-A92C-631A4F77D08B}";
+  public const string CompositeKey = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},15";
+  internal const string LegacyKey = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},7";
+  internal const string ModesKey = "{D3993A3F-99C2-4402-B5EC-A92A0367664B},7";
+  internal const string DefaultMode = "{C18E2F7E-933D-4965-B7D1-1EEF228D2AF3}";
+  const string Capture = @"SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture";
+  static string DataRoot { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "NoiseReduction"); } }
+  public static string ControlRoot { get { return Path.Combine(DataRoot, "Endpoints"); } }
+  public sealed class OperationLease : IDisposable {
+   readonly Mutex mutex;
+   public OperationLease() { mutex=new Mutex(false,@"Global\NoiseReduction.Integration"); try { if(!mutex.WaitOne(0)) { mutex.Dispose(); throw new InvalidOperationException("Another NoiseReduction integration operation is running"); } } catch(AbandonedMutexException) { } }
+   public void Dispose() { mutex.ReleaseMutex(); mutex.Dispose(); }
+  }
+  static RegistryKey Machine() { return RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64); }
+  static RegistryEngine Engine(RegistryKey root) { PrepareDirectories(); return new RegistryEngine(root, Path.Combine(DataRoot, "Journal")); }
+  internal static void PrepareDirectories() {
+   var admins=new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid,null);
+   var system=new SecurityIdentifier(WellKnownSidType.LocalSystemSid,null);
+   var users=new SecurityIdentifier(WellKnownSidType.BuiltinUsersSid,null);
+   foreach(string directory in new[]{DataRoot,ControlRoot,Path.Combine(DataRoot,"Journal"),Path.Combine(DataRoot,"SetupJournal")}) {
+    for(var current=new DirectoryInfo(directory);current != null;current=current.Parent) if(current.Exists && (current.Attributes & FileAttributes.ReparsePoint)!=0) throw new IOException("NoiseReduction data paths must not contain reparse points");
+    if(directory.EndsWith("Journal",StringComparison.OrdinalIgnoreCase) && Directory.Exists(directory)) foreach(string file in Directory.GetFiles(directory)) {
+     if((File.GetAttributes(file)&FileAttributes.ReparsePoint)!=0) throw new IOException("Journal must not contain reparse points");
+     var owner=File.GetAccessControl(file).GetOwner(typeof(SecurityIdentifier)); if(!owner.Equals(admins) && !owner.Equals(system)) throw new UnauthorizedAccessException("Rollback journal has an untrusted owner: " + file);
+    }
+   }
+   foreach(string directory in new[]{DataRoot,Path.Combine(DataRoot,"Journal"),Path.Combine(DataRoot,"SetupJournal"),ControlRoot}) {
+    Directory.CreateDirectory(directory); var acl=new DirectorySecurity(); acl.SetAccessRuleProtection(true,false); acl.SetOwner(admins);
+    foreach(var principal in new[]{admins,system}) acl.AddAccessRule(new FileSystemAccessRule(principal,FileSystemRights.FullControl,InheritanceFlags.ContainerInherit|InheritanceFlags.ObjectInherit,PropagationFlags.None,AccessControlType.Allow));
+    acl.AddAccessRule(new FileSystemAccessRule(users,directory==ControlRoot ? FileSystemRights.Modify : FileSystemRights.ReadAndExecute,InheritanceFlags.ContainerInherit|InheritanceFlags.ObjectInherit,PropagationFlags.None,AccessControlType.Allow)); Directory.SetAccessControl(directory,acl);
+   }
+  }
+  internal static string EndpointGuid(string id) { int start = id.LastIndexOf('{'); Guid guid; if(start < 0 || !Guid.TryParse(id.Substring(start), out guid)) throw new ArgumentException("Invalid capture endpoint ID"); return guid.ToString("B"); }
+  static string Fx(string id) { return Capture + "\\" + EndpointGuid(id) + "\\FxProperties"; }
+  public static List<DeviceInfo> EnumerateMicrophones() {
+   var result = new List<DeviceInfo>(); var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator(); IMMDeviceCollection collection = null;
+   try {
+    Marshal.ThrowExceptionForHR(enumerator.EnumAudioEndpoints(1, 15, out collection)); uint count; collection.GetCount(out count);
+    using(var root = Machine()) for(uint i = 0; i < count; i++) {
+     IMMDevice device; Marshal.ThrowExceptionForHR(collection.Item(i, out device));
+     try {
+      uint state; Marshal.ThrowExceptionForHR(device.GetState(out state)); string id; Marshal.ThrowExceptionForHR(device.GetId(out id)); string guid = EndpointGuid(id); string name = id;
+      IPropertyStore store; Marshal.ThrowExceptionForHR(device.OpenPropertyStore(0, out store));
+      try { var key = new PropertyKey(new Guid("a45c254e-df1c-4efd-8020-67d146a850e0"),14); PropVariant value; Marshal.ThrowExceptionForHR(store.GetValue(ref key, out value)); try { if(value.Type == 31) name = Marshal.PtrToStringUni(value.Pointer); } finally { PropVariantClear(ref value); } } finally { Marshal.ReleaseComObject(store); }
+      bool attached = false, enabled = true;
+      using(var fx = root.OpenSubKey(Fx(id))) if(fx != null) { attached = RegistryEngine.Contains(fx.GetValue(CompositeKey), Clsid) || RegistryEngine.Contains(fx.GetValue(LegacyKey), Clsid); object disabled = fx.GetValue("{1DA5D803-D492-4EDD-8C23-E0C0FFEE7F0E},5"); enabled = disabled == null || Convert.ToInt32(disabled) == 0; }
+      result.Add(new DeviceInfo { Id = id, Guid = guid.Trim('{','}').ToLowerInvariant(), Name = name, Attached = attached, EnhancementsEnabled = enabled, Active = state == 1 });
+     } finally { Marshal.ReleaseComObject(device); }
+    }
+   } finally { if(collection != null) Marshal.ReleaseComObject(collection); Marshal.ReleaseComObject(enumerator); }
+   return result;
+  }
+  public sealed class VerifiedAttachmentScope : IDisposable {
+   OperationLease operation; RegistryKey root; RegistryEngine.VerificationScope scope;
+   internal VerifiedAttachmentScope(string endpointId) {
+    operation=new OperationLease();
+    try { root=Machine(); scope=Engine(root).BeginVerifiedAttachment(Fx(endpointId)); }
+    catch { if(root!=null) root.Dispose(); operation.Dispose(); throw; }
+   }
+   public void Commit() { if(scope==null) throw new ObjectDisposedException("VerifiedAttachmentScope"); scope.Commit(); }
+   public void Dispose() { if(scope==null) return; try { scope.Dispose(); } finally { scope=null; root.Dispose(); operation.Dispose(); } }
+  }
+  public static VerifiedAttachmentScope BeginVerifiedAttachment(string endpointId) { return new VerifiedAttachmentScope(endpointId); }
+  public static void Attach(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); if(!EnumerateMicrophones().Any(d => d.Id == endpointId && d.Active)) throw new InvalidOperationException("Capture endpoint is unavailable"); e.Attach(Fx(endpointId)); } }
+  public static void Detach(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); e.Detach(Fx(endpointId)); } }
+  public static void DetachAll() { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); using(var capture = root.OpenSubKey(Capture)) if(capture != null) foreach(var id in capture.GetSubKeyNames()) e.Detach(Capture + "\\" + id + "\\FxProperties"); e.DetachJournaledEndpoints(); } }
+  public static void RegisterEngine(string installationDirectory) {
+   string dll = Path.Combine(Path.GetFullPath(installationDirectory), "NoiseReduction.Apo.dll"); if(!File.Exists(dll)) throw new FileNotFoundException("APO library is missing", dll);
+   PrepareDirectories();
+   using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); string com = @"SOFTWARE\Classes\CLSID\" + Clsid + @"\InprocServer32"; e.Set(com,"",dll,RegistryValueKind.String); e.Set(com,"ThreadingModel","Both",RegistryValueKind.String);
+    string apo = @"SOFTWARE\Classes\AudioEngine\AudioProcessingObjects\" + Clsid;
+    e.Set(apo,"FriendlyName","Noise Reduction",RegistryValueKind.String); e.Set(apo,"Copyright","",RegistryValueKind.String);
+    foreach(string field in new[]{"MinorVersion","MinInputConnections","MaxInputConnections","MinOutputConnections","MaxOutputConnections","NumAPOInterfaces"}) e.Set(apo,field,1,RegistryValueKind.DWord);
+    e.Set(apo,"MajorVersion",0,RegistryValueKind.DWord); e.Set(apo,"Flags",15,RegistryValueKind.DWord); e.Set(apo,"MaxInstances",-1,RegistryValueKind.DWord); e.Set(apo,"APOInterface0","{FD7F2B29-24D0-4B5C-B177-592C39F9CA10}",RegistryValueKind.String);
+   }
+  }
+  public static void UnregisterEngine() { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); using(var capture = root.OpenSubKey(Capture)) if(capture != null) foreach(var id in capture.GetSubKeyNames()) using(var fx = capture.OpenSubKey(id + "\\FxProperties")) if(fx != null && (RegistryEngine.Contains(fx.GetValue(CompositeKey),Clsid) || RegistryEngine.Contains(fx.GetValue(LegacyKey),Clsid))) throw new InvalidOperationException("Detach all microphones before unregistering the engine"); e.RestoreRegistration(); } }
+  [DllImport("ole32.dll")] static extern int PropVariantClear(ref PropVariant variant);
+ }
+ public class ValueSnapshot {
+  public bool Exists; public RegistryValueKind Kind; public string[] Strings; public string Text; public byte[] Bytes; public long Number;
+  public static ValueSnapshot Read(RegistryKey key,string name) { object value = key == null ? null : key.GetValue(name,null,RegistryValueOptions.DoNotExpandEnvironmentNames); var s = new ValueSnapshot { Exists = value != null }; if(!s.Exists) return s; s.Kind = key.GetValueKind(name); if(value is string[]) s.Strings=(string[])value; else if(value is string) s.Text=(string)value; else if(value is byte[]) s.Bytes=(byte[])value; else s.Number=Convert.ToInt64(value); return s; }
+  public object Value() { if(Kind == RegistryValueKind.MultiString) return Strings; if(Kind == RegistryValueKind.String || Kind == RegistryValueKind.ExpandString) return Text; if(Kind == RegistryValueKind.Binary || Kind == RegistryValueKind.None) return Bytes; if(Kind == RegistryValueKind.DWord) return unchecked((int)Number); return Number; }
+  public bool Same(ValueSnapshot other) { return new XmlSerializer(typeof(ValueSnapshot)).SerializeString(this) == new XmlSerializer(typeof(ValueSnapshot)).SerializeString(other); }
+ }
+ static class XmlHelper { public static string SerializeString(this XmlSerializer serializer, object value) { using(var writer = new StringWriter()) { serializer.Serialize(writer,value); return writer.ToString(); } } }
+ public class PendingAttachment { public int Version; public string Id,Path; }
+ public class RegistryChange { public string Path, Name; public ValueSnapshot Before, After; public bool Committed; public long Sequence; public string TransactionId; }
+ public class RegistryEngine {
+  [ThreadStatic] internal static string CurrentTransactionId = null;
+  readonly RegistryKey root; readonly string journal; public Action BeforeWrite;
+  public RegistryEngine(RegistryKey root,string journal) { this.root=root; this.journal=journal; }
+  static XmlSerializer Serializer = new XmlSerializer(typeof(RegistryChange));
+  string Save(RegistryChange change, bool temporary = false) {
+   Directory.CreateDirectory(journal);
+   string temporaryFile=System.IO.Path.Combine(journal,System.Guid.NewGuid().ToString("N")+".tmp");
+   using(var stream=new FileStream(temporaryFile,FileMode.CreateNew,FileAccess.Write,FileShare.None,4096,FileOptions.WriteThrough)) { Serializer.Serialize(stream,change); stream.Flush(true); }
+   if(temporary) return temporaryFile;
+   string published=System.IO.Path.ChangeExtension(temporaryFile,".xml"); File.Move(temporaryFile,published); return published;
+  }
+  RegistryChange Load(string file) { using(var stream=File.OpenRead(file)) return (RegistryChange)Serializer.Deserialize(stream); }
+  void Write(RegistryChange c, ValueSnapshot value) {
+   RegistryKey key=root.OpenSubKey(c.Path,RegistryKeyPermissionCheck.ReadWriteSubTree,RegistryRights.QueryValues|RegistryRights.SetValue);
+   if(key==null) {
+    bool machine=String.Equals(root.Name,"HKEY_LOCAL_MACHINE",StringComparison.OrdinalIgnoreCase);
+    bool registration=String.Equals(c.Path,@"SOFTWARE\Classes\CLSID\"+Integration.Clsid+@"\InprocServer32",StringComparison.OrdinalIgnoreCase) || String.Equals(c.Path,@"SOFTWARE\Classes\AudioEngine\AudioProcessingObjects\"+Integration.Clsid,StringComparison.OrdinalIgnoreCase) || String.Equals(c.Path,@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\NoiseReduction",StringComparison.OrdinalIgnoreCase);
+    if(machine && !registration) throw new InvalidOperationException("Existing endpoint registry state is unavailable: "+c.Path);
+    if(!value.Exists) return;
+    key=root.CreateSubKey(c.Path);
+   }
+   using(key) { if(value.Exists) key.SetValue(c.Name,value.Value(),value.Kind); else key.DeleteValue(c.Name,false); key.Flush(); }
+  }
+  public void Set(string path,string name,object value,RegistryValueKind kind) {
+   ValueSnapshot before; using(var key=root.OpenSubKey(path)) before=ValueSnapshot.Read(key,name);
+   var after = new ValueSnapshot{Exists=true,Kind=kind}; if(value is string[]) after.Strings=(string[])value; else if(value is string) after.Text=(string)value; else if(value is byte[]) after.Bytes=(byte[])value; else after.Number=Convert.ToInt64(value);
+   if(before.Same(after)) return;
+   var c=new RegistryChange{Path=path,Name=name,Before=before,After=after,TransactionId=CurrentTransactionId,Sequence=Math.Max(DateTime.UtcNow.Ticks,Files().Select(f=>Load(f).Sequence).DefaultIfEmpty(0).Max()+1)}; string file=Save(c);
+   if(BeforeWrite != null) BeforeWrite();
+   Write(c,after); c.Committed=true; string committed=Save(c,true); File.Replace(committed,file,null);
+  }
+  static readonly XmlSerializer PendingSerializer=new XmlSerializer(typeof(PendingAttachment));
+  public sealed class VerificationScope : IDisposable {
+   readonly RegistryEngine engine; readonly string previous; readonly PendingAttachment pending; bool completed,disposed;
+   internal VerificationScope(RegistryEngine engine,string path) {
+    this.engine=engine; previous=CurrentTransactionId;
+    using(var key=engine.root.OpenSubKey(path)) { if(key==null) throw new InvalidOperationException("Endpoint registry state is unavailable"); if(Contains(key.GetValue(Integration.CompositeKey),Integration.Clsid) || Contains(key.GetValue(Integration.LegacyKey),Integration.Clsid)) return; }
+    if(!String.IsNullOrEmpty(previous)) throw new InvalidOperationException("A registry verification transaction is already active");
+    pending=new PendingAttachment{Version=1,Id=Guid.NewGuid().ToString("N"),Path=path}; engine.PublishPending(pending); CurrentTransactionId=pending.Id;
+   }
+   public void Commit() { if(disposed) throw new ObjectDisposedException("VerificationScope"); if(pending!=null) File.Delete(engine.PendingFile(pending.Id)); completed=true; }
+   public void Dispose() { if(disposed) return; try { if(!completed && pending!=null) engine.RollbackPending(pending); } finally { CurrentTransactionId=previous; disposed=true; } }
+  }
+  public VerificationScope BeginVerifiedAttachment(string path) { Recover(); return new VerificationScope(this,path); }
+  string PendingFile(string id) { return System.IO.Path.Combine(journal,id+".verify"); }
+  void PublishPending(PendingAttachment pending) {
+   Directory.CreateDirectory(journal); string temporary=System.IO.Path.Combine(journal,Guid.NewGuid().ToString("N")+".tmp");
+   using(var stream=new FileStream(temporary,FileMode.CreateNew,FileAccess.Write,FileShare.None,4096,FileOptions.WriteThrough)) { PendingSerializer.Serialize(stream,pending); stream.Flush(true); }
+   File.Move(temporary,PendingFile(pending.Id));
+  }
+  void RecoverVerifications() {
+   foreach(var file in Directory.Exists(journal) ? Directory.GetFiles(journal,"*.verify") : new string[0]) {
+    PendingAttachment pending; using(var stream=File.OpenRead(file)) pending=(PendingAttachment)PendingSerializer.Deserialize(stream);
+    Guid id; if(pending.Version!=1 || !Guid.TryParseExact(pending.Id,"N",out id) || String.IsNullOrEmpty(pending.Path) || !String.Equals(file,PendingFile(pending.Id),StringComparison.OrdinalIgnoreCase)) throw new IOException("Invalid pending verification record");
+    if(!String.Equals(pending.Id,CurrentTransactionId,StringComparison.Ordinal)) RollbackPending(pending);
+   }
+  }
+  void RollbackPending(PendingAttachment pending) {
+   bool complete=true;
+   foreach(var file in ReverseFiles()) {
+    var c=Load(file); if(!String.Equals(c.TransactionId,pending.Id,StringComparison.Ordinal)) continue;
+    if(!String.Equals(c.Path,pending.Path,StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Verification journal contains an unrelated registry path");
+    using(var key=root.OpenSubKey(c.Path)) {
+     if(key==null) { complete=false; continue; }
+     var now=ValueSnapshot.Read(key,c.Name);
+     if(now.Same(c.After)) Write(c,c.Before);
+     else if(c.Name==Integration.CompositeKey && now.Exists && now.Kind==RegistryValueKind.MultiString) Write(c,new ValueSnapshot{Exists=true,Kind=RegistryValueKind.MultiString,Strings=((string[])now.Value()).Where(value=>!String.Equals(value,Integration.Clsid,StringComparison.OrdinalIgnoreCase)).ToArray()});
+     else if(now.Same(c.Before)) { }
+     else if(c.Name==Integration.ModesKey) { }
+     else throw new InvalidOperationException("Pending verification rollback conflict at "+c.Path);
+    }
+    File.Delete(file);
+   }
+   if(complete) File.Delete(PendingFile(pending.Id));
+  }
+  public static bool Contains(object value,string clsid) { var list=value as string[]; if(list != null) return list.Any(s=>String.Equals(s,clsid,StringComparison.OrdinalIgnoreCase)); return String.Equals(value as string,clsid,StringComparison.OrdinalIgnoreCase); }
+  public void Attach(string path) {
+   using(var key=root.OpenSubKey(path)) { if(key == null) throw new InvalidOperationException("Endpoint registry state is unavailable"); object existing=key.GetValue(Integration.CompositeKey); if(Contains(existing,Integration.Clsid)) { if(key.GetValue(Integration.ModesKey) == null) Set(path,Integration.ModesKey,new[]{Integration.DefaultMode},RegistryValueKind.MultiString); return; } if(existing != null && !(existing is string[])) throw new InvalidOperationException("Composite EFX has an incompatible registry type"); var chain=existing == null ? new List<string>() : new List<string>((string[])existing);
+    if(existing == null) { object legacy=key.GetValue(Integration.LegacyKey); if(legacy != null) throw new InvalidOperationException("Endpoint has a legacy OEM EFX chain; automatic migration is unsafe and was refused"); }
+    if(chain.Any(s=> { Guid g; return !Guid.TryParse(s,out g); })) throw new InvalidOperationException("Invalid OEM EFX CLSID");
+    chain.Add(Integration.Clsid);
+    Set(path,Integration.CompositeKey,chain.ToArray(),RegistryValueKind.MultiString);
+    try { if(key.GetValue(Integration.ModesKey) == null) Set(path,Integration.ModesKey,new[]{Integration.DefaultMode},RegistryValueKind.MultiString); } catch { Detach(path); throw; }
+   }
+  }
+  string[] Files() { return Directory.Exists(journal) ? Directory.GetFiles(journal,"*.xml") : new string[0]; }
+  string[] ReverseFiles() { return Files().OrderByDescending(f=> { var c=Load(f); return c.Sequence==0 ? File.GetCreationTimeUtc(f).Ticks : c.Sequence; }).ToArray(); }
+  public void Recover() { RecoverVerifications(); foreach(var file in ReverseFiles()) { var c=Load(file); if(c.Committed || (!String.IsNullOrEmpty(CurrentTransactionId) && String.Equals(c.TransactionId,CurrentTransactionId,StringComparison.Ordinal))) continue; ValueSnapshot now; using(var key=root.OpenSubKey(c.Path)) now=ValueSnapshot.Read(key,c.Name); if(now.Same(c.After)) Write(c,c.Before); else if(!now.Same(c.Before)) throw new InvalidOperationException("Registry recovery conflict at " + c.Path + " / " + c.Name); File.Delete(file); } foreach(var temporaryFile in Directory.Exists(journal) ? Directory.GetFiles(journal,"*.tmp") : new string[0]) File.Delete(temporaryFile); }
+  public void Detach(string path) {
+   foreach(var file in ReverseFiles()) { var c=Load(file); if(!c.Committed || !String.Equals(c.Path,path,StringComparison.OrdinalIgnoreCase)) continue;
+    using(var key=root.OpenSubKey(path)) { if(key == null) continue; var now=ValueSnapshot.Read(key,c.Name); if(now.Same(c.After)) Write(c,c.Before);
+     else if(c.Name == Integration.CompositeKey && now.Kind == RegistryValueKind.MultiString && now.Exists) { var filtered=((string[])now.Value()).Where(s=>!String.Equals(s,Integration.Clsid,StringComparison.OrdinalIgnoreCase)).ToArray(); Write(c,new ValueSnapshot{Exists=true,Kind=RegistryValueKind.MultiString,Strings=filtered}); }
+     else if(now.Same(c.Before)) { } else if(c.Name == Integration.ModesKey) { } else throw new InvalidOperationException("Registry rollback conflict at " + path);
+    } File.Delete(file);
+   }
+  }
+  public void DetachJournaledEndpoints() { foreach(var path in Files().Select(f=>Load(f).Path).Where(p=>p.EndsWith("\\FxProperties",StringComparison.OrdinalIgnoreCase)).Distinct().ToArray()) Detach(path); }
+  public void RestoreRegistration() { RestorePrefix(@"SOFTWARE\Classes\"); }
+  public string[] Checkpoint() { return Files(); }
+  public void RestoreSince(string[] checkpoint) { Recover(); foreach(var file in ReverseFiles().Except(checkpoint).ToArray()) { var c=Load(file); ValueSnapshot now; using(var key=root.OpenSubKey(c.Path)) now=ValueSnapshot.Read(key,c.Name); if(now.Same(c.After)) Write(c,c.Before); else if(!now.Same(c.Before)) throw new InvalidOperationException("Registry transaction conflict at " + c.Path); File.Delete(file); } }
+  public void RestoreTransaction(string transactionId) {
+   if(String.IsNullOrEmpty(transactionId)) throw new ArgumentException("Missing registry transaction identity");
+   foreach(var file in ReverseFiles()) { var c=Load(file); if(!String.Equals(c.TransactionId,transactionId,StringComparison.Ordinal)) continue; ValueSnapshot now; using(var key=root.OpenSubKey(c.Path)) now=ValueSnapshot.Read(key,c.Name); if(now.Same(c.After)) Write(c,c.Before); else if(!now.Same(c.Before)) throw new InvalidOperationException("Registry transaction conflict at " + c.Path); File.Delete(file); }
+  }
+  public void RestorePrefix(string prefix) { foreach(var file in ReverseFiles()) { var c=Load(file); if(!c.Path.StartsWith(prefix,StringComparison.OrdinalIgnoreCase)) continue; ValueSnapshot now; using(var key=root.OpenSubKey(c.Path)) now=ValueSnapshot.Read(key,c.Name); if(now.Same(c.After)) Write(c,c.Before); else if(!now.Same(c.Before)) throw new InvalidOperationException("Registration has been changed by another installation"); File.Delete(file); } }
+ }
+ [StructLayout(LayoutKind.Sequential)] struct PropertyKey { public Guid Format; public uint Id; public PropertyKey(Guid format,uint id){Format=format;Id=id;} }
+ [StructLayout(LayoutKind.Explicit,Size=24)] struct PropVariant { [FieldOffset(0)] public ushort Type; [FieldOffset(8)] public IntPtr Pointer; }
+ [ComImport,Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumerator { }
+ [ComImport,Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] interface IMMDeviceEnumerator { [PreserveSig]int EnumAudioEndpoints(int flow,uint mask,out IMMDeviceCollection devices); [PreserveSig]int GetDefaultAudioEndpoint(int flow,int role,out IMMDevice device); [PreserveSig]int GetDevice([MarshalAs(UnmanagedType.LPWStr)]string id,out IMMDevice device); }
+ [ComImport,Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] interface IMMDeviceCollection { [PreserveSig]int GetCount(out uint count); [PreserveSig]int Item(uint index,out IMMDevice device); }
+ [ComImport,Guid("D666063F-1587-4E43-81F1-B948E807363F"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] interface IMMDevice { [PreserveSig]int Activate(ref Guid iid,uint context,IntPtr parameters,[MarshalAs(UnmanagedType.IUnknown)]out object instance); [PreserveSig]int OpenPropertyStore(uint mode,out IPropertyStore store); [PreserveSig]int GetId([MarshalAs(UnmanagedType.LPWStr)]out string id); [PreserveSig]int GetState(out uint state); }
+ [ComImport,Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] interface IPropertyStore { int GetCount(out uint count); int GetAt(uint index,out PropertyKey key); [PreserveSig]int GetValue(ref PropertyKey key,out PropVariant value); int SetValue(ref PropertyKey key,ref PropVariant value); int Commit(); }
+}

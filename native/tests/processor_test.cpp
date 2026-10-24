@@ -57,6 +57,16 @@ int wmain(int argc, wchar_t** argv) {
         separate.process(input.data(), whole.data(), input.size());
         in_place.process(input.data(), input.data(), input.size());
         require(input == whole, "In-place output differs from separate buffers");
+        nr::Processor failed_model(nr::Backend{});
+        failed_model.process(input.data(), whole.data(), input.size());
+        require(!failed_model.has_model() && failed_model.processed_frames() == 0, "Missing model starts inference");
+        for (size_t i = nr::Processor::latency; i < input.size(); ++i)
+            require(whole[i] == input[i - nr::Processor::latency], "Missing model loses original audio");
+        nr::Processor zero_strength(backend.api());
+        zero_strength.set_attenuation(0);
+        zero_strength.process(input.data(), whole.data(), input.size());
+        for (size_t i = nr::Processor::latency + 960; i < input.size(); ++i)
+            require(std::abs(whole[i] - input[i - nr::Processor::latency]) < 1e-6f, "Zero strength does not preserve original audio");
         std::cout << "PASS: block boundaries, delayed bypass, idle bypass, silence, nonfinite input, toggles, in-place\n";
         return 0;
     } catch (const std::exception& error) {

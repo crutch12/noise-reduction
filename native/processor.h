@@ -21,13 +21,17 @@ public:
     Processor(const Processor&) = delete;
     Processor& operator=(const Processor&) = delete;
     void set_enabled(bool value) noexcept { enabled_.store(value, std::memory_order_relaxed); }
+    void set_attenuation(float db) noexcept;
     void process(const float* input, float* output, size_t count) noexcept;
     uint64_t processed_frames() const noexcept { return processed_frames_; }
+    bool has_model() const noexcept { return state_ != nullptr; }
 
 private:
     Backend backend_;
     void* state_;
     std::atomic<bool> enabled_;
+    std::atomic<float> floor_{0.0630957344f};
+    float current_floor_ = 0.0630957344f;
     std::array<float, frame_size> input_{};
     std::array<float, frame_size> output_{};
     std::array<float, latency> dry_{};

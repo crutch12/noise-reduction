@@ -25,6 +25,11 @@ static void probe() {
         require(properties->GetValue(PKEY_Device_FriendlyName, &name));
         if (name.vt == VT_LPWSTR) std::wcout << name.pwszVal << L'\n';
         PropVariantClear(&name);
+        constexpr PROPERTYKEY guid_key{{0x1da5d803,0xd492,0x4edd,{0x8c,0x23,0xe0,0xc0,0xff,0xee,0x7f,0x0e}},4};
+        PROPVARIANT endpoint_guid{};
+        HRESULT guid_result = properties->GetValue(guid_key, &endpoint_guid);
+        std::wcout << L"  endpoint GUID property type=" << endpoint_guid.vt << L" result=" << std::hex << guid_result << std::dec << L'\n';
+        PropVariantClear(&endpoint_guid);
         ComPtr<IAudioClient> client;
         HRESULT result = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, reinterpret_cast<void**>(client.GetAddressOf()));
         if (FAILED(result)) { std::wcout << L"  Activate failed: " << std::hex << result << L'\n'; continue; }

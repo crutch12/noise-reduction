@@ -4,6 +4,8 @@
 #include <mmreg.h>
 #include <audiomediatype.h>
 #include <audioenginebaseapo.h>
+#include <audioengineextensionapo.h>
+#include <propsys.h>
 #include <wrl/client.h>
 #include "apo_id.h"
 #include <array>
@@ -16,6 +18,17 @@
 using Microsoft::WRL::ComPtr;
 
 static void check(bool ok, const char* message) { if (!ok) throw std::runtime_error(message); }
+struct Outer final : IUnknown {
+    ULONG references = 1;
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID id, void** value) override {
+        if (!value) return E_POINTER;
+        *value = nullptr;
+        if (id != __uuidof(IUnknown)) return E_NOINTERFACE;
+        *value = static_cast<IUnknown*>(this); AddRef(); return S_OK;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++references; }
+    ULONG STDMETHODCALLTYPE Release() override { return --references; }
+};
 
 int wmain(int argc, wchar_t** argv) {
     try {
@@ -32,12 +45,45 @@ int wmain(int argc, wchar_t** argv) {
         {
             ComPtr<IClassFactory> factory;
             check(SUCCEEDED(factory_fn(CLSID_NoiseReduction, IID_PPV_ARGS(&factory))), "Factory creation failed");
+            {
+                Outer outer;
+                ComPtr<IUnknown> inner;
+                check(SUCCEEDED(factory->CreateInstance(&outer, IID_PPV_ARGS(&inner))), "Composite APO aggregation is not supported");
+                ComPtr<IAudioProcessingObject> aggregated;
+                check(SUCCEEDED(inner.As(&aggregated)), "Aggregated APO interface missing");
+                ComPtr<IUnknown> identity;
+                check(SUCCEEDED(aggregated.As(&identity)) && identity.Get() == static_cast<IUnknown*>(&outer), "Aggregated IUnknown identity is broken");
+                identity.Reset(); aggregated.Reset(); inner.Reset();
+                check(outer.references == 1, "Aggregated outer references leaked");
+            }
             ComPtr<IAudioProcessingObject> apo;
             check(SUCCEEDED(factory->CreateInstance(nullptr, IID_PPV_ARGS(&apo))), "APO creation failed");
             check(can_unload() == S_FALSE, "DLL can unload while objects live");
             ComPtr<IAudioProcessingObjectRT> rt;
             ComPtr<IAudioProcessingObjectConfiguration> config;
             check(SUCCEEDED(apo.As(&rt)) && SUCCEEDED(apo.As(&config)), "Missing required interfaces");
+            ComPtr<IAudioSystemEffects3> effects;
+            check(SUCCEEDED(apo.As(&effects)), "Missing Windows 11 controllable effects");
+            AUDIO_SYSTEMEFFECT* effect_list = nullptr;
+            UINT effect_count = 0;
+            check(SUCCEEDED(effects->GetControllableSystemEffectsList(&effect_list, &effect_count, nullptr)) && effect_count == 1, "Missing controllable noise suppression");
+            GUID effect_id = effect_list[0].id;
+            CoTaskMemFree(effect_list);
+            check(SUCCEEDED(effects->SetAudioSystemEffectState(effect_id, AUDIO_SYSTEMEFFECT_STATE_OFF)), "Cannot disable system effect");
+            GUID* active = nullptr;
+            UINT active_count = 99;
+            check(SUCCEEDED(effects->GetEffectsList(&active, &active_count, nullptr)) && active_count == 0 && active == nullptr, "Disabled effect reported as active");
+            check(SUCCEEDED(effects->SetAudioSystemEffectState(effect_id, AUDIO_SYSTEMEFFECT_STATE_ON)), "Cannot reenable system effect");
+            {
+                ComPtr<IAudioProcessingObject> windows_apo;
+                check(SUCCEEDED(factory->CreateInstance(nullptr, IID_PPV_ARGS(&windows_apo))), "Cannot create Windows APO");
+                ComPtr<IPropertyStore> store;
+                check(SUCCEEDED(PSCreateMemoryPropertyStore(IID_PPV_ARGS(&store))), "Cannot create endpoint property store");
+                APOInitSystemEffects3 init{};
+                init.APOInit.cbSize = sizeof(init); init.APOInit.clsid = CLSID_NoiseReduction;
+                init.pAPOEndpointProperties = store.Get(); init.InitializeForDiscoveryOnly = TRUE;
+                check(SUCCEEDED(windows_apo->Initialize(sizeof(init), reinterpret_cast<BYTE*>(&init))), "Windows discovery initialization failed");
+            }
             check(SUCCEEDED(apo->Initialize(0, nullptr)), "Initialize failed");
             check(apo->Initialize(0, nullptr) == APOERR_ALREADY_INITIALIZED, "Repeated initialize accepted");
             HNSTIME latency = 0;

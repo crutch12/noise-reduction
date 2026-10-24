@@ -1,0 +1,21 @@
+NoiseReduction third-party notices
+
+rnnoise.dll contains the RNNoise model and engine, obtained from pyrnnoise 0.4.5
+Source: https://github.com/pengzhendong/pyrnnoise
+Distribution version: https://pypi.org/project/pyrnnoise/0.4.5/
+RNNoise upstream: https://github.com/xiph/rnnoise
+The pyrnnoise distribution is Apache-2.0, see pyrnnoise-LICENSE.txt
+RNNoise is BSD-3-Clause, see RNNoise-COPYING.txt
+No Python runtime or Python package is required by the installed application
+The model is embedded in rnnoise.dll, there is no separately downloaded model
+
+MSVC runtime DLLs are unmodified Microsoft Visual C++ redistributable components
+They are bundled from Visual Studio 2022 VC/Redist/MSVC/x64/Microsoft.VC143.CRT
+Redistribution list: https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution
+License terms: https://visualstudio.microsoft.com/license-terms/vs2022-cruntime/
+These DLLs remain under Microsoft's software license terms
+
+NoiseReduction requires x64 Windows 10 version 1803 or newer and .NET Framework 4.8
+The Windows and .NET Framework runtimes are provided by Windows, not this package
+Only files listed in payload-sha256.txt are bundled, with the generated setup itself
+No source microphone recording, comparison audio, Python environment or lab tools are included

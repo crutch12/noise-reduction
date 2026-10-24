@@ -11,6 +11,19 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Native processing tests failed' }
     & ./build/apo_test.exe (Resolve-Path 'build/NoiseReduction.Apo.dll').Path
     if ($LASTEXITCODE -ne 0) { throw 'APO tests failed' }
+    & ./build/control_test.exe
+    if ($LASTEXITCODE -ne 0) { throw 'Shared control tests failed' }
+    & ./build/windows_control_test.exe (Resolve-Path 'build/NoiseReduction.Apo.dll').Path
+    if ($LASTEXITCODE -ne 0) { throw 'Windows initialization tests failed' }
+    $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
+    & $compiler /nologo /platform:x64 /warnaserror+ /out:build\IntegrationTests.exe platform\Integration.cs platform\IntegrationTests.cs
+    if ($LASTEXITCODE -ne 0) { throw 'Integration test compilation failed' }
+    & ./build/IntegrationTests.exe
+    if ($LASTEXITCODE -ne 0) { throw 'Registry integration tests failed' }
+    & ./tools/build-app.ps1 -Test -NativeTest -UiTest
+    if ($LASTEXITCODE -ne 0) { throw 'Desktop tests failed' }
+    & ./tools/build-installer.ps1
+    if ($LASTEXITCODE -ne 0) { throw 'Installer verification failed' }
     & ./tools/build-audition.ps1
     $check = Start-Process -FilePath (Resolve-Path 'dist/comparison/NoiseReduction.Compare.exe').Path -ArgumentList '--self-test' -WindowStyle Hidden -Wait -PassThru
     if ($check.ExitCode -ne 0) { throw "Audio playback self-test failed: $($check.ExitCode)" }
