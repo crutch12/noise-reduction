@@ -151,8 +151,6 @@ namespace NoiseReduction.Desktop
             { "Каналы обрабатываются вместе, нагрузка ниже", "Channels are processed together, lower CPU load" },
             { "Обычная сила, остальное выключено", "Normal strength, everything else off" },
             { "Запишите фразу, затем слушайте и переключайте Оригинал и Обработано", "Record a phrase, then play it and switch between Original and Processed" },
-            { "Отключить от Windows", "Remove from Windows audio" },
-            { "Шумоподавление перестанет работать в программах, звук Windows прервётся на пару секунд", "Noise reduction stops working in apps, Windows audio pauses for a couple of seconds" },
             { "Нажмите, чтобы включить шумоподавление", "Click to turn on noise reduction" },
             { "Шумоподавление", "Noise reduction" },
             { "Вкл", "On" },

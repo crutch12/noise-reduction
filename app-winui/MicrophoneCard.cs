@@ -33,7 +33,7 @@ namespace NoiseReduction.WinUI
         private readonly FontIcon advancedChevron = new FontIcon { Glyph = "", FontSize = 12 };
         private readonly StackPanel extra = new StackPanel { Spacing = 8, Visibility = Visibility.Collapsed };
         private readonly ToggleSwitch lowCut = new ToggleSwitch(), economy = new ToggleSwitch { Visibility = Visibility.Collapsed };
-        private readonly Button connect = new Button(), reset = new Button(), diagnostics = new Button();
+        private readonly Button reset = new Button(), diagnostics = new Button();
         private bool updating;
         internal readonly string Id;
         internal readonly Expander View;
@@ -60,7 +60,7 @@ namespace NoiseReduction.WinUI
             buttons.Children.Add(record); buttons.Children.Add(listen); buttons.Children.Add(listenSwitch);
 
             var tools = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-            tools.Children.Add(reset); tools.Children.Add(diagnostics); tools.Children.Add(connect);
+            tools.Children.Add(reset); tools.Children.Add(diagnostics);
             extra.Children.Add(lowCut); extra.Children.Add(economy); extra.Children.Add(tools);
             var advancedContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
             advancedContent.Children.Add(advancedLabel); advancedContent.Children.Add(advancedChevron);
@@ -97,7 +97,6 @@ namespace NoiseReduction.WinUI
             record.Click += (_, _) => { if (controller.RecordingId == Id) controller.StopRecording(); else run(() => controller.RecordAsync(Id)); };
             listen.Click += (_, _) => controller.TogglePlayback(Id);
             listenSwitch.Toggled += (_, _) => { if (!updating) controller.SetListenProcessed(listenSwitch.IsOn); };
-            connect.Click += (_, _) => run(() => controller.IntegrateAsync(Id, false));
             enable.Click += (_, _) => run(() => controller.IntegrateAsync(Id, true));
             reset.Click += (_, _) => { presets.CustomOpen = false; controller.ResetProfile(Id); };
             diagnostics.Click += (_, _) => { var data = new DataPackage(); data.SetText(controller.BuildDiagnostics(Id)); Clipboard.SetContent(data); };
@@ -126,7 +125,6 @@ namespace NoiseReduction.WinUI
             Tip(listenSwitch, "Переключение на ходу");
             Tip(lowCut, "Гул ниже 80 Гц: сеть, вентиляторы");
             Tip(economy, "Каналы обрабатываются вместе, нагрузка ниже");
-            Tip(connect, "Шумоподавление перестанет работать в программах, звук Windows прервётся на пару секунд");
             Tip(reset, "Обычная сила, остальное выключено");
         }
 
@@ -187,9 +185,6 @@ namespace NoiseReduction.WinUI
                 economy.Visibility = device.Channels > 1 ? Visibility.Visible : Visibility.Collapsed;
                 economy.IsOn = controller.Economy(Id);
                 economy.IsEnabled = idle;
-                connect.Content = T("Отключить от Windows");
-                connect.Visibility = device.Attached ? Visibility.Visible : Visibility.Collapsed;
-                connect.IsEnabled = idle;
                 reset.IsEnabled = idle;
             }
             finally { updating = false; }
