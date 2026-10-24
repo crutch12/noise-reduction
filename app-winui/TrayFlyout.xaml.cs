@@ -23,7 +23,6 @@ namespace NoiseReduction.WinUI
             internal TextBlock Name, Details;
             internal Ellipse Dot;
             internal ToggleSwitch Toggle;
-            internal HyperlinkButton Enable;
         }
 
         private const int WidthDip = 360;
@@ -154,14 +153,10 @@ namespace NoiseReduction.WinUI
                     row.Name.Text = device.Name;
                     ToolTipService.SetToolTip(row.Name, device.Name);
                     row.Details.Text = Details(controller, device);
-                    bool enabling = controller.IntegratingId == row.Id;
-                    row.Enable.Visibility = state == MicrophoneState.Detached || enabling ? Visibility.Visible : Visibility.Collapsed;
-                    row.Enable.Content = T(enabling ? "Включение…" : "Включить");
-                    ToolTipService.SetToolTip(row.Enable, T("Звук Windows прервётся на пару секунд"));
-                    row.Enable.IsEnabled = idle;
                     row.Dot.Fill = StateBrush(state, FlyoutRoot);
                     row.Dot.Opacity = state == MicrophoneState.Waiting ? 0.5 : 1;
-                    row.Toggle.IsOn = controller.ProfileEnabled(row.Id);
+                    // переключатель показывает, работает ли шумоподавление на деле
+                    row.Toggle.IsOn = controller.ProfileEnabled(row.Id) && device.Attached;
                     row.Toggle.IsEnabled = idle;
                     Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row.Toggle, device.Name);
                 }
@@ -185,9 +180,7 @@ namespace NoiseReduction.WinUI
             block.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             for (int index = 0; index < 2; index++) block.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             var details = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-            row.Enable = new HyperlinkButton { Padding = new Thickness(4, 0, 4, 0), MinHeight = 0, FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
-            details.Children.Add(row.Dot); details.Children.Add(row.Details); details.Children.Add(row.Enable);
-            row.Enable.Click += (_, _) => { Dismiss(); _ = controller.IntegrateAsync(id, true); };
+            details.Children.Add(row.Dot); details.Children.Add(row.Details);
             block.Children.Add(row.Name);
             Grid.SetRow(details, 1); block.Children.Add(details);
             Grid.SetColumn(row.Toggle, 1); Grid.SetRowSpan(row.Toggle, 2); block.Children.Add(row.Toggle);

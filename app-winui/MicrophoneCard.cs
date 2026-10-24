@@ -18,7 +18,6 @@ namespace NoiseReduction.WinUI
         private readonly TextBlock details = new TextBlock { Style = Style("CaptionTextBlockStyle"), TextTrimming = TextTrimming.CharacterEllipsis };
         private readonly Ellipse dot = new Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center };
         private readonly ToggleSwitch toggle = new ToggleSwitch { MinWidth = 0, VerticalAlignment = VerticalAlignment.Center };
-        private readonly Button enable = new Button { VerticalAlignment = VerticalAlignment.Center };
         private readonly TextBlock strengthLabel = new TextBlock { Style = Style("BodyStrongTextBlockStyle"), VerticalAlignment = VerticalAlignment.Center };
         private readonly TextBlock strengthValue = new TextBlock { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = Brush("TextFillColorSecondaryBrush") };
         private readonly StrengthPresets presets = new StrengthPresets(true);
@@ -42,16 +41,14 @@ namespace NoiseReduction.WinUI
         {
             this.controller = controller; Id = id;
             var header = new Grid { ColumnSpacing = 16, Padding = new Thickness(0, 8, 0, 8) };
-            foreach (var width in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto, GridLength.Auto }) header.ColumnDefinitions.Add(new ColumnDefinition { Width = width });
+            foreach (var width in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) header.ColumnDefinitions.Add(new ColumnDefinition { Width = width });
             header.Children.Add(new FontIcon { Glyph = "", FontSize = 20, VerticalAlignment = VerticalAlignment.Center });
             var caption = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
             caption.Children.Add(dot); caption.Children.Add(details);
             var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 2 };
             text.Children.Add(name); text.Children.Add(caption);
             Grid.SetColumn(text, 1); header.Children.Add(text);
-            enable.Style = Style("AccentButtonStyle");
-            Grid.SetColumn(enable, 2); header.Children.Add(enable);
-            Grid.SetColumn(toggle, 3); header.Children.Add(toggle);
+            Grid.SetColumn(toggle, 2); header.Children.Add(toggle);
 
             var strengthHead = new Grid();
             strengthHead.Children.Add(strengthLabel); strengthHead.Children.Add(strengthValue);
@@ -97,7 +94,6 @@ namespace NoiseReduction.WinUI
             record.Click += (_, _) => { if (controller.RecordingId == Id) controller.StopRecording(); else run(() => controller.RecordAsync(Id)); };
             listen.Click += (_, _) => controller.TogglePlayback(Id);
             listenSwitch.Toggled += (_, _) => { if (!updating) controller.SetListenProcessed(listenSwitch.IsOn); };
-            enable.Click += (_, _) => run(() => controller.IntegrateAsync(Id, true));
             reset.Click += (_, _) => { presets.CustomOpen = false; controller.ResetProfile(Id); };
             diagnostics.Click += (_, _) => { var data = new DataPackage(); data.SetText(controller.BuildDiagnostics(Id)); Clipboard.SetContent(data); };
         }
@@ -120,7 +116,6 @@ namespace NoiseReduction.WinUI
             economy.Header = T("Экономный режим");
             reset.Content = T("Сбросить настройки");
             diagnostics.Content = T("Скопировать диагностику");
-            Tip(enable, "Звук Windows прервётся на пару секунд");
             Tip(slider, "Сила в децибелах");
             Tip(listenSwitch, "Переключение на ходу");
             Tip(lowCut, "Гул ниже 80 Гц: сеть, вентиляторы");
@@ -150,13 +145,10 @@ namespace NoiseReduction.WinUI
                 details.Foreground = Brush(state == MicrophoneState.Error ? "SystemFillColorCriticalBrush" : "TextFillColorSecondaryBrush");
                 dot.Fill = StateBrush(state, View);
                 dot.Opacity = state == MicrophoneState.Waiting ? 0.5 : 1;
-                toggle.IsOn = controller.ProfileEnabled(Id);
+                // переключатель показывает, работает ли шумоподавление на деле
+                toggle.IsOn = controller.ProfileEnabled(Id) && device.Attached;
                 toggle.IsEnabled = idle;
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(toggle, device.Name);
-                bool enabling = controller.IntegratingId == Id;
-                enable.Visibility = state == MicrophoneState.Detached || enabling ? Visibility.Visible : Visibility.Collapsed;
-                enable.Content = T(enabling ? "Включение…" : "Включить");
-                enable.IsEnabled = idle;
 
                 int value = controller.Attenuation(Id);
                 // значение вне пресетов сразу открывает ползунок

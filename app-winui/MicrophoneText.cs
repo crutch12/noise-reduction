@@ -28,7 +28,7 @@ namespace NoiseReduction.WinUI
 
         internal static string Details(DesktopController controller, DeviceInfo device)
         {
-            var parts = new List<string> { StateText(controller.StateOf(device.Id)) };
+            var parts = new List<string> { controller.IntegratingId == device.Id ? T("Включение…") : StateText(controller.StateOf(device.Id)) };
             if (device.Id == controller.DefaultId) parts.Add(T("по умолчанию"));
             var apps = controller.Usage(device.Id);
             if (apps != null && apps.Count > 0) parts.Add(string.Join(", ", apps));
