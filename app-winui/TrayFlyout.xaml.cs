@@ -153,6 +153,7 @@ namespace NoiseReduction.WinUI
                     row.Name.Text = device.Name;
                     ToolTipService.SetToolTip(row.Name, device.Name);
                     row.Details.Text = Details(controller, device);
+                    ToolTipService.SetToolTip(row.Details, state == MicrophoneState.Detached ? T("Включите переключатель, Windows попросит подтверждение") : null);
                     row.Dot.Fill = StateBrush(state, FlyoutRoot);
                     row.Dot.Opacity = state == MicrophoneState.Waiting ? 0.5 : 1;
                     // переключатель показывает, работает ли шумоподавление на деле

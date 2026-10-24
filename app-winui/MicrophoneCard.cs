@@ -18,6 +18,8 @@ namespace NoiseReduction.WinUI
         private readonly TextBlock details = new TextBlock { Style = Style("CaptionTextBlockStyle"), TextTrimming = TextTrimming.CharacterEllipsis };
         private readonly Ellipse dot = new Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center };
         private readonly ToggleSwitch toggle = new ToggleSwitch { MinWidth = 0, VerticalAlignment = VerticalAlignment.Center };
+        private readonly InfoBar hookBar = new InfoBar { Severity = InfoBarSeverity.Warning, IsClosable = false, IsOpen = false };
+        private readonly Button hookButton = new Button();
         private readonly TextBlock strengthLabel = new TextBlock { Style = Style("BodyStrongTextBlockStyle"), VerticalAlignment = VerticalAlignment.Center };
         private readonly TextBlock strengthValue = new TextBlock { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = Brush("TextFillColorSecondaryBrush") };
         private readonly StrengthPresets presets = new StrengthPresets(true);
@@ -70,6 +72,8 @@ namespace NoiseReduction.WinUI
             };
 
             var body = new StackPanel { Spacing = 8 };
+            hookBar.ActionButton = hookButton;
+            body.Children.Add(hookBar);
             body.Children.Add(strengthHead); body.Children.Add(presets.View); body.Children.Add(slider);
             body.Children.Add(Divider());
             body.Children.Add(compareLabel); body.Children.Add(buttons); body.Children.Add(waveform.View); body.Children.Add(note);
@@ -94,6 +98,7 @@ namespace NoiseReduction.WinUI
             record.Click += (_, _) => { if (controller.RecordingId == Id) controller.StopRecording(); else run(() => controller.RecordAsync(Id)); };
             listen.Click += (_, _) => controller.TogglePlayback(Id);
             listenSwitch.Toggled += (_, _) => { if (!updating) controller.SetListenProcessed(listenSwitch.IsOn); };
+            hookButton.Click += (_, _) => run(() => controller.IntegrateAsync(Id, true));
             reset.Click += (_, _) => { presets.CustomOpen = false; controller.ResetProfile(Id); };
             diagnostics.Click += (_, _) => { var data = new DataPackage(); data.SetText(controller.BuildDiagnostics(Id)); Clipboard.SetContent(data); };
         }
@@ -149,6 +154,13 @@ namespace NoiseReduction.WinUI
                 toggle.IsOn = controller.ProfileEnabled(Id) && device.Attached;
                 toggle.IsEnabled = idle;
                 Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(toggle, device.Name);
+                // включён в программе, но не встроен в Windows: объясняем и даём одну кнопку
+                bool enabling = controller.IntegratingId == Id;
+                hookBar.IsOpen = controller.ProfileEnabled(Id) && !device.Attached || enabling;
+                hookBar.Title = T(enabling ? "Включение…" : "Шумоподавление не встроено в Windows");
+                hookBar.Message = T(enabling ? "Подтвердите запрос Windows, звук прервётся на пару секунд" : "Программы получают звук без обработки. Нажмите Включить, Windows попросит подтверждение");
+                hookButton.Content = T("Включить");
+                hookButton.IsEnabled = idle;
 
                 int value = controller.Attenuation(Id);
                 // значение вне пресетов сразу открывает ползунок

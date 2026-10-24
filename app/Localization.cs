@@ -180,6 +180,10 @@ namespace NoiseReduction.Desktop
             { "Сейчас идёт установка или другое подключение, повторите после него", "Setup or another connection is in progress, try again when it finishes" },
             { "Включить", "Turn on" },
             { "Включение…", "Turning on…" },
+            { "Шумоподавление не встроено в Windows", "Noise reduction isn't set up in Windows" },
+            { "Программы получают звук без обработки. Нажмите Включить, Windows попросит подтверждение", "Apps get unprocessed audio. Click Turn on, Windows will ask for confirmation" },
+            { "Подтвердите запрос Windows, звук прервётся на пару секунд", "Confirm the Windows prompt, audio pauses for a couple of seconds" },
+            { "Включите переключатель, Windows попросит подтверждение", "Turn on the switch, Windows will ask for confirmation" },
             { "Крестик оставляет программу в трее", "Closing the window keeps the app in the tray" }
         };
         private static readonly List<string> MessageKeys = SortedKeys();
