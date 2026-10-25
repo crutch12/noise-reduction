@@ -17,6 +17,8 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
+        <!-- принимает фокус при открытии, чтобы рамка не появлялась на выключателе без клавиатуры -->
+        <ContentControl x:Name="FocusSink" Width="0" Height="0" IsTabStop="True" AutomationProperties.AccessibilityView="Raw" />
         <Grid Padding="16,10,16,10" ColumnSpacing="10" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
@@ -25,7 +27,7 @@
             </Grid.ColumnDefinitions>
             <Image x:Name="FlyoutIcon" Width="20" Height="20" VerticalAlignment="Center" />
             <TextBlock x:Name="GlobalLabel" Grid.Column="1" Style="{ThemeResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
-            <ToggleSwitch x:Name="GlobalSwitch" Grid.Column="2" MinWidth="0" Margin="0,0,-12,0" OnContent="" OffContent="" HorizontalAlignment="Right" Toggled="GlobalToggled" />
+            <ToggleSwitch x:Name="GlobalSwitch" Grid.Column="2" MinWidth="0" Margin="0,0,-12,0" FocusVisualMargin="-3,-3,9,-3" OnContent="" OffContent="" HorizontalAlignment="Right" Toggled="GlobalToggled" />
         </Grid>
         <StackPanel x:Name="MicrophoneRows" Grid.Row="1" Padding="16,12,16,12" Spacing="14" />
         <Grid Grid.Row="2" Padding="8,4,8,4" Background="{ThemeResource LayerFillColorDefaultBrush}" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0">
