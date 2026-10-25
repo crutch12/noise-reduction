@@ -24,7 +24,13 @@ namespace NoiseReduction.Desktop
                 }
                 return 0;
             }
-            catch (Exception error) { MessageBox.Show(UiText.Message(error.Message), "Noise Reduction", MessageBoxButtons.OK, MessageBoxIcon.Error); return 1; }
+            catch (Exception error)
+            {
+                // полный текст с кодами ошибок нужен для разбора, пользователь видит короткий
+                try { File.AppendAllText(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "NoiseReduction", "engine-errors.log"), DateTime.UtcNow.ToString("o") + " " + String.Join(" ", args) + Environment.NewLine + error + Environment.NewLine); } catch { }
+                MessageBox.Show(UiText.Message(error.Message), "Noise Reduction", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return 1;
+            }
         }
         private static void AttachVerified(string id)
         {

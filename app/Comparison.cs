@@ -78,6 +78,7 @@ namespace NoiseReduction.Desktop
             IAudioClient client = null;
             IAudioCaptureClient capture = null;
             bool started = false;
+            string stage = "open";
             try
             {
                 enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator();
@@ -85,12 +86,16 @@ namespace NoiseReduction.Desktop
                 Guid clientId = typeof(IAudioClient).GUID; object instance;
                 Check(device.Activate(ref clientId, 23, IntPtr.Zero, out instance)); client = (IAudioClient)instance;
                 var format = new WaveFormat { FormatTag = 3, Channels = 1, SamplesPerSec = 48000, AvgBytesPerSec = 192000, BlockAlign = 4, BitsPerSample = 32 };
+                stage = "initialize";
                 Check(client.Initialize(0, unchecked((int)0x88000000), 1000000, 0, ref format, IntPtr.Zero));
                 Guid captureId = typeof(IAudioCaptureClient).GUID;
+                stage = "service";
                 Check(client.GetService(ref captureId, out instance)); capture = (IAudioCaptureClient)instance;
                 // Let the bypass flag reach an already running audio graph
                 Thread.Sleep(150);
+                stage = "start";
                 Check(client.Start()); started = true;
+                stage = "read";
                 int target = (discard ? 3 : stop != null ? 60 : 5) * 48000;
                 var samples = discard ? null : new List<float>(target);
                 int captured = 0;
@@ -122,7 +127,7 @@ namespace NoiseReduction.Desktop
                 return discard ? null : samples.ToArray();
             }
             catch (COMException error)
-            { throw new InvalidOperationException("Не удалось записать выбранный микрофон: " + error.Message, error); }
+            { throw new InvalidOperationException("Не удалось записать выбранный микрофон: " + error.Message + " (" + stage + ", 0x" + error.ErrorCode.ToString("X8") + ")", error); }
             finally
             {
                 if (started && client != null) client.Stop();
