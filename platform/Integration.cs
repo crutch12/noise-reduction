@@ -72,7 +72,7 @@ namespace NoiseReduction.Platform {
       IPropertyStore store; Marshal.ThrowExceptionForHR(device.OpenPropertyStore(0, out store));
       try { var key = new PropertyKey(new Guid("a45c254e-df1c-4efd-8020-67d146a850e0"),14); PropVariant value; Marshal.ThrowExceptionForHR(store.GetValue(ref key, out value)); try { if(value.Type == 31) name = Marshal.PtrToStringUni(value.Pointer); } finally { PropVariantClear(ref value); } } finally { Marshal.ReleaseComObject(store); }
       bool attached = false, enabled = true;
-      using(var fx = root.OpenSubKey(Fx(id))) if(fx != null) { attached = RegistryEngine.Contains(fx.GetValue(CompositeKey), Clsid) || RegistryEngine.Contains(fx.GetValue(LegacyKey), Clsid); object disabled = fx.GetValue("{1DA5D803-D492-4EDD-8C23-E0C0FFEE7F0E},5"); enabled = disabled == null || Convert.ToInt32(disabled) == 0; }
+      using(var fx = root.OpenSubKey(Fx(id))) if(fx != null) { attached = RegistryEngine.Contains(fx.GetValue(CompositeKey), Clsid) || RegistryEngine.Contains(fx.GetValue(LegacyKey), Clsid); object disabled = fx.GetValue(DisableSysFxKey); enabled = disabled == null || Convert.ToInt32(disabled) == 0; }
       // число каналов из формата устройства, WAVEFORMATEX начинается после 8 байт заголовка
       int channels = 1;
       using(var properties = root.OpenSubKey(Capture + "\\" + EndpointGuid(id) + "\\Properties")) if(properties != null) { var format = properties.GetValue("{f19f064d-082c-4e27-bc73-6882a1bb8e4c},0") as byte[]; if(format != null && format.Length >= 12) channels = Math.Max(1, (int)BitConverter.ToUInt16(format, 10)); }
@@ -80,6 +80,8 @@ namespace NoiseReduction.Platform {
       bool pack = false;
       using(var fx = root.OpenSubKey(Fx(id))) pack = fx != null && EffectPack.Managed(fx);
       if(pack) using(var properties = root.OpenSubKey(Properties(id))) attached = properties != null && EffectPack.Selected(properties);
+      // при выключенных в Windows улучшениях эффект не загружается, даже если выбран
+      if(!enabled) attached = false;
       result.Add(new DeviceInfo { Id = id, Guid = guid.Trim('{','}').ToLowerInvariant(), Name = name, Attached = attached, EnhancementsEnabled = enabled, Active = state == 1, Channels = channels, EffectPack = pack });
      } catch(COMException) { } catch(IOException) { } catch(UnauthorizedAccessException) {
      } finally { Marshal.ReleaseComObject(device); }
@@ -102,9 +104,12 @@ namespace NoiseReduction.Platform {
   }
   public static VerifiedAttachmentScope BeginVerifiedAttachment(string endpointId) { return new VerifiedAttachmentScope(endpointId, false); }
   public static VerifiedAttachmentScope BeginVerifiedAttachment(string endpointId, bool effectPack) { return new VerifiedAttachmentScope(endpointId, effectPack); }
-  public static void Attach(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); if(!EnumerateMicrophones().Any(d => d.Id == endpointId && d.Active)) throw new InvalidOperationException("Capture endpoint is unavailable"); e.Attach(Fx(endpointId)); } }
+  internal const string DisableSysFxKey = "{1DA5D803-D492-4EDD-8C23-E0C0FFEE7F0E},5";
+  // Off в настройках улучшений звука Windows выключает все эффекты микрофона, включение возвращает их
+  static void EnableEnhancements(RegistryEngine e, RegistryKey root, string endpointId) { using(var fx = root.OpenSubKey(Fx(endpointId))) { object disabled = fx == null ? null : fx.GetValue(DisableSysFxKey); if(disabled != null && Convert.ToInt32(disabled) != 0) e.Set(Fx(endpointId), DisableSysFxKey, 0, RegistryValueKind.DWord); } }
+  public static void Attach(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); if(!EnumerateMicrophones().Any(d => d.Id == endpointId && d.Active)) throw new InvalidOperationException("Capture endpoint is unavailable"); e.Attach(Fx(endpointId)); EnableEnhancements(e, root, endpointId); } }
   public static void Detach(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); e.Detach(Fx(endpointId)); e.Detach(Properties(endpointId)); } }
-  public static void SelectEffectPack(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); if(!EnumerateMicrophones().Any(d => d.Id == endpointId && d.Active && d.EffectPack)) throw new InvalidOperationException("Capture endpoint is unavailable"); string component = EffectPack.Component(root); if(component == null) throw new InvalidOperationException("Noise Reduction effect pack is not installed"); e.Set(Fx(endpointId), EffectPack.ComponentKey, component, RegistryValueKind.String); e.Set(Properties(endpointId), EffectPack.SelectedKey, EffectPack.Id, RegistryValueKind.String); e.Set(Properties(endpointId), EffectPack.StateKey, EffectPack.State(), RegistryValueKind.Binary); } }
+  public static void SelectEffectPack(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); if(!EnumerateMicrophones().Any(d => d.Id == endpointId && d.Active && d.EffectPack)) throw new InvalidOperationException("Capture endpoint is unavailable"); string component = EffectPack.Component(root); if(component == null) throw new InvalidOperationException("Noise Reduction effect pack is not installed"); e.Set(Fx(endpointId), EffectPack.ComponentKey, component, RegistryValueKind.String); e.Set(Properties(endpointId), EffectPack.SelectedKey, EffectPack.Id, RegistryValueKind.String); e.Set(Properties(endpointId), EffectPack.StateKey, EffectPack.State(), RegistryValueKind.Binary); EnableEnhancements(e, root, endpointId); } }
   public static void DetachAll() { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); using(var capture = root.OpenSubKey(Capture)) if(capture != null) foreach(var id in capture.GetSubKeyNames()) { e.Detach(Capture + "\\" + id + "\\FxProperties"); e.Detach(Capture + "\\" + id + "\\Properties"); } e.DetachJournaledEndpoints(); } }
   public static void RegisterEngine(string installationDirectory) {
    string dll = Path.Combine(Path.GetFullPath(installationDirectory), "NoiseReduction.Apo.dll"); if(!File.Exists(dll)) throw new FileNotFoundException("APO library is missing", dll);
@@ -278,7 +283,7 @@ namespace NoiseReduction.Platform {
      if(now.Same(c.After)) Write(c,c.Before);
      else if(c.Name==Integration.CompositeKey && now.Exists && now.Kind==RegistryValueKind.MultiString) Write(c,new ValueSnapshot{Exists=true,Kind=RegistryValueKind.MultiString,Strings=((string[])now.Value()).Where(value=>!String.Equals(value,Integration.Clsid,StringComparison.OrdinalIgnoreCase)).ToArray()});
      else if(now.Same(c.Before)) { }
-     else if(c.Name==Integration.ModesKey) { }
+     else if(c.Name==Integration.ModesKey || String.Equals(c.Name,Integration.DisableSysFxKey,StringComparison.OrdinalIgnoreCase)) { }
      else throw new InvalidOperationException("Pending verification rollback conflict at "+c.Path);
     }
     File.Delete(file);
@@ -299,10 +304,15 @@ namespace NoiseReduction.Platform {
   string[] ReverseFiles() { return Files().OrderByDescending(f=> { var c=Load(f); return c.Sequence==0 ? File.GetCreationTimeUtc(f).Ticks : c.Sequence; }).ToArray(); }
   public void Recover() { RecoverVerifications(); foreach(var file in ReverseFiles()) { var c=Load(file); if(c.Committed || (!String.IsNullOrEmpty(CurrentTransactionId) && String.Equals(c.TransactionId,CurrentTransactionId,StringComparison.Ordinal))) continue; ValueSnapshot now; using(var key=root.OpenSubKey(c.Path)) now=ValueSnapshot.Read(key,c.Name); if(now.Same(c.After)) Write(c,c.Before); else if(!now.Same(c.Before)) throw new InvalidOperationException("Registry recovery conflict at " + c.Path + " / " + c.Name); File.Delete(file); } foreach(var temporaryFile in Directory.Exists(journal) ? Directory.GetFiles(journal,"*.tmp") : new string[0]) File.Delete(temporaryFile); }
   public void Detach(string path) {
+   var restored=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
    foreach(var file in ReverseFiles()) { var c=Load(file); if(!c.Committed || !String.Equals(c.Path,path,StringComparison.OrdinalIgnoreCase)) continue;
+    // значение могли поменять в Windows между нашими записями, тогда важна только последняя
+    if(!restored.Add(c.Name)) { File.Delete(file); continue; }
     using(var key=root.OpenSubKey(path)) { if(key == null) continue; var now=ValueSnapshot.Read(key,c.Name); if(now.Same(c.After)) Write(c,c.Before);
      else if(c.Name == Integration.CompositeKey && now.Kind == RegistryValueKind.MultiString && now.Exists) { var filtered=((string[])now.Value()).Where(s=>!String.Equals(s,Integration.Clsid,StringComparison.OrdinalIgnoreCase)).ToArray(); Write(c,new ValueSnapshot{Exists=true,Kind=RegistryValueKind.MultiString,Strings=filtered}); }
-     else if(now.Same(c.Before)) { } else if(c.Name == Integration.ModesKey) { } else throw new InvalidOperationException("Registry rollback conflict at " + path);
+     else if(now.Same(c.Before)) { } else if(c.Name == Integration.ModesKey) { }
+     // флаг улучшений Windows переписывает сама, после неё возвращать нечего
+     else if(String.Equals(c.Name, Integration.DisableSysFxKey, StringComparison.OrdinalIgnoreCase)) { } else throw new InvalidOperationException("Registry rollback conflict at " + path);
     } File.Delete(file);
    }
   }

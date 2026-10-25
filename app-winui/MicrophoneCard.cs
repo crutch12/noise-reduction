@@ -16,7 +16,7 @@ namespace NoiseReduction.WinUI
         private readonly DesktopController controller;
         private readonly TextBlock name = new TextBlock { Style = Style("BodyStrongTextBlockStyle"), TextTrimming = TextTrimming.CharacterEllipsis };
         private readonly TextBlock details = new TextBlock { Style = Style("CaptionTextBlockStyle"), TextTrimming = TextTrimming.CharacterEllipsis };
-        private readonly Ellipse dot = new Ellipse { Width = 8, Height = 8, Margin = new Thickness(0, 2, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        private readonly Ellipse dot = new Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center };
         private readonly ToggleSwitch toggle = new ToggleSwitch { MinWidth = 0, VerticalAlignment = VerticalAlignment.Center };
         private readonly InfoBar hookBar = new InfoBar { Severity = InfoBarSeverity.Warning, IsClosable = false, IsOpen = false };
         private readonly Button hookButton = new Button();
@@ -157,7 +157,7 @@ namespace NoiseReduction.WinUI
                 // включён в программе, но не встроен в Windows: объясняем и даём одну кнопку
                 bool enabling = controller.IntegratingId == Id;
                 hookBar.IsOpen = controller.ProfileEnabled(Id) && !device.Attached || enabling;
-                hookBar.Title = T(enabling ? "Включение…" : "Шумоподавление не встроено в Windows");
+                hookBar.Title = T(enabling ? "Включение…" : device.EnhancementsEnabled ? "Шумоподавление не встроено в Windows" : "В Windows выключены улучшения звука");
                 hookBar.Message = T(enabling ? "Подтвердите запрос Windows, звук прервётся на пару секунд" : "Программы получают звук без обработки. Нажмите Включить, Windows попросит подтверждение");
                 hookButton.Content = T("Включить");
                 hookButton.IsEnabled = idle;

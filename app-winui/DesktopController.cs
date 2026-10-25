@@ -126,7 +126,7 @@ namespace NoiseReduction.WinUI
         public bool HasProcessingError(string id)
         {
             var device = devices.Find(value => value.Id == id);
-            return state.RefreshError != null || device != null && device.Attached && IsEnabled(id) && (!device.EnhancementsEnabled || samples.TryGetValue(id, out var sample) && sample.Failed);
+            return state.RefreshError != null || device != null && device.Attached && IsEnabled(id) && samples.TryGetValue(id, out var sample) && sample.Failed;
         }
         public MicrophoneState StateOf(string id)
         {

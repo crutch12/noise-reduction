@@ -179,8 +179,8 @@ namespace NoiseReduction.WinUI
                 Id = id,
                 Name = new TextBlock { Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center },
                 Details = new TextBlock { Style = (Style)FlyoutRoot.Resources["FlyoutDetailsStyle"], TextTrimming = TextTrimming.CharacterEllipsis },
-                Dot = new Ellipse { Width = 8, Height = 8, Margin = new Thickness(0, 2, 0, 0), VerticalAlignment = VerticalAlignment.Center },
-                Toggle = new ToggleSwitch { MinWidth = 0, OnContent = "", OffContent = "", Margin = new Thickness(0, 0, -12, 0), FocusVisualMargin = new Thickness(-3, -3, 9, -3), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center }
+                Dot = new Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center },
+                Toggle = new ToggleSwitch { MinWidth = 0, OnContent = "", OffContent = "", Margin = new Thickness(0, -4, -12, 0), FocusVisualMargin = new Thickness(-3, -3, 9, -3), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center }
             };
             // одна сетка на микрофон: слева имя и состояние, справа переключатель
             var block = new Grid { ColumnSpacing = 12, RowSpacing = 0 };

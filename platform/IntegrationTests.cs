@@ -26,6 +26,13 @@ class IntegrationTests {
     engine.Detach(fx);
     using (var k = root.OpenSubKey(fx)) Assert(((string[])k.GetValue(Integration.CompositeKey)).Length == 2, "preserve later OEM change");
     Assert(BitConverter.ToString(EffectPack.State()) == "41-00-00-00-01-00-00-00-0E-5C-9F-3A-21-7B-8E-4D-9F-43-6C-2B-1D-8E-0A-57-01-00-00-00-01-00-00-00-01-00-00-00", "effect pack selection matches Windows settings");
+    string props = "Capture\\{88888888-8888-8888-8888-888888888888}\\Properties";
+    using (var k = root.CreateSubKey(props)) k.SetValue(EffectPack.SelectedKey, "voice", RegistryValueKind.String);
+    engine.Set(props, EffectPack.SelectedKey, EffectPack.Id, RegistryValueKind.String);
+    using (var k = root.OpenSubKey(props, true)) k.SetValue(EffectPack.SelectedKey, "off", RegistryValueKind.String);
+    engine.Set(props, EffectPack.SelectedKey, EffectPack.Id, RegistryValueKind.String);
+    engine.Detach(props);
+    using (var k = root.OpenSubKey(props)) Assert((string)k.GetValue(EffectPack.SelectedKey) == "off", "restore choice made in Windows between attaches");
     string empty = "Capture\\{44444444-4444-4444-4444-444444444444}\\FxProperties";
     root.CreateSubKey(empty).Dispose(); engine.Attach(empty); engine.Detach(empty);
     using (var k = root.OpenSubKey(empty)) Assert(k.GetValue(Integration.CompositeKey) == null, "restore absent value");
