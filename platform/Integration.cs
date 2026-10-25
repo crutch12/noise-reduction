@@ -19,6 +19,10 @@ namespace NoiseReduction.Platform {
   public const string Clsid = "{752DE85C-174D-42C2-A92C-631A4F77D08B}";
   public const string CompositeKey = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},15";
   internal const string LegacyKey = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},7";
+  // режимная цепочка, у USB-микрофонов с пакетом эффектов Windows конечной цепочки нет
+  internal const string ModeKey = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},14";
+  internal const string EffectPackKey = "{9E6136E0-57AB-4949-B57A-3627BE142855},100";
+  internal static bool Hooked(RegistryKey fx) { return RegistryEngine.Contains(fx.GetValue(CompositeKey), Clsid) || RegistryEngine.Contains(fx.GetValue(LegacyKey), Clsid) || RegistryEngine.Contains(fx.GetValue(ModeKey), Clsid); }
   internal const string ModesKey = "{D3993A3F-99C2-4402-B5EC-A92A0367664B},7";
   internal const string DefaultMode = "{C18E2F7E-933D-4965-B7D1-1EEF228D2AF3}";
   const string Capture = @"SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture";
@@ -69,7 +73,7 @@ namespace NoiseReduction.Platform {
       IPropertyStore store; Marshal.ThrowExceptionForHR(device.OpenPropertyStore(0, out store));
       try { var key = new PropertyKey(new Guid("a45c254e-df1c-4efd-8020-67d146a850e0"),14); PropVariant value; Marshal.ThrowExceptionForHR(store.GetValue(ref key, out value)); try { if(value.Type == 31) name = Marshal.PtrToStringUni(value.Pointer); } finally { PropVariantClear(ref value); } } finally { Marshal.ReleaseComObject(store); }
       bool attached = false, enabled = true;
-      using(var fx = root.OpenSubKey(Fx(id))) if(fx != null) { attached = RegistryEngine.Contains(fx.GetValue(CompositeKey), Clsid) || RegistryEngine.Contains(fx.GetValue(LegacyKey), Clsid); object disabled = fx.GetValue("{1DA5D803-D492-4EDD-8C23-E0C0FFEE7F0E},5"); enabled = disabled == null || Convert.ToInt32(disabled) == 0; }
+      using(var fx = root.OpenSubKey(Fx(id))) if(fx != null) { attached = Hooked(fx); object disabled = fx.GetValue("{1DA5D803-D492-4EDD-8C23-E0C0FFEE7F0E},5"); enabled = disabled == null || Convert.ToInt32(disabled) == 0; }
       // число каналов из формата устройства, WAVEFORMATEX начинается после 8 байт заголовка
       int channels = 1;
       using(var properties = root.OpenSubKey(Capture + "\\" + EndpointGuid(id) + "\\Properties")) if(properties != null) { var format = properties.GetValue("{f19f064d-082c-4e27-bc73-6882a1bb8e4c},0") as byte[]; if(format != null && format.Length >= 12) channels = Math.Max(1, (int)BitConverter.ToUInt16(format, 10)); }
@@ -106,7 +110,7 @@ namespace NoiseReduction.Platform {
     e.Set(apo,"MajorVersion",0,RegistryValueKind.DWord); e.Set(apo,"Flags",15,RegistryValueKind.DWord); e.Set(apo,"MaxInstances",-1,RegistryValueKind.DWord); e.Set(apo,"APOInterface0","{FD7F2B29-24D0-4B5C-B177-592C39F9CA10}",RegistryValueKind.String);
    }
   }
-  public static void UnregisterEngine() { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); using(var capture = root.OpenSubKey(Capture)) if(capture != null) foreach(var id in capture.GetSubKeyNames()) using(var fx = capture.OpenSubKey(id + "\\FxProperties")) if(fx != null && (RegistryEngine.Contains(fx.GetValue(CompositeKey),Clsid) || RegistryEngine.Contains(fx.GetValue(LegacyKey),Clsid))) throw new InvalidOperationException("Detach all microphones before unregistering the engine"); e.RestoreRegistration(); } }
+  public static void UnregisterEngine() { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); using(var capture = root.OpenSubKey(Capture)) if(capture != null) foreach(var id in capture.GetSubKeyNames()) using(var fx = capture.OpenSubKey(id + "\\FxProperties")) if(fx != null && Hooked(fx)) throw new InvalidOperationException("Detach all microphones before unregistering the engine"); e.RestoreRegistration(); } }
   [DllImport("ole32.dll")] static extern int PropVariantClear(ref PropVariant variant);
  }
  public class ValueSnapshot {
@@ -155,7 +159,7 @@ namespace NoiseReduction.Platform {
    readonly RegistryEngine engine; readonly string previous; readonly PendingAttachment pending; bool completed,disposed;
    internal VerificationScope(RegistryEngine engine,string path) {
     this.engine=engine; previous=CurrentTransactionId;
-    using(var key=engine.root.OpenSubKey(path)) { if(key==null) throw new InvalidOperationException("Endpoint registry state is unavailable"); if(Contains(key.GetValue(Integration.CompositeKey),Integration.Clsid) || Contains(key.GetValue(Integration.LegacyKey),Integration.Clsid)) return; }
+    using(var key=engine.root.OpenSubKey(path)) { if(key==null) throw new InvalidOperationException("Endpoint registry state is unavailable"); if(Integration.Hooked(key)) return; }
     if(!String.IsNullOrEmpty(previous)) throw new InvalidOperationException("A registry verification transaction is already active");
     pending=new PendingAttachment{Version=1,Id=Guid.NewGuid().ToString("N"),Path=path}; engine.PublishPending(pending); CurrentTransactionId=pending.Id;
    }
@@ -185,7 +189,7 @@ namespace NoiseReduction.Platform {
      if(key==null) { complete=false; continue; }
      var now=ValueSnapshot.Read(key,c.Name);
      if(now.Same(c.After)) Write(c,c.Before);
-     else if(c.Name==Integration.CompositeKey && now.Exists && now.Kind==RegistryValueKind.MultiString) Write(c,new ValueSnapshot{Exists=true,Kind=RegistryValueKind.MultiString,Strings=((string[])now.Value()).Where(value=>!String.Equals(value,Integration.Clsid,StringComparison.OrdinalIgnoreCase)).ToArray()});
+     else if((c.Name==Integration.CompositeKey || c.Name==Integration.ModeKey) && now.Exists && now.Kind==RegistryValueKind.MultiString) Write(c,new ValueSnapshot{Exists=true,Kind=RegistryValueKind.MultiString,Strings=((string[])now.Value()).Where(value=>!String.Equals(value,Integration.Clsid,StringComparison.OrdinalIgnoreCase)).ToArray()});
      else if(now.Same(c.Before)) { }
      else if(c.Name==Integration.ModesKey) { }
      else throw new InvalidOperationException("Pending verification rollback conflict at "+c.Path);
@@ -196,7 +200,17 @@ namespace NoiseReduction.Platform {
   }
   public static bool Contains(object value,string clsid) { var list=value as string[]; if(list != null) return list.Any(s=>String.Equals(s,clsid,StringComparison.OrdinalIgnoreCase)); return String.Equals(value as string,clsid,StringComparison.OrdinalIgnoreCase); }
   public void Attach(string path) {
-   using(var key=root.OpenSubKey(path)) { if(key == null) throw new InvalidOperationException("Endpoint registry state is unavailable"); object existing=key.GetValue(Integration.CompositeKey); if(Contains(existing,Integration.Clsid)) { if(key.GetValue(Integration.ModesKey) == null) Set(path,Integration.ModesKey,new[]{Integration.DefaultMode},RegistryValueKind.MultiString); return; } if(existing != null && !(existing is string[])) throw new InvalidOperationException("Composite EFX has an incompatible registry type"); var chain=existing == null ? new List<string>() : new List<string>((string[])existing);
+   using(var key=root.OpenSubKey(path)) { if(key == null) throw new InvalidOperationException("Endpoint registry state is unavailable");
+    // эффекты устройства от пакета Windows: встаём в конец режимной цепочки рядом с ними
+    if(key.GetValue(Integration.EffectPackKey) != null && key.GetValue(Integration.CompositeKey) == null && key.GetValue(Integration.LegacyKey) == null && key.GetValue(Integration.ModeKey) is string[]) {
+     var modes=new List<string>((string[])key.GetValue(Integration.ModeKey));
+     if(Contains(modes.ToArray(),Integration.Clsid)) return;
+     if(modes.Any(s=> { Guid g; return !Guid.TryParse(s,out g); })) throw new InvalidOperationException("Invalid mode effect CLSID");
+     modes.Add(Integration.Clsid);
+     Set(path,Integration.ModeKey,modes.ToArray(),RegistryValueKind.MultiString);
+     return;
+    }
+    object existing=key.GetValue(Integration.CompositeKey); if(Contains(existing,Integration.Clsid)) { if(key.GetValue(Integration.ModesKey) == null) Set(path,Integration.ModesKey,new[]{Integration.DefaultMode},RegistryValueKind.MultiString); return; } if(existing != null && !(existing is string[])) throw new InvalidOperationException("Composite EFX has an incompatible registry type"); var chain=existing == null ? new List<string>() : new List<string>((string[])existing);
     if(existing == null) { object legacy=key.GetValue(Integration.LegacyKey); if(legacy != null) throw new InvalidOperationException("Endpoint has a legacy OEM EFX chain; automatic migration is unsafe and was refused"); }
     if(chain.Any(s=> { Guid g; return !Guid.TryParse(s,out g); })) throw new InvalidOperationException("Invalid OEM EFX CLSID");
     chain.Add(Integration.Clsid);
@@ -210,7 +224,7 @@ namespace NoiseReduction.Platform {
   public void Detach(string path) {
    foreach(var file in ReverseFiles()) { var c=Load(file); if(!c.Committed || !String.Equals(c.Path,path,StringComparison.OrdinalIgnoreCase)) continue;
     using(var key=root.OpenSubKey(path)) { if(key == null) continue; var now=ValueSnapshot.Read(key,c.Name); if(now.Same(c.After)) Write(c,c.Before);
-     else if(c.Name == Integration.CompositeKey && now.Kind == RegistryValueKind.MultiString && now.Exists) { var filtered=((string[])now.Value()).Where(s=>!String.Equals(s,Integration.Clsid,StringComparison.OrdinalIgnoreCase)).ToArray(); Write(c,new ValueSnapshot{Exists=true,Kind=RegistryValueKind.MultiString,Strings=filtered}); }
+     else if((c.Name == Integration.CompositeKey || c.Name == Integration.ModeKey) && now.Kind == RegistryValueKind.MultiString && now.Exists) { var filtered=((string[])now.Value()).Where(s=>!String.Equals(s,Integration.Clsid,StringComparison.OrdinalIgnoreCase)).ToArray(); Write(c,new ValueSnapshot{Exists=true,Kind=RegistryValueKind.MultiString,Strings=filtered}); }
      else if(now.Same(c.Before)) { } else if(c.Name == Integration.ModesKey) { } else throw new InvalidOperationException("Registry rollback conflict at " + path);
     } File.Delete(file);
    }
