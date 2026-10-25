@@ -1,0 +1,27 @@
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = Extension
+ClassGuid   = {e2f84ce7-8efa-411c-aa69-97454ca4cb57}
+ExtensionId = {6f1d2c4b-8a9e-4b37-9c51-2e7d4a0f8b16}
+Provider    = %Provider%
+DriverVer   = 10/26/2026,1.1.0.0
+CatalogFile = NoiseReductionPack.cat
+PnpLockdown = 1
+
+[Manufacturer]
+%Provider% = NoiseReduction,NTamd64
+
+[NoiseReduction.NTamd64]
+%Description% = NoiseReduction_Install,COMPUTER\Generic
+
+[NoiseReduction_Install]
+
+[NoiseReduction_Install.Components]
+AddComponent = NoiseReductionEffectPack,,NoiseReduction_AddComponent
+
+[NoiseReduction_AddComponent]
+ComponentIDs = VEN_NRDC&AUDIO_EFFECTPACK_NOISEREDUCTION
+
+[Strings]
+Provider = "Noise Reduction"
+Description = "Noise Reduction Effect Pack"

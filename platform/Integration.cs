@@ -12,9 +12,10 @@ using System.Diagnostics;
 using System.ComponentModel;
 using Microsoft.Win32;
 using Microsoft.Win32.SafeHandles;
+using System.Security.Cryptography.X509Certificates;
 
 namespace NoiseReduction.Platform {
- public class DeviceInfo { public string Id, Name, Guid; public bool Attached, EnhancementsEnabled, Active; public int Channels = 1; }
+ public class DeviceInfo { public string Id, Name, Guid; public bool Attached, EnhancementsEnabled, Active, EffectPack; public int Channels = 1; }
  public static class Integration {
   public const string Clsid = "{752DE85C-174D-42C2-A92C-631A4F77D08B}";
   public const string CompositeKey = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},15";
@@ -50,6 +51,7 @@ namespace NoiseReduction.Platform {
   }
   internal static string EndpointGuid(string id) { int start = id.LastIndexOf('{'); Guid guid; if(start < 0 || !Guid.TryParse(id.Substring(start), out guid)) throw new ArgumentException("Invalid capture endpoint ID"); return guid.ToString("B"); }
   static string Fx(string id) { return Capture + "\\" + EndpointGuid(id) + "\\FxProperties"; }
+  static string Properties(string id) { return Capture + "\\" + EndpointGuid(id) + "\\Properties"; }
   public static string GetDefaultMicrophoneId() {
    var enumerator=(IMMDeviceEnumerator)new MMDeviceEnumerator(); IMMDevice device=null;
    try {
@@ -63,7 +65,8 @@ namespace NoiseReduction.Platform {
    try {
     Marshal.ThrowExceptionForHR(enumerator.EnumAudioEndpoints(1, 15, out collection)); uint count; collection.GetCount(out count);
     using(var root = Machine()) for(uint i = 0; i < count; i++) {
-     IMMDevice device; Marshal.ThrowExceptionForHR(collection.Item(i, out device));
+     IMMDevice device; if(collection.Item(i, out device) != 0 || device == null) continue;
+     // у удалённого или сломанного устройства свойства могут не читаться, остальные микрофоны важнее
      try {
       uint state; Marshal.ThrowExceptionForHR(device.GetState(out state)); string id; Marshal.ThrowExceptionForHR(device.GetId(out id)); string guid = EndpointGuid(id); string name = id;
       IPropertyStore store; Marshal.ThrowExceptionForHR(device.OpenPropertyStore(0, out store));
@@ -73,7 +76,12 @@ namespace NoiseReduction.Platform {
       // число каналов из формата устройства, WAVEFORMATEX начинается после 8 байт заголовка
       int channels = 1;
       using(var properties = root.OpenSubKey(Capture + "\\" + EndpointGuid(id) + "\\Properties")) if(properties != null) { var format = properties.GetValue("{f19f064d-082c-4e27-bc73-6882a1bb8e4c},0") as byte[]; if(format != null && format.Length >= 12) channels = Math.Max(1, (int)BitConverter.ToUInt16(format, 10)); }
-      result.Add(new DeviceInfo { Id = id, Guid = guid.Trim('{','}').ToLowerInvariant(), Name = name, Attached = attached, EnhancementsEnabled = enabled, Active = state == 1, Channels = channels });
+      // эффектами такого микрофона управляет пакет Windows, наш пакет выбирается в его свойствах
+      bool pack = false;
+      using(var fx = root.OpenSubKey(Fx(id))) pack = fx != null && EffectPack.Managed(fx);
+      if(pack) using(var properties = root.OpenSubKey(Properties(id))) attached = properties != null && EffectPack.Selected(properties);
+      result.Add(new DeviceInfo { Id = id, Guid = guid.Trim('{','}').ToLowerInvariant(), Name = name, Attached = attached, EnhancementsEnabled = enabled, Active = state == 1, Channels = channels, EffectPack = pack });
+     } catch(COMException) { } catch(IOException) { } catch(UnauthorizedAccessException) {
      } finally { Marshal.ReleaseComObject(device); }
     }
    } finally { if(collection != null) Marshal.ReleaseComObject(collection); Marshal.ReleaseComObject(enumerator); }
@@ -81,9 +89,9 @@ namespace NoiseReduction.Platform {
   }
   public sealed class VerifiedAttachmentScope : IDisposable {
    OperationLease operation; RegistryKey root; RegistryEngine.VerificationScope scope;
-   internal VerifiedAttachmentScope(string endpointId) {
+   internal VerifiedAttachmentScope(string endpointId, bool effectPack) {
     operation=new OperationLease();
-    try { root=Machine(); scope=Engine(root).BeginVerifiedAttachment(Fx(endpointId)); }
+    try { root=Machine(); scope=Engine(root).BeginVerifiedAttachment(effectPack ? Properties(endpointId) : Fx(endpointId)); }
     catch { if(root!=null) root.Dispose(); operation.Dispose(); throw; }
    }
    public void Commit() { if(scope==null) throw new ObjectDisposedException("VerifiedAttachmentScope"); scope.Commit(); }
@@ -92,10 +100,12 @@ namespace NoiseReduction.Platform {
   public static void RefreshAudioGraph() {
    using(var operation=new OperationLease()) using(var root=Machine()) { Engine(root).Recover(); var clock=Stopwatch.StartNew(); AudioGraphRefresh.Run(new WindowsAudioServices(),delegate { return clock.ElapsedMilliseconds; }); }
   }
-  public static VerifiedAttachmentScope BeginVerifiedAttachment(string endpointId) { return new VerifiedAttachmentScope(endpointId); }
+  public static VerifiedAttachmentScope BeginVerifiedAttachment(string endpointId) { return new VerifiedAttachmentScope(endpointId, false); }
+  public static VerifiedAttachmentScope BeginVerifiedAttachment(string endpointId, bool effectPack) { return new VerifiedAttachmentScope(endpointId, effectPack); }
   public static void Attach(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); if(!EnumerateMicrophones().Any(d => d.Id == endpointId && d.Active)) throw new InvalidOperationException("Capture endpoint is unavailable"); e.Attach(Fx(endpointId)); } }
-  public static void Detach(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); e.Detach(Fx(endpointId)); } }
-  public static void DetachAll() { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); using(var capture = root.OpenSubKey(Capture)) if(capture != null) foreach(var id in capture.GetSubKeyNames()) e.Detach(Capture + "\\" + id + "\\FxProperties"); e.DetachJournaledEndpoints(); } }
+  public static void Detach(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); e.Detach(Fx(endpointId)); e.Detach(Properties(endpointId)); } }
+  public static void SelectEffectPack(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); if(!EnumerateMicrophones().Any(d => d.Id == endpointId && d.Active && d.EffectPack)) throw new InvalidOperationException("Capture endpoint is unavailable"); string component = EffectPack.Component(root); if(component == null) throw new InvalidOperationException("Noise Reduction effect pack is not installed"); e.Set(Fx(endpointId), EffectPack.ComponentKey, component, RegistryValueKind.String); e.Set(Properties(endpointId), EffectPack.SelectedKey, EffectPack.Id, RegistryValueKind.String); e.Set(Properties(endpointId), EffectPack.StateKey, EffectPack.State(), RegistryValueKind.Binary); } }
+  public static void DetachAll() { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); using(var capture = root.OpenSubKey(Capture)) if(capture != null) foreach(var id in capture.GetSubKeyNames()) { e.Detach(Capture + "\\" + id + "\\FxProperties"); e.Detach(Capture + "\\" + id + "\\Properties"); } e.DetachJournaledEndpoints(); } }
   public static void RegisterEngine(string installationDirectory) {
    string dll = Path.Combine(Path.GetFullPath(installationDirectory), "NoiseReduction.Apo.dll"); if(!File.Exists(dll)) throw new FileNotFoundException("APO library is missing", dll);
    PrepareDirectories();
@@ -108,6 +118,76 @@ namespace NoiseReduction.Platform {
   }
   public static void UnregisterEngine() { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); using(var capture = root.OpenSubKey(Capture)) if(capture != null) foreach(var id in capture.GetSubKeyNames()) using(var fx = capture.OpenSubKey(id + "\\FxProperties")) if(fx != null && (RegistryEngine.Contains(fx.GetValue(CompositeKey),Clsid) || RegistryEngine.Contains(fx.GetValue(LegacyKey),Clsid))) throw new InvalidOperationException("Detach all microphones before unregistering the engine"); e.RestoreRegistration(); } }
   [DllImport("ole32.dll")] static extern int PropVariantClear(ref PropVariant variant);
+ }
+ // Пакет эффектов Windows 11: так Windows ставит эффекты на микрофоны, которыми управляет сама (USB и т.п.)
+ public static class EffectPack {
+  public const string Id = "{3A9F5C0E-7B21-4D8E-9F43-6C2B1D8E0A57}";
+  internal const string SelectedKey = "{c876062a-a276-4ed6-b15b-3962e69007f8},2";
+  internal const string StateKey = "{c876062a-a276-4ed6-b15b-3962e69007f8},3";
+  // связь класса эффекта с устройством-компонентом, где Windows ищет его регистрацию
+  internal const string ComponentKey = "{bdd6a3f4-ed4e-4d4d-aa82-d695a550e59f},100";
+  internal static string Component(RegistryKey root) {
+   using(var drivers = root.OpenSubKey(@"SYSTEM\CurrentControlSet\Enum\SWD\DRIVERENUM")) {
+    if(drivers == null) return null;
+    var name = drivers.GetSubKeyNames().FirstOrDefault(n => n.StartsWith("{6f1d2c4b-8a9e-4b37-9c51-2e7d4a0f8b16}#NoiseReductionEffectPack", StringComparison.OrdinalIgnoreCase));
+    return name == null ? null : @"SWD\DRIVERENUM\" + name;
+   }
+  }
+  const string Subject = "CN=Noise Reduction Effect Pack";
+  static readonly string[] Infs = { "noisereductionapo.inf", "noisereductioneffectpack.inf" };
+  internal static bool Managed(RegistryKey fx) { return fx.GetValueNames().Any(name => name.EndsWith(",100",StringComparison.Ordinal) && (fx.GetValue(name) as string ?? "").StartsWith(@"SWD\DRIVERENUM\",StringComparison.OrdinalIgnoreCase)); }
+  internal static bool Selected(RegistryKey properties) { return String.Equals(properties.GetValue(SelectedKey) as string, Id, StringComparison.OrdinalIgnoreCase); }
+  // то же значение пишут Параметры Windows при выборе пакета в "Улучшениях звука"
+  internal static byte[] State() {
+   var data = new List<byte>(); data.AddRange(BitConverter.GetBytes(0x41)); data.AddRange(BitConverter.GetBytes(1)); data.AddRange(new Guid(Id).ToByteArray());
+   for(int i = 0; i < 3; i++) data.AddRange(BitConverter.GetBytes(1));
+   return data.ToArray();
+  }
+  public static void Install(string directory) {
+   string pack = Path.Combine(directory, "Pack");
+   if(!File.Exists(Path.Combine(pack, "NoiseReductionPack.cer"))) return;
+   var certificate = new X509Certificate2(Path.Combine(pack, "NoiseReductionPack.cer"));
+   foreach(var name in new[] { StoreName.Root, StoreName.TrustedPublisher }) {
+    var store = new X509Store(name, StoreLocation.LocalMachine);
+    store.Open(OpenFlags.ReadWrite);
+    try { foreach(var old in store.Certificates.Cast<X509Certificate2>().Where(c => c.Subject == Subject && c.Thumbprint != certificate.Thumbprint).ToArray()) store.Remove(old); store.Add(certificate); }
+    finally { store.Close(); }
+   }
+   // переустановка пакета сбрасывает выбор в микрофонах, после неё выбираем пакет заново
+   var selected = Integration.EnumerateMicrophones().Where(device => device.EffectPack && device.Attached).Select(device => device.Id).ToList();
+   PnpUtil("/add-driver \"" + Path.Combine(pack, "*.inf") + "\" /install");
+   if(selected.Count == 0) return;
+   foreach(var id in selected) Integration.SelectEffectPack(id);
+   Integration.RefreshAudioGraph();
+  }
+  public static void Uninstall() {
+   foreach(var published in Published()) PnpUtil("/delete-driver " + published + " /uninstall");
+   foreach(var name in new[] { StoreName.Root, StoreName.TrustedPublisher }) {
+    var store = new X509Store(name, StoreLocation.LocalMachine);
+    store.Open(OpenFlags.ReadWrite);
+    try { foreach(var old in store.Certificates.Cast<X509Certificate2>().Where(c => c.Subject == Subject).ToArray()) store.Remove(old); }
+    finally { store.Close(); }
+   }
+  }
+  static List<string> Published() {
+   var result = new List<string>(); string published = null;
+   foreach(var line in PnpUtil("/enum-drivers").Split('\n')) {
+    var parts = line.Split(new[] { ':' }, 2); if(parts.Length != 2) continue;
+    string key = parts[0].Trim(), value = parts[1].Trim();
+    if(key == "Published Name") published = value;
+    else if(key == "Original Name" && published != null && Infs.Contains(value.ToLowerInvariant())) result.Add(published);
+   }
+   return result;
+  }
+  static string PnpUtil(string arguments) {
+   var start = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "pnputil.exe"), arguments) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
+   using(var process = Process.Start(start)) {
+    string output = process.StandardOutput.ReadToEnd(); process.WaitForExit();
+    // 3010 значит, что части устройств нужна перезагрузка, пакет при этом установлен
+    if(process.ExitCode != 0 && process.ExitCode != 3010 && !arguments.StartsWith("/delete-driver")) throw new InvalidOperationException("pnputil " + arguments + " failed: " + output.Trim());
+    return output;
+   }
+  }
  }
  public class ValueSnapshot {
   public bool Exists; public RegistryValueKind Kind; public string[] Strings; public string Text; public byte[] Bytes; public long Number;
@@ -155,7 +235,7 @@ namespace NoiseReduction.Platform {
    readonly RegistryEngine engine; readonly string previous; readonly PendingAttachment pending; bool completed,disposed;
    internal VerificationScope(RegistryEngine engine,string path) {
     this.engine=engine; previous=CurrentTransactionId;
-    using(var key=engine.root.OpenSubKey(path)) { if(key==null) throw new InvalidOperationException("Endpoint registry state is unavailable"); if(Contains(key.GetValue(Integration.CompositeKey),Integration.Clsid) || Contains(key.GetValue(Integration.LegacyKey),Integration.Clsid)) return; }
+    using(var key=engine.root.OpenSubKey(path)) { if(key==null) throw new InvalidOperationException("Endpoint registry state is unavailable"); if(Contains(key.GetValue(Integration.CompositeKey),Integration.Clsid) || Contains(key.GetValue(Integration.LegacyKey),Integration.Clsid) || EffectPack.Selected(key)) return; }
     if(!String.IsNullOrEmpty(previous)) throw new InvalidOperationException("A registry verification transaction is already active");
     pending=new PendingAttachment{Version=1,Id=Guid.NewGuid().ToString("N"),Path=path}; engine.PublishPending(pending); CurrentTransactionId=pending.Id;
    }
@@ -176,11 +256,13 @@ namespace NoiseReduction.Platform {
     if(!String.Equals(pending.Id,CurrentTransactionId,StringComparison.Ordinal)) RollbackPending(pending);
    }
   }
+  static string Parent(string path) { int index=path.LastIndexOf('\\'); return index < 0 ? path : path.Substring(0,index); }
   void RollbackPending(PendingAttachment pending) {
    bool complete=true;
    foreach(var file in ReverseFiles()) {
     var c=Load(file); if(!String.Equals(c.TransactionId,pending.Id,StringComparison.Ordinal)) continue;
-    if(!String.Equals(c.Path,pending.Path,StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Verification journal contains an unrelated registry path");
+    // выбор пакета эффектов меняет и свойства, и эффекты того же микрофона
+    if(!String.Equals(Parent(c.Path),Parent(pending.Path),StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Verification journal contains an unrelated registry path");
     using(var key=root.OpenSubKey(c.Path)) {
      if(key==null) { complete=false; continue; }
      var now=ValueSnapshot.Read(key,c.Name);
@@ -215,7 +297,7 @@ namespace NoiseReduction.Platform {
     } File.Delete(file);
    }
   }
-  public void DetachJournaledEndpoints() { foreach(var path in Files().Select(f=>Load(f).Path).Where(p=>p.EndsWith("\\FxProperties",StringComparison.OrdinalIgnoreCase)).Distinct().ToArray()) Detach(path); }
+  public void DetachJournaledEndpoints() { foreach(var path in Files().Select(f=>Load(f).Path).Where(p=>p.EndsWith("\\FxProperties",StringComparison.OrdinalIgnoreCase) || p.EndsWith("\\Properties",StringComparison.OrdinalIgnoreCase)).Distinct().ToArray()) Detach(path); }
   public void RestoreRegistration() { RestorePrefix(@"SOFTWARE\Classes\"); }
   public string[] Checkpoint() { return Files(); }
   public void RestoreSince(string[] checkpoint) { Recover(); foreach(var file in ReverseFiles().Except(checkpoint).ToArray()) { var c=Load(file); ValueSnapshot now; using(var key=root.OpenSubKey(c.Path)) now=ValueSnapshot.Read(key,c.Name); if(now.Same(c.After)) Write(c,c.Before); else if(!now.Same(c.Before)) throw new InvalidOperationException("Registry transaction conflict at " + c.Path); File.Delete(file); } }

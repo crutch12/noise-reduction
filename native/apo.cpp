@@ -71,7 +71,7 @@ class NoiseApo final : public IAudioProcessingObject, public IAudioProcessingObj
         NoiseApo* owner_;
     };
 public:
-    explicit NoiseApo(IUnknown* outer = nullptr) : outer_(outer), inner_(this) { ++objects; }
+    explicit NoiseApo(IUnknown* outer = nullptr, const GUID& clsid = CLSID_NoiseReduction) : outer_(outer), inner_(this), clsid_(clsid) { ++objects; }
     ~NoiseApo() { controls_.stop_watching(); if (effects_event_) CloseHandle(effects_event_); --objects; }
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID id, void** result) override {
         return outer_ ? outer_->QueryInterface(id, result) : inner_query(id, result);
@@ -106,7 +106,7 @@ public:
         if (!standalone_) {
             if (!data || size < sizeof(APOInitBaseStruct)) return E_INVALIDARG;
             auto base = reinterpret_cast<const APOInitBaseStruct*>(data);
-            if (base->cbSize != size || base->clsid != CLSID_NoiseReduction) return APOERR_INVALID_APO_CLSID;
+            if (base->cbSize != size || base->clsid != clsid_) return APOERR_INVALID_APO_CLSID;
             if (size == sizeof(APOInitSystemEffects3)) {
                 auto init = reinterpret_cast<const APOInitSystemEffects3*>(data);
                 endpoint = init->pAPOEndpointProperties; discovery = init->InitializeForDiscoveryOnly != FALSE;
@@ -189,6 +189,7 @@ public:
         *value = static_cast<APO_REG_PROPERTIES*>(CoTaskMemAlloc(sizeof(properties)));
         if (!*value) return E_OUTOFMEMORY;
         std::memcpy(*value, &properties, sizeof(properties));
+        (*value)->clsid = clsid_;
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE IsInputFormatSupported(IAudioMediaType* opposite, IAudioMediaType* requested, IAudioMediaType** supported) override {
@@ -385,6 +386,7 @@ private:
     std::vector<nr::HighPass> highpass_;
     std::vector<float> energy_;
     UINT32 channels_ = 1;
+    GUID clsid_;
     UINT32 max_frames_ = 0;
     nr::ControlView controls_;
     uint32_t previous_settings_ = UINT32_MAX;
@@ -396,7 +398,7 @@ private:
 
 class Factory final : public IClassFactory {
 public:
-    Factory() { ++objects; }
+    explicit Factory(const GUID& clsid) : clsid_(clsid) { ++objects; }
     ~Factory() { --objects; }
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID id, void** result) override {
         if (!result) return E_POINTER;
@@ -411,7 +413,7 @@ public:
         *result = nullptr;
         if (outer && id != __uuidof(IUnknown)) return CLASS_E_NOAGGREGATION;
         try {
-            auto instance = new NoiseApo(outer);
+            auto instance = new NoiseApo(outer, clsid_);
             HRESULT status = instance->inner_query(id, result);
             instance->inner_release();
             return status;
@@ -420,6 +422,7 @@ public:
     HRESULT STDMETHODCALLTYPE LockServer(BOOL lock) override { if (lock) ++locks; else --locks; return S_OK; }
 private:
     std::atomic<ULONG> refs_{1};
+    GUID clsid_;
 };
 
 struct OfflineEngine {
@@ -442,9 +445,9 @@ STDAPI DllGetClassObject(REFCLSID id, REFIID interface_id, void** result) {
     trace(L"DllGetClassObject entered");
     if (!result) return E_POINTER;
     *result = nullptr;
-    if (id != CLSID_NoiseReduction) return CLASS_E_CLASSNOTAVAILABLE;
+    if (id != CLSID_NoiseReduction && id != CLSID_NoiseReductionComponent) return CLASS_E_CLASSNOTAVAILABLE;
     try {
-        auto factory = new Factory();
+        auto factory = new Factory(id);
         HRESULT status = factory->QueryInterface(interface_id, result);
         factory->Release();
         return status;

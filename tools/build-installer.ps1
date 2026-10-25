@@ -21,6 +21,9 @@ foreach ($inputFile in (Get-ChildItem -LiteralPath $appPath -File -Recurse)) {
 foreach ($required in @('NoiseReduction.exe', 'NoiseReduction.dll', 'NoiseReduction.Engine.exe', 'NoiseReduction.Engine.exe.config', 'NoiseReduction.deps.json', 'NoiseReduction.runtimeconfig.json', 'NoiseReduction.pri', 'NoiseReduction.ico', 'Microphone.png')) {
     if (-not $payload.ContainsKey($required)) { throw "Missing WinUI package input: $required" }
 }
+# пакет эффектов для микрофонов под пакетами Windows, подписан при сборке
+& (Join-Path $repoPath 'tools/build-pack.ps1') | Out-Null
+foreach ($file in Get-ChildItem -LiteralPath (Join-Path $buildPath 'pack') -File) { $payload["Pack/$($file.Name)"] = $file.FullName }
 $payload['NoiseReduction.Apo.dll'] = Join-Path $buildPath 'NoiseReduction.Apo.dll'
 $payload['rnnoise.dll'] = Join-Path $buildPath 'rnnoise.dll'
 if ((Get-FileHash -LiteralPath $payload['rnnoise.dll'] -Algorithm SHA256).Hash.ToLowerInvariant() -ne '06770aeb8855ef942b5dcdb436f84dfdd5867b716ba4b4c8a2c66ade03197f31') { throw 'RNNoise DLL differs from the licensed pyrnnoise 0.4.5 payload; update provenance and notices before packaging' }

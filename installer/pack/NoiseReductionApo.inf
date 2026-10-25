@@ -1,0 +1,108 @@
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = AudioProcessingObject
+ClassGuid   = {5989fce8-9cd0-467d-8a6a-5419e31529d4}
+Provider    = %Provider%
+DriverVer   = 10/26/2026,1.1.0.0
+CatalogFile = NoiseReductionPack.cat
+PnpLockdown = 1
+
+[Manufacturer]
+%Provider% = ApoComponents,NTamd64
+
+[ApoComponents.NTamd64]
+%ApoDescription% = Apo_Install,SWC\VEN_NRDC&AUDIO_EFFECTPACK_NOISEREDUCTION
+
+[Apo_Install]
+CopyFiles = Apo_CopyFiles
+AddReg    = Apo_AddReg
+
+[Apo_CopyFiles]
+NoiseReduction.Apo.dll
+rnnoise.dll
+msvcp140.dll
+vcruntime140.dll
+vcruntime140_1.dll
+
+[Apo_AddReg]
+HKR,Classes\CLSID\%NR_CLSID%,,,%ApoDescription%
+HKR,Classes\CLSID\%NR_CLSID%\InProcServer32,,0x00020000,%13%\NoiseReduction.Apo.dll
+HKR,Classes\CLSID\%NR_CLSID%\InProcServer32,ThreadingModel,,"Both"
+HKR,AudioEngine\AudioProcessingObjects\%NR_CLSID%,"FriendlyName",,%ApoDescription%
+HKR,AudioEngine\AudioProcessingObjects\%NR_CLSID%,"Copyright",,%Provider%
+HKR,AudioEngine\AudioProcessingObjects\%NR_CLSID%,"MajorVersion",0x00010001,1
+HKR,AudioEngine\AudioProcessingObjects\%NR_CLSID%,"MinorVersion",0x00010001,1
+HKR,AudioEngine\AudioProcessingObjects\%NR_CLSID%,"Flags",0x00010001,0x0000000f
+HKR,AudioEngine\AudioProcessingObjects\%NR_CLSID%,"MinInputConnections",0x00010001,1
+HKR,AudioEngine\AudioProcessingObjects\%NR_CLSID%,"MaxInputConnections",0x00010001,1
+HKR,AudioEngine\AudioProcessingObjects\%NR_CLSID%,"MinOutputConnections",0x00010001,1
+HKR,AudioEngine\AudioProcessingObjects\%NR_CLSID%,"MaxOutputConnections",0x00010001,1
+HKR,AudioEngine\AudioProcessingObjects\%NR_CLSID%,"MaxInstances",0x00010001,0xffffffff
+HKR,AudioEngine\AudioProcessingObjects\%NR_CLSID%,"NumAPOInterfaces",0x00010001,1
+HKR,AudioEngine\AudioProcessingObjects\%NR_CLSID%,"APOInterface0",,"{FD7F2B29-24D0-4B5C-B177-592C39F9CA10}"
+HKR,,FriendlyName,,%ApoDescription%
+HKR,EffectPackRegistration\%EFFECT_CLSID%,%PKEY_FX_EffectPackSchema_Version%,,%PKEY_FX_EffectPack_Schema_Internal_V1%
+HKR,EffectPackRegistration\%EFFECT_CLSID%,%PKEY_ItemNameDisplay%,,%ApoDescription%
+HKR,EffectPackRegistration\%EFFECT_CLSID%,%PKEY_FX_Author%,,%Provider%
+HKR,EffectPackRegistration\%EFFECT_CLSID%,%PKEY_FX_VersionMajor%,0x00010001,1
+HKR,EffectPackRegistration\%EFFECT_CLSID%,%PKEY_FX_VersionMinor%,0x00010001,1
+HKR,EffectPackRegistration\%EFFECT_CLSID%\FxProperties,%PKEY_FX_ApplyToCapture%,0x00010001,1
+HKR,EffectPackRegistration\%EFFECT_CLSID%\FxProperties,%PKEY_FX_Enumerator%,0x00010000,"USB"
+HKR,EffectPackRegistration\%EFFECT_CLSID%\FxProperties,%PKEY_FX_Association%,0x00010000,%KSNODETYPE_MICROPHONE%,%KSNODETYPE_DESKTOP_MICROPHONE%,%KSNODETYPE_PERSONAL_MICROPHONE%,%KSNODETYPE_OMNI_DIRECTIONAL_MICROPHONE%,%KSNODETYPE_MICROPHONE_ARRAY%,%KSNODETYPE_PROCESSING_MICROPHONE_ARRAY%,%KSNODETYPE_HEADSET%,%KSNODETYPE_HEADSET_MICROPHONE%
+HKR,EffectPackRegistration\%EFFECT_CLSID%\FxProperties\FX\0\%NR_CONTEXT%\Default,%PKEY_NR_Effect_State%,0x00010001,0xffffffff
+HKR,EffectPackRegistration\%EFFECT_CLSID%\FxProperties\FX\0\%NR_CONTEXT%\User
+HKR,EffectPackRegistration\%EFFECT_CLSID%\FxProperties,%PKEY_FX_ModeEffectClsid%,,%NR_CLSID%
+HKR,EffectPackRegistration\%EFFECT_CLSID%\FxProperties,%PKEY_CompositeFX_ModeEffectClsid%,0x00010000,%NR_CLSID%
+HKR,EffectPackRegistration\%EFFECT_CLSID%\FxProperties,%PKEY_MFX_ProcessingModes_Supported_For_Streaming%,0x00010000,%AUDIO_SIGNALPROCESSINGMODE_DEFAULT%,%AUDIO_SIGNALPROCESSINGMODE_COMMUNICATIONS%,%AUDIO_SIGNALPROCESSINGMODE_SPEECH%,%AUDIO_SIGNALPROCESSINGMODE_RAW%
+
+[Apo_Install.Services]
+AddService = ,2
+
+[SourceDisksNames]
+1 = %DiskName%
+
+[SourceDisksFiles]
+NoiseReduction.Apo.dll = 1
+rnnoise.dll = 1
+msvcp140.dll = 1
+vcruntime140.dll = 1
+vcruntime140_1.dll = 1
+
+[DestinationDirs]
+Apo_CopyFiles = 13
+
+[Strings]
+Provider = "Noise Reduction"
+ApoDescription = "Noise Reduction APO"
+DiskName = "Noise Reduction"
+NR_CLSID = "{BDD6A3F4-ED4E-4D4D-AA82-D695A550E59F}"
+EFFECT_CLSID = "{3A9F5C0E-7B21-4D8E-9F43-6C2B1D8E0A57}"
+NR_CONTEXT = "{22ACF4B0-4A86-4F9B-A035-BD81213A49EA}"
+PKEY_NR_Effect_State = "{22ACF4B0-4A86-4F9B-A035-BD81213A49EA},1"
+PKEY_FX_ModeEffectClsid = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},6"
+PKEY_CompositeFX_ModeEffectClsid = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},14"
+PKEY_MFX_ProcessingModes_Supported_For_Streaming = "{D3993A3F-99C2-4402-B5EC-A92A0367664B},6"
+AUDIO_SIGNALPROCESSINGMODE_COMMUNICATIONS = "{98951333-B9CD-48B1-A0A3-FF40682D73F7}"
+AUDIO_SIGNALPROCESSINGMODE_SPEECH = "{FC1CFC9B-B9D6-4CFA-B5E0-4BB2166878B2}"
+AUDIO_SIGNALPROCESSINGMODE_RAW = "{9E90EA20-B493-4FD1-A1A8-7E1361A956CF}"
+PKEY_ItemNameDisplay = "{B725F130-47EF-101A-A5F1-02608C9EEBAC},10"
+PKEY_FX_Association = "{D04E05A6-594B-4fb6-A80D-01AF5EED7D1D},0"
+PKEY_FX_EndpointEffectClsid = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},7"
+PKEY_CompositeFX_EndpointEffectClsid = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},15"
+PKEY_FX_Enumerator = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},23"
+PKEY_FX_VersionMajor = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},24"
+PKEY_FX_VersionMinor = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},25"
+PKEY_FX_Author = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},26"
+PKEY_FX_EffectPackSchema_Version = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},29"
+PKEY_FX_ApplyToCapture = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},33"
+PKEY_FX_EffectPack_Schema_Internal_V1 = "{7abf23d9-727e-4d0b-86a3-dd501d260101}"
+PKEY_EFX_ProcessingModes_Supported_For_Streaming = "{D3993A3F-99C2-4402-B5EC-A92A0367664B},7"
+AUDIO_SIGNALPROCESSINGMODE_DEFAULT = "{C18E2F7E-933D-4965-B7D1-1EEF228D2AF3}"
+KSNODETYPE_MICROPHONE = "{DFF21BE1-F70F-11D0-B917-00A0C9223196}"
+KSNODETYPE_DESKTOP_MICROPHONE = "{DFF21BE2-F70F-11D0-B917-00A0C9223196}"
+KSNODETYPE_PERSONAL_MICROPHONE = "{DFF21BE3-F70F-11D0-B917-00A0C9223196}"
+KSNODETYPE_OMNI_DIRECTIONAL_MICROPHONE = "{DFF21BE4-F70F-11D0-B917-00A0C9223196}"
+KSNODETYPE_MICROPHONE_ARRAY = "{DFF21BE5-F70F-11D0-B917-00A0C9223196}"
+KSNODETYPE_PROCESSING_MICROPHONE_ARRAY = "{DFF21BE6-F70F-11D0-B917-00A0C9223196}"
+KSNODETYPE_HEADSET = "{DFF21DE2-F70F-11D0-B917-00A0C9223196}"
+KSNODETYPE_HEADSET_MICROPHONE = "{DFF21BE3-F70F-11D0-B917-00A0C9223196}"

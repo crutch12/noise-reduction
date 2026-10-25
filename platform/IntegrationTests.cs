@@ -25,6 +25,7 @@ class IntegrationTests {
     }
     engine.Detach(fx);
     using (var k = root.OpenSubKey(fx)) Assert(((string[])k.GetValue(Integration.CompositeKey)).Length == 2, "preserve later OEM change");
+    Assert(BitConverter.ToString(EffectPack.State()) == "41-00-00-00-01-00-00-00-0E-5C-9F-3A-21-7B-8E-4D-9F-43-6C-2B-1D-8E-0A-57-01-00-00-00-01-00-00-00-01-00-00-00", "effect pack selection matches Windows settings");
     string empty = "Capture\\{44444444-4444-4444-4444-444444444444}\\FxProperties";
     root.CreateSubKey(empty).Dispose(); engine.Attach(empty); engine.Detach(empty);
     using (var k = root.OpenSubKey(empty)) Assert(k.GetValue(Integration.CompositeKey) == null, "restore absent value");

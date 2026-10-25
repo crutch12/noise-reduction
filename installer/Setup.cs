@@ -170,12 +170,15 @@ class Setup {
     e.Set(UninstallKey,"QuietUninstallString","\""+Path.Combine(directory,"NoiseReduction.Setup.exe")+"\" --uninstall --silent",RegistryValueKind.String);
     e.Set(UninstallKey,"DisplayIcon",Path.Combine(directory,"NoiseReduction.exe"),RegistryValueKind.String); e.Set(UninstallKey,"NoModify",1,RegistryValueKind.DWord); e.Set(UninstallKey,"NoRepair",1,RegistryValueKind.DWord);
    }
-   MakeShortcut(Path.Combine(directory,"NoiseReduction.exe")); }
+   MakeShortcut(Path.Combine(directory,"NoiseReduction.exe"));
+   }
     } catch(Exception replacementError) { try { RestoreFiles(directory,transaction,state,sandbox); } catch(Exception rollbackError) { throw new AggregateException("Installation replacement and rollback failed",replacementError,rollbackError); } throw; }
    };
    if(state.GraphRestoreRequired) { var clock=Stopwatch.StartNew(); GraphMaintenance(transaction,state,replace,services ?? new WindowsAudioServices(),milliseconds ?? delegate { return clock.ElapsedMilliseconds; }); }
    else replace();
    state.Committed=true; PublishTransaction(transaction,state); committed=true; CleanupCommitted(directory,transaction,state);
+   // пакет эффектов ставим после замены файлов, когда звук Windows снова запущен, без него остальное работает
+   if(!sandbox) try { EffectPack.Install(directory); } catch(Exception packError) { try { File.AppendAllText(Path.Combine(DataRoot,"setup-errors.log"),DateTime.UtcNow.ToString("o")+" effect pack: "+packError+Environment.NewLine); } catch { } }
   } catch {
    if(!committed) RecoverInstall(directory,transaction,sandbox,services,milliseconds);
    throw;
@@ -188,6 +191,7 @@ class Setup {
   bool hadEffects=Integration.EnumerateMicrophones().Any(device=>device.Attached);
   Integration.DetachAll();
   if(hadEffects) Integration.RefreshAudioGraph();
+  EffectPack.Uninstall();
   try { foreach(var name in names) { string file=SafeFile(directory,name); if(File.Exists(file)) using(var probe=new FileStream(file,FileMode.Open,FileAccess.ReadWrite,FileShare.None)) { } } } catch(IOException ex) { throw new IOException("Microphone effects were detached. Close NoiseReduction and other microphone applications, then retry uninstall",ex); }
   Integration.UnregisterEngine();
   using(var root=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64)) { var e=new RegistryEngine(root,Path.Combine(DataRoot,"SetupJournal")); e.Recover(); e.RestorePrefix(UninstallKey); using(var key=root.OpenSubKey(UninstallKey)) if(key != null && key.ValueCount==0 && key.SubKeyCount==0) { key.Dispose(); root.DeleteSubKey(UninstallKey,false); } }

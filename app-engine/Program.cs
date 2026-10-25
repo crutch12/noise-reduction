@@ -43,7 +43,7 @@ namespace NoiseReduction.Desktop
                 try
                 {
                     using (var control = new ControlFile(Integration.ControlRoot, device.Guid, true))
-                    using (var verification = Integration.BeginVerifiedAttachment(id))
+                    using (var verification = Integration.BeginVerifiedAttachment(id, device.EffectPack))
                     {
                         device = Integration.EnumerateMicrophones().Find(value => value.Id == id && value.Active);
                         if (device == null) throw new InvalidOperationException("Микрофон недоступен после восстановления подключения");
@@ -51,7 +51,8 @@ namespace NoiseReduction.Desktop
                         {
                             AttachmentTransaction.Run(control, delegate
                             {
-                                Integration.Attach(id);
+                                // микрофоны под пакетами Windows получают наш пакет эффектов, остальные эффект в цепочке драйвера
+                                if (device.EffectPack) Integration.SelectEffectPack(id); else Integration.Attach(id);
                                 if (!device.Attached)
                                 {
                                     refreshOnRollback = true;
