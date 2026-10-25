@@ -192,6 +192,8 @@ class Setup {
   Integration.DetachAll();
   if(hadEffects) Integration.RefreshAudioGraph();
   EffectPack.Uninstall();
+  // процесс, запустивший удаление, и звук Windows отпускают файлы не мгновенно
+  for(int attempt=0;;attempt++) { try { foreach(var name in names) { string file=SafeFile(directory,name); if(File.Exists(file)) using(var probe=new FileStream(file,FileMode.Open,FileAccess.ReadWrite,FileShare.None)) { } } break; } catch(IOException) { if(attempt>=30) break; Thread.Sleep(500); } }
   try { foreach(var name in names) { string file=SafeFile(directory,name); if(File.Exists(file)) using(var probe=new FileStream(file,FileMode.Open,FileAccess.ReadWrite,FileShare.None)) { } } } catch(IOException ex) { throw new IOException("Microphone effects were detached. Close NoiseReduction and other microphone applications, then retry uninstall",ex); }
   Integration.UnregisterEngine();
   using(var root=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64)) { var e=new RegistryEngine(root,Path.Combine(DataRoot,"SetupJournal")); e.Recover(); e.RestorePrefix(UninstallKey); using(var key=root.OpenSubKey(UninstallKey)) if(key != null && key.ValueCount==0 && key.SubKeyCount==0) { key.Dispose(); root.DeleteSubKey(UninstallKey,false); } }
