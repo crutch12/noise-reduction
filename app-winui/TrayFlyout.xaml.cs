@@ -30,6 +30,8 @@ namespace NoiseReduction.WinUI
         private readonly Action openSettings;
         private readonly List<Row> rows = new List<Row>();
         private DateTime hiddenAt;
+        private int extraWidth, extraHeight;
+        private bool calibrated;
         private bool updating;
         private string renderedLanguage;
 
@@ -93,7 +95,7 @@ namespace NoiseReduction.WinUI
             FlyoutRoot.Measure(new Windows.Foundation.Size(WidthDip, double.PositiveInfinity));
             double heightDip = FlyoutRoot.DesiredSize.Height;
             if (heightDip < 40) heightDip = 52 + Math.Max(1, rows.Count) * 96;
-            int width = (int)Math.Ceiling(WidthDip * scale), height = (int)Math.Ceiling(heightDip * scale);
+            int width = (int)Math.Ceiling(WidthDip * scale) + extraWidth, height = (int)Math.Ceiling(heightDip * scale) + extraHeight;
             var info = new MonitorInfo { Size = Marshal.SizeOf<MonitorInfo>() };
             GetMonitorInfo(monitor, ref info);
             var work = info.Work; var screen = info.Monitor;
@@ -103,7 +105,9 @@ namespace NoiseReduction.WinUI
             if (work.Top > screen.Top) y = work.Top + gap;
             else if (work.Left > screen.Left) { x = work.Left + gap; y = Math.Clamp(cursor.Y - height / 2, work.Top + gap, work.Bottom - height - gap); }
             else if (work.Right < screen.Right) { x = work.Right - width - gap; y = Math.Clamp(cursor.Y - height / 2, work.Top + gap, work.Bottom - height - gap); }
-            AppWindow.MoveAndResize(new RectInt32(x, Math.Max(work.Top, y), width, Math.Min(height, work.Bottom - work.Top - gap * 2)));
+            // до первой подгонки рамки окно показывается за экраном, чтобы не было видно скачка
+            if (!calibrated) { x = -32000; y = -32000; }
+            AppWindow.MoveAndResize(new RectInt32(x, calibrated ? Math.Max(work.Top, y) : y, width, Math.Min(height, work.Bottom - work.Top - gap * 2)));
         }
 
         // окно без заголовка всё равно резервирует служебную область, подгоняем по фактическому месту под XAML
@@ -114,10 +118,12 @@ namespace NoiseReduction.WinUI
             FlyoutRoot.Measure(new Windows.Foundation.Size(WidthDip, double.PositiveInfinity));
             double scale = root.RasterizationScale;
             int dw = (int)Math.Round((WidthDip - root.Size.Width) * scale), dh = (int)Math.Round((FlyoutRoot.DesiredSize.Height - root.Size.Height) * scale);
-            if (Math.Abs(dw) < 2 && Math.Abs(dh) < 2) return;
-            var position = AppWindow.Position; var size = AppWindow.Size;
-            bool bottom = position.Y + size.Height / 2 > root.Size.Height * scale;
-            AppWindow.MoveAndResize(new RectInt32(position.X - dw / 2, bottom ? position.Y - dh : position.Y, size.Width + dw, size.Height + dh));
+            bool first = !calibrated;
+            calibrated = true;
+            if (Math.Abs(dw) < 2 && Math.Abs(dh) < 2) { if (first) Place(); return; }
+            // поправку на рамку запоминаем, следующие открытия сразу нужного размера
+            extraWidth += dw; extraHeight += dh;
+            Place();
         }
 
         private void Render()
