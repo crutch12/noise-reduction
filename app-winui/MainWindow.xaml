@@ -15,7 +15,14 @@
             </StackPanel>
         </Grid>
         <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-            <StackPanel MaxWidth="760" Padding="20,4,20,20" Spacing="4">
+            <!-- средняя колонка не шире 760, крайние делят остаток поровну, контент всегда по центру -->
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="760*" MaxWidth="760" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="1" Padding="20,4,20,20" Spacing="4">
                 <Border Style="{StaticResource SettingsCardStyle}">
                     <Grid ColumnSpacing="16">
                         <Grid.ColumnDefinitions>
@@ -61,7 +68,7 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <FontIcon Glyph="&#xE790;" FontSize="20" VerticalAlignment="Center" />
-                        <TextBlock x:Name="WindowThemeLabel" Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap" />
+                        <TextBlock x:Name="WindowThemeLabel" Grid.Column="1" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                         <ComboBox x:Name="WindowThemePicker" Grid.Column="2" MinWidth="160" SelectionChanged="ThemeChanged" />
                     </Grid>
                 </Border>
@@ -73,7 +80,7 @@
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <FontIcon Glyph="&#xE8A7;" FontSize="20" VerticalAlignment="Center" />
-                        <TextBlock x:Name="TrayThemeLabel" Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap" />
+                        <TextBlock x:Name="TrayThemeLabel" Grid.Column="1" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                         <ComboBox x:Name="TrayThemePicker" Grid.Column="2" MinWidth="160" SelectionChanged="ThemeChanged" />
                     </Grid>
                 </Border>
@@ -86,7 +93,7 @@
                         </Grid.ColumnDefinitions>
                         <FontIcon Glyph="&#xE7E8;" FontSize="20" VerticalAlignment="Center" />
                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                            <TextBlock x:Name="StartupLabel" TextWrapping="Wrap" />
+                            <TextBlock x:Name="StartupLabel" TextTrimming="CharacterEllipsis" />
                             <TextBlock x:Name="TrayHelp" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
                         </StackPanel>
                         <ToggleSwitch x:Name="StartupSwitch" Grid.Column="2" MinWidth="0" Toggled="StartupToggled" />
@@ -101,13 +108,14 @@
                         </Grid.ColumnDefinitions>
                         <FontIcon Glyph="&#xE710;" FontSize="20" VerticalAlignment="Center" />
                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                            <TextBlock x:Name="NewMicrophonesLabel" TextWrapping="Wrap" />
+                            <TextBlock x:Name="NewMicrophonesLabel" TextTrimming="CharacterEllipsis" />
                             <TextBlock x:Name="NewMicrophonesHelp" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
                         </StackPanel>
                         <ToggleSwitch x:Name="NewMicrophonesSwitch" Grid.Column="2" MinWidth="0" Toggled="NewMicrophonesToggled" />
                     </Grid>
                 </Border>
             </StackPanel>
+            </Grid>
         </ScrollViewer>
     </Grid>
 </Window>
