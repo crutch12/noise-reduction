@@ -116,7 +116,14 @@ namespace NoiseReduction.Platform {
     e.Set(apo,"MajorVersion",0,RegistryValueKind.DWord); e.Set(apo,"Flags",15,RegistryValueKind.DWord); e.Set(apo,"MaxInstances",-1,RegistryValueKind.DWord); e.Set(apo,"APOInterface0","{FD7F2B29-24D0-4B5C-B177-592C39F9CA10}",RegistryValueKind.String);
    }
   }
-  public static void UnregisterEngine() { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); using(var capture = root.OpenSubKey(Capture)) if(capture != null) foreach(var id in capture.GetSubKeyNames()) using(var fx = capture.OpenSubKey(id + "\\FxProperties")) if(fx != null && (RegistryEngine.Contains(fx.GetValue(CompositeKey),Clsid) || RegistryEngine.Contains(fx.GetValue(LegacyKey),Clsid))) throw new InvalidOperationException("Detach all microphones before unregistering the engine"); e.RestoreRegistration(); } }
+  public static void UnregisterEngine() { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); using(var capture = root.OpenSubKey(Capture)) if(capture != null) foreach(var id in capture.GetSubKeyNames()) using(var fx = capture.OpenSubKey(id + "\\FxProperties")) if(fx != null && (RegistryEngine.Contains(fx.GetValue(CompositeKey),Clsid) || RegistryEngine.Contains(fx.GetValue(LegacyKey),Clsid))) throw new InvalidOperationException("Detach all microphones before unregistering the engine"); e.RestoreRegistration();
+   // значения откатаны журналом, пустые разделы регистрации тоже убираем
+   foreach(var key in new[] { @"SOFTWARE\Classes\CLSID\" + Clsid + @"\InprocServer32", @"SOFTWARE\Classes\CLSID\" + Clsid, @"SOFTWARE\Classes\AudioEngine\AudioProcessingObjects\" + Clsid }) DeleteEmpty(root, key);
+  } }
+  static void DeleteEmpty(RegistryKey root, string path) {
+   using(var key = root.OpenSubKey(path)) { if(key == null || key.ValueCount > 0 || key.SubKeyCount > 0) { if(key == null || !(key.ValueCount == 1 && key.GetValueNames()[0] == "" && String.IsNullOrEmpty(key.GetValue("") as string) && key.SubKeyCount == 0)) return; } }
+   root.DeleteSubKey(path, false);
+  }
   [DllImport("ole32.dll")] static extern int PropVariantClear(ref PropVariant variant);
  }
  // Пакет эффектов Windows 11: так Windows ставит эффекты на микрофоны, которыми управляет сама (USB и т.п.)
@@ -155,6 +162,8 @@ namespace NoiseReduction.Platform {
    }
    // переустановка пакета сбрасывает выбор в микрофонах, после неё выбираем пакет заново
    var selected = Integration.EnumerateMicrophones().Where(device => device.EffectPack && device.Attached).Select(device => device.Id).ToList();
+   // прежние версии пакета снимаем, иначе они копятся в хранилище драйверов
+   foreach(var published in Published()) PnpUtil("/delete-driver " + published + " /uninstall");
    PnpUtil("/add-driver \"" + Path.Combine(pack, "*.inf") + "\" /install");
    if(selected.Count == 0) return;
    foreach(var id in selected) Integration.SelectEffectPack(id);

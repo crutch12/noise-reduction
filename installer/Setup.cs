@@ -197,6 +197,8 @@ class Setup {
   using(var root=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64)) { var e=new RegistryEngine(root,Path.Combine(DataRoot,"SetupJournal")); e.Recover(); e.RestorePrefix(UninstallKey); using(var key=root.OpenSubKey(UninstallKey)) if(key != null && key.ValueCount==0 && key.SubKeyCount==0) { key.Dispose(); root.DeleteSubKey(UninstallKey,false); } }
   File.Delete(Shortcut); File.Delete(LegacyShortcut);
   using(var startup=Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run",true)) if(startup!=null) { string value=startup.GetValue("NoiseReduction") as string; string expected="\""+Path.Combine(directory,"NoiseReduction.exe")+"\" --tray"; if(String.Equals(value,expected,StringComparison.OrdinalIgnoreCase)) startup.DeleteValue("NoiseReduction",false); }
+  // журналы отката пусты, значит всё возвращено и служебная папка больше не нужна
+  if(!Directory.EnumerateFiles(DataRoot,"*.xml",SearchOption.AllDirectories).Any()) try { Process.Start(new ProcessStartInfo(Path.Combine(Environment.SystemDirectory,"cmd.exe"),"/c ping -n 4 127.0.0.1 >nul & rmdir /s /q \""+DataRoot+"\"") { UseShellExecute=false, CreateNoWindow=true, WorkingDirectory=Environment.SystemDirectory }); } catch { }
   }
   foreach(var name in names) { string file=SafeFile(directory,name); if(File.Exists(file)) File.Delete(file); }
   PruneEmptyDirectories(directory,names);
