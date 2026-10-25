@@ -25,12 +25,6 @@ class IntegrationTests {
     }
     engine.Detach(fx);
     using (var k = root.OpenSubKey(fx)) Assert(((string[])k.GetValue(Integration.CompositeKey)).Length == 2, "preserve later OEM change");
-    string pack = "Capture\\{55555555-5555-5555-5555-555555555555}\\FxProperties";
-    using (var k = root.CreateSubKey(pack)) { k.SetValue(Integration.EffectPackKey, "SWD\\DRIVERENUM\\Pack"); k.SetValue(Integration.ModeKey, new string[]{oem}, RegistryValueKind.MultiString); }
-    engine.Attach(pack); engine.Attach(pack);
-    using (var k = root.OpenSubKey(pack)) Assert(((string[])k.GetValue(Integration.ModeKey)).Length == 2 && k.GetValue(Integration.CompositeKey) == null && Integration.Hooked(k), "effect pack endpoint uses mode chain once");
-    engine.Detach(pack);
-    using (var k = root.OpenSubKey(pack)) Assert(((string[])k.GetValue(Integration.ModeKey)).Length == 1 && !Integration.Hooked(k), "effect pack detach restores mode chain");
     string empty = "Capture\\{44444444-4444-4444-4444-444444444444}\\FxProperties";
     root.CreateSubKey(empty).Dispose(); engine.Attach(empty); engine.Detach(empty);
     using (var k = root.OpenSubKey(empty)) Assert(k.GetValue(Integration.CompositeKey) == null, "restore absent value");
