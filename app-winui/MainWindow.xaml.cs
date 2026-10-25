@@ -153,7 +153,7 @@ namespace NoiseReduction.WinUI
                 foreach (var card in cards) card.Update();
                 MasterSwitch.IsOn = controller.GlobalEnabled;
                 MasterSwitch.IsEnabled = !controller.Busy;
-                RefreshButton.IsEnabled = !controller.Busy;
+                RefreshButton.IsEnabled = !controller.Busy && !refreshing;
                 string error = localError ?? controller.Error ?? controller.RefreshError;
                 if (string.IsNullOrEmpty(error)) dismissed = false;
                 ErrorBar.Message = string.IsNullOrEmpty(error) ? "" : UiText.Message(error);
@@ -185,7 +185,24 @@ namespace NoiseReduction.WinUI
         }
         private void StartupToggled(object sender, RoutedEventArgs args) { if (!updating) controller.SetStartup(StartupSwitch.IsOn); }
         private void NewMicrophonesToggled(object sender, RoutedEventArgs args) { if (!updating) controller.SetEnableNewMicrophones(NewMicrophonesSwitch.IsOn); }
-        private void RefreshClicked(object sender, RoutedEventArgs args) { controller.Refresh(); _ = controller.ScanUsageAsync(); }
+        private bool refreshing;
+
+        // опрос быстрый, поэтому кольцо держим хотя бы полсекунды, иначе не видно, что что-то произошло
+        private async void RefreshClicked(object sender, RoutedEventArgs args)
+        {
+            refreshing = true;
+            RefreshButton.IsEnabled = false;
+            RefreshIcon.Opacity = 0;
+            RefreshRing.IsActive = true;
+            var minimum = Task.Delay(500);
+            await Task.Yield();
+            controller.Refresh();
+            await Task.WhenAll(controller.ScanUsageAsync(), minimum);
+            RefreshRing.IsActive = false;
+            RefreshIcon.Opacity = 1;
+            refreshing = false;
+            RefreshButton.IsEnabled = !controller.Busy;
+        }
         private void ErrorClosed(InfoBar sender, InfoBarClosedEventArgs args) { if (!updating) { dismissed = true; localError = null; } }
     }
 }

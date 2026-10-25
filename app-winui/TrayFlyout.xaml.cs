@@ -159,7 +159,7 @@ namespace NoiseReduction.WinUI
                     var state = controller.StateOf(row.Id);
                     row.Name.Text = device.Name;
                     ToolTipService.SetToolTip(row.Name, device.Name);
-                    row.Details.Text = Details(controller, device);
+                    ShowDetails(row.Details, controller, device);
                     ToolTipService.SetToolTip(row.Details, state == MicrophoneState.Detached ? T("Включите переключатель, Windows попросит подтверждение") : null);
                     row.Dot.Fill = StateBrush(state, FlyoutRoot);
                     row.Dot.Opacity = state == MicrophoneState.Waiting ? 0.5 : 1;
@@ -179,7 +179,7 @@ namespace NoiseReduction.WinUI
                 Id = id,
                 Name = new TextBlock { Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center },
                 Details = new TextBlock { Style = (Style)FlyoutRoot.Resources["FlyoutDetailsStyle"], TextTrimming = TextTrimming.CharacterEllipsis },
-                Dot = new Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center },
+                Dot = new Ellipse { Width = 8, Height = 8, Margin = new Thickness(0, 2, 0, 0), VerticalAlignment = VerticalAlignment.Center },
                 Toggle = new ToggleSwitch { MinWidth = 0, OnContent = "", OffContent = "", Margin = new Thickness(0, 0, -12, 0), FocusVisualMargin = new Thickness(-3, -3, 9, -3), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center }
             };
             // одна сетка на микрофон: слева имя и состояние, справа переключатель

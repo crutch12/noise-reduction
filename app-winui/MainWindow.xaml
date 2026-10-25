@@ -42,7 +42,10 @@
                 <Grid Margin="2,16,0,4">
                     <TextBlock x:Name="MicrophonesHeading" Style="{ThemeResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
                     <Button x:Name="RefreshButton" HorizontalAlignment="Right" Padding="8,4" Background="Transparent" BorderThickness="0" Click="RefreshClicked">
-                        <FontIcon Glyph="&#xE72C;" FontSize="14" />
+                        <Grid>
+                            <FontIcon x:Name="RefreshIcon" Glyph="&#xE72C;" FontSize="14" />
+                            <ProgressRing x:Name="RefreshRing" Width="14" Height="14" MinWidth="0" MinHeight="0" IsActive="False" />
+                        </Grid>
                     </Button>
                 </Grid>
                 <StackPanel x:Name="MicrophoneList" Spacing="4" />

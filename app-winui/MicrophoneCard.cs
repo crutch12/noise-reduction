@@ -16,7 +16,7 @@ namespace NoiseReduction.WinUI
         private readonly DesktopController controller;
         private readonly TextBlock name = new TextBlock { Style = Style("BodyStrongTextBlockStyle"), TextTrimming = TextTrimming.CharacterEllipsis };
         private readonly TextBlock details = new TextBlock { Style = Style("CaptionTextBlockStyle"), TextTrimming = TextTrimming.CharacterEllipsis };
-        private readonly Ellipse dot = new Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center };
+        private readonly Ellipse dot = new Ellipse { Width = 8, Height = 8, Margin = new Thickness(0, 2, 0, 0), VerticalAlignment = VerticalAlignment.Center };
         private readonly ToggleSwitch toggle = new ToggleSwitch { MinWidth = 0, VerticalAlignment = VerticalAlignment.Center };
         private readonly InfoBar hookBar = new InfoBar { Severity = InfoBarSeverity.Warning, IsClosable = false, IsOpen = false };
         private readonly Button hookButton = new Button();
@@ -145,8 +145,8 @@ namespace NoiseReduction.WinUI
                 bool idle = !controller.Busy;
                 name.Text = device.Name;
                 ToolTipService.SetToolTip(name, device.Name);
-                details.Text = Details(controller, device);
-                ToolTipService.SetToolTip(details, details.Text);
+                ShowDetails(details, controller, device);
+                ToolTipService.SetToolTip(details, Details(controller, device));
                 details.Foreground = Brush(state == MicrophoneState.Error ? "SystemFillColorCriticalBrush" : "TextFillColorSecondaryBrush");
                 dot.Fill = StateBrush(state, View);
                 dot.Opacity = state == MicrophoneState.Waiting ? 0.5 : 1;
