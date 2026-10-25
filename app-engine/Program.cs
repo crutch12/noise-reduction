@@ -54,7 +54,16 @@ namespace NoiseReduction.Desktop
                             }, delegate
                             {
                                 long initial = control.ModelFrames;
-                                Comparison.VerifyCapture(id, delegate { return control.ModelFrames > initial; });
+                                // драйвер может ещё перезапускать звук после подключения, даём ему пару попыток
+                                for (int attempt = 0; ; attempt++)
+                                {
+                                    try { Comparison.VerifyCapture(id, delegate { return control.ModelFrames > initial; }); break; }
+                                    catch (InvalidOperationException error)
+                                    {
+                                        if (attempt >= 2 || !(error.InnerException is System.Runtime.InteropServices.COMException)) throw;
+                                        System.Threading.Thread.Sleep(1500);
+                                    }
+                                }
                             });
                             verification.Commit();
                             refreshOnRollback = false;
