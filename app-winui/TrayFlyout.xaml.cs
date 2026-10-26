@@ -22,6 +22,7 @@ namespace NoiseReduction.WinUI
             internal string Id;
             internal TextBlock Name, Details;
             internal Ellipse Dot;
+            internal StackPanel Apps;
             internal ToggleSwitch Toggle;
         }
 
@@ -160,6 +161,7 @@ namespace NoiseReduction.WinUI
                     row.Name.Text = device.Name;
                     ToolTipService.SetToolTip(row.Name, device.Name);
                     ShowDetails(row.Details, controller, device);
+                    AppIcons.Show(row.Apps, controller.Usage(row.Id), row.Details.Foreground);
                     ToolTipService.SetToolTip(row.Details, state == MicrophoneState.Detached ? T("Включите переключатель, Windows попросит подтверждение") : null);
                     row.Dot.Fill = StateBrush(state, FlyoutRoot);
                     row.Dot.Opacity = state == MicrophoneState.Waiting ? 0.5 : 1;
@@ -179,6 +181,7 @@ namespace NoiseReduction.WinUI
                 Id = id,
                 Name = new TextBlock { Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"], TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center },
                 Details = new TextBlock { Style = (Style)FlyoutRoot.Resources["FlyoutDetailsStyle"], TextTrimming = TextTrimming.CharacterEllipsis },
+                Apps = AppIcons.Create(),
                 Dot = new Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center },
                 Toggle = new ToggleSwitch { MinWidth = 0, OnContent = "", OffContent = "", Margin = new Thickness(0, -4, -12, 0), FocusVisualMargin = new Thickness(-3, -3, 9, -3), HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center }
             };
@@ -188,7 +191,7 @@ namespace NoiseReduction.WinUI
             block.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             for (int index = 0; index < 2; index++) block.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             var details = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-            details.Children.Add(row.Dot); details.Children.Add(row.Details);
+            details.Children.Add(row.Dot); details.Children.Add(row.Details); details.Children.Add(row.Apps);
             block.Children.Add(row.Name);
             Grid.SetRow(details, 1); block.Children.Add(details);
             Grid.SetColumn(row.Toggle, 1); Grid.SetRowSpan(row.Toggle, 2); block.Children.Add(row.Toggle);

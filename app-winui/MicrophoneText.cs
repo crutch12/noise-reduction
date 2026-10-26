@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml.Controls;
@@ -36,11 +37,17 @@ namespace NoiseReduction.WinUI
         {
             string marked = T("по умолчанию");
             block.Inlines.Clear();
-            foreach (string part in Parts(controller, device))
+            var parts = Parts(controller, device);
+            // программы рисуются иконками рядом, в тексте остаётся только состояние
+            bool apps = controller.Usage(device.Id)?.Count > 0;
+            if (apps) parts.RemoveAt(parts.Count - 1);
+            foreach (string part in parts)
             {
                 if (block.Inlines.Count > 0) block.Inlines.Add(new Run { Text = " · " });
                 block.Inlines.Add(device.Id == controller.DefaultId && part == marked ? new Run { Text = part, FontWeight = FontWeights.SemiBold } : new Run { Text = part });
             }
+            // разделитель перед иконками программ, отступ после него задаёт сама строка
+            if (apps) block.Inlines.Add(new Run { Text = " ·" });
         }
 
         private static List<string> Parts(DesktopController controller, DeviceInfo device)
@@ -48,7 +55,7 @@ namespace NoiseReduction.WinUI
             var parts = new List<string> { controller.IntegratingId == device.Id ? T("Включение…") : StateText(controller.StateOf(device.Id)) };
             if (device.Id == controller.DefaultId) parts.Add(T("по умолчанию"));
             var apps = controller.Usage(device.Id);
-            if (apps != null && apps.Count > 0) parts.Add(string.Join(", ", apps));
+            if (apps != null && apps.Count > 0) parts.Add(string.Join(", ", apps.Select(app => app.Name)));
             return parts;
         }
 

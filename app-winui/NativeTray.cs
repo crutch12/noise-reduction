@@ -154,7 +154,7 @@ namespace NoiseReduction.WinUI
                     {
                         var parts = new List<string>();
                         var apps = controller.Usage(device.Id);
-                        if (apps != null && apps.Count > 0) parts.Add(string.Join(", ", System.Linq.Enumerable.Take(apps, 2)) + (apps.Count > 2 ? "…" : ""));
+                        if (apps != null && apps.Count > 0) parts.Add(string.Join(", ", System.Linq.Enumerable.Take(System.Linq.Enumerable.Select(apps, app => app.Name), 2)) + (apps.Count > 2 ? "…" : ""));
                         if (device.Id == controller.DefaultId) parts.Add(T("основной"));
                         string text = ShortName(device.Name).Replace("&", "&&") + (parts.Count > 0 ? "\t" + string.Join(" · ", parts) : "");
                         AppendMenu(menu, MF_STRING | busy | (controller.IsEnabled(device.Id) ? MF_CHECKED : 0), (UIntPtr)(uint)(CommandMicrophone + ids.Count), text);

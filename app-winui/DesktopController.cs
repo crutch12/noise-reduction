@@ -15,6 +15,8 @@ using Activity = NoiseReduction.Desktop.Activity;
 
 namespace NoiseReduction.WinUI
 {
+    public sealed record AppUse(string Name, string Path);
+
     internal enum MicrophoneState { Paused, Off, Detached, Error, Active, Waiting }
 
     internal sealed class DesktopController : IDisposable
@@ -38,7 +40,7 @@ namespace NoiseReduction.WinUI
         private readonly string settingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NoiseReduction", "settings.json");
         private readonly Dictionary<string, ControlFile> controls = new Dictionary<string, ControlFile>();
         private readonly Dictionary<string, Sample> samples = new Dictionary<string, Sample>();
-        private readonly Dictionary<string, List<string>> usage = new Dictionary<string, List<string>>();
+        private readonly Dictionary<string, List<AppUse>> usage = new Dictionary<string, List<AppUse>>();
         private readonly Dictionary<string, string> notes = new Dictionary<string, string>();
         private readonly DesktopState state = new DesktopState();
         private MediaPlayer original, processed;
@@ -120,7 +122,7 @@ namespace NoiseReduction.WinUI
         public bool ProfileEnabled(string id) => Settings.For(id).Enabled;
         public int Attenuation(string id) => Settings.For(id).Attenuation;
         public string Note(string id) => notes.TryGetValue(id, out var note) ? note : null;
-        public IReadOnlyList<string> Usage(string id) => usage.TryGetValue(id, out var names) ? names : null;
+        public IReadOnlyList<AppUse> Usage(string id) => usage.TryGetValue(id, out var apps) ? apps : null;
         public bool CanCompare(string id) => !disposed && !Busy && comparisonId == id && recordingDirectory != null && File.Exists(Path.Combine(recordingDirectory, "original.wav")) && File.Exists(Path.Combine(recordingDirectory, "processed.wav"));
 
         public bool HasProcessingError(string id)
@@ -232,38 +234,39 @@ namespace NoiseReduction.WinUI
                 usage.Clear();
                 foreach (var pair in result)
                     if (pair.Value.Available)
-                        usage[pair.Key] = pair.Value.Sessions.Where(session => session.ProcessId != Environment.ProcessId).Select(session => AppName(session)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                        usage[pair.Key] = pair.Value.Sessions.Where(session => session.ProcessId != Environment.ProcessId).Select(session => AppName(session)).GroupBy(app => app.Name, StringComparer.OrdinalIgnoreCase).Select(group => group.First()).ToList();
                 Notify();
             }
             finally { scanning = false; }
         }
-        private static string AppName(CaptureSessionInfo session)
+        private static AppUse AppName(CaptureSessionInfo session)
         {
-            if (session.IsSystemSession) return UiText.Get("Система");
+            if (session.IsSystemSession) return new AppUse(UiText.Get("Система"), null);
             string name = session.ApplicationName;
-            switch (name.ToLowerInvariant())
+            if (!known.TryGetValue(name, out var app))
             {
-                case "chrome": return "Chrome";
-                case "msedge": return "Edge";
-                case "firefox": return "Firefox";
-                case "telegram": return "Telegram";
-                case "discord": return "Discord";
-                case "ms-teams": return "Teams";
-                case "zoom": return "Zoom";
-                case "soundrecorder": case "voicerecorder": return UiText.Get("Запись звука");
-                case "systemsettings": return UiText.Get("Параметры Windows");
-            }
-            if (!descriptions.TryGetValue(name, out var title))
-            {
-                // у процесса без доступа описание не прочитать, тогда остаётся имя файла
-                try { using var process = Process.GetProcessById((int)session.ProcessId); title = process.MainModule?.FileVersionInfo.FileDescription?.Trim(); }
-                catch (Exception) { title = null; }
+                // у процесса без доступа путь и описание не прочитать, тогда остаётся имя файла
+                string path = null, title = null;
+                try { using var process = Process.GetProcessById((int)session.ProcessId); path = process.MainModule?.FileName; title = process.MainModule?.FileVersionInfo.FileDescription?.Trim(); }
+                catch (Exception) { }
+                switch (name.ToLowerInvariant())
+                {
+                    case "chrome": title = "Chrome"; break;
+                    case "msedge": title = "Edge"; break;
+                    case "firefox": title = "Firefox"; break;
+                    case "telegram": title = "Telegram"; break;
+                    case "discord": title = "Discord"; break;
+                    case "ms-teams": title = "Teams"; break;
+                    case "zoom": title = "Zoom"; break;
+                    case "soundrecorder": case "voicerecorder": title = UiText.Get("Запись звука"); break;
+                    case "systemsettings": title = UiText.Get("Параметры Windows"); break;
+                }
                 if (string.IsNullOrEmpty(title) || title.Length > 32) title = name.Length > 0 ? char.ToUpperInvariant(name[0]) + name.Substring(1) : name;
-                descriptions[name] = title;
+                app = known[name] = new AppUse(title, path);
             }
-            return title;
+            return app;
         }
-        private static readonly Dictionary<string, string> descriptions = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly Dictionary<string, AppUse> known = new(StringComparer.OrdinalIgnoreCase);
 
         private void ApplyControls(bool bypass)
         {

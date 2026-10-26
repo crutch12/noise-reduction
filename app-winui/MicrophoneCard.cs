@@ -15,6 +15,7 @@ namespace NoiseReduction.WinUI
     {
         private readonly DesktopController controller;
         private readonly TextBlock name = new TextBlock { Style = Style("BodyStrongTextBlockStyle"), TextTrimming = TextTrimming.CharacterEllipsis };
+        private readonly StackPanel apps = AppIcons.Create();
         private readonly TextBlock details = new TextBlock { Style = Style("CaptionTextBlockStyle"), TextTrimming = TextTrimming.CharacterEllipsis };
         private readonly Ellipse dot = new Ellipse { Width = 8, Height = 8, VerticalAlignment = VerticalAlignment.Center };
         private readonly ToggleSwitch toggle = new ToggleSwitch { MinWidth = 0, VerticalAlignment = VerticalAlignment.Center };
@@ -46,7 +47,7 @@ namespace NoiseReduction.WinUI
             foreach (var width in new[] { GridLength.Auto, new GridLength(1, GridUnitType.Star), GridLength.Auto }) header.ColumnDefinitions.Add(new ColumnDefinition { Width = width });
             header.Children.Add(new FontIcon { Glyph = "", FontSize = 20, VerticalAlignment = VerticalAlignment.Center });
             var caption = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
-            caption.Children.Add(dot); caption.Children.Add(details);
+            caption.Children.Add(dot); caption.Children.Add(details); caption.Children.Add(apps);
             var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Spacing = 2 };
             text.Children.Add(name); text.Children.Add(caption);
             Grid.SetColumn(text, 1); header.Children.Add(text);
@@ -146,6 +147,7 @@ namespace NoiseReduction.WinUI
                 name.Text = device.Name;
                 ToolTipService.SetToolTip(name, device.Name);
                 ShowDetails(details, controller, device);
+                AppIcons.Show(apps, controller.Usage(Id), details.Foreground);
                 ToolTipService.SetToolTip(details, Details(controller, device));
                 details.Foreground = Brush(state == MicrophoneState.Error ? "SystemFillColorCriticalBrush" : "TextFillColorSecondaryBrush");
                 dot.Fill = StateBrush(state, View);
