@@ -292,9 +292,7 @@ namespace NoiseReduction.WinUI
         public async Task IntegrateAsync(string id, bool attach)
         {
             if (Busy || disposed || !devices.Any(device => device.Id == id)) return;
-            // пакет эффектов Windows включает только сам пользователь в Параметрах, программам это не разрешено
             var target = devices.First(device => device.Id == id);
-            if (attach && target.EffectPack) { OpenSoundSettings(id); return; }
             bool succeeded = false;
             state.Integrating = true; IntegratingId = id; Error = null;
             notes[id] = attach ? "Windows проверяет обработку, звук не сохраняется и не воспроизводится" : "Отключение эффекта"; Notify();
@@ -312,6 +310,7 @@ namespace NoiseReduction.WinUI
                 }
                 succeeded = true;
             }
+            catch (System.ComponentModel.Win32Exception) { }
             catch (Exception error) { if (!disposed) Error = error.Message; }
             finally
             {
@@ -324,7 +323,12 @@ namespace NoiseReduction.WinUI
                     Notify();
                 }
             }
+            // пакет эффектов Windows не принял выбор программы, остаётся выбрать его в Параметрах
+            var now = devices.Find(device => device.Id == id);
+            if (!disposed && attach && !succeeded && Error != null && target.EffectPack && now != null && !now.Attached) { Error = null; settingsNeeded.Add(id); OpenSoundSettings(id); }
         }
+        private readonly HashSet<string> settingsNeeded = new HashSet<string>();
+        public bool NeedsSettings(string id) => settingsNeeded.Contains(id) && devices.Find(device => device.Id == id) is { Attached: false };
 
         public async Task RecordAsync(string id)
         {

@@ -126,9 +126,18 @@ namespace NoiseReduction.Platform {
     Marshal.ThrowExceptionForHR(device.OpenPropertyStore(2, out store));
     var format = new Guid("c876062a-a276-4ed6-b15b-3962e69007f8");
     var selected = new PropertyKey(format, 2); var state = new PropertyKey(format, 3);
+    // тот же выбор, что уже записан, служба не замечает, поэтому перед пакетом коротко ставим Off, как при переключении в Параметрах
+    if(text != null) {
+     var none = new PropVariant(); store.SetValue(ref selected, ref none);
+     var off = new byte[] { 0x6c,0xb2,0xd5,0x00,0x0f,0x4d,0x83,0x4a,0xbb,0x69,0xc2,0xf1,0x2d,0xc5,0xfb,0x10, 0,0,0,0, 0,0,0,0, 1,0,0,0 };
+     var offData = new PropVariant { Type = 65, Size = off.Length, Data = Marshal.AllocCoTaskMem(off.Length) }; Marshal.Copy(off, 0, offData.Data, off.Length);
+     try { store.SetValue(ref state, ref offData); } finally { PropVariantClear(ref offData); }
+     store.Commit();
+    }
     var value = new PropVariant(); if(text != null) { value.Type = 31; value.Pointer = Marshal.StringToCoTaskMemUni(text); }
     try { store.SetValue(ref selected, ref value); } finally { PropVariantClear(ref value); }
-    if(blob != null) { var data = new PropVariant { Type = 65, Size = blob.Length, Data = Marshal.AllocCoTaskMem(blob.Length) }; Marshal.Copy(blob, 0, data.Data, blob.Length); try { store.SetValue(ref state, ref data); } finally { PropVariantClear(ref data); } }
+    // в реестре перед данными лежат тип и счётчик, по 4 байта, служба ждёт только сами данные
+    if(blob != null && blob.Length > 8) { var data = new PropVariant { Type = 65, Size = blob.Length - 8, Data = Marshal.AllocCoTaskMem(blob.Length - 8) }; Marshal.Copy(blob, 8, data.Data, blob.Length - 8); try { store.SetValue(ref state, ref data); } finally { PropVariantClear(ref data); } }
     store.Commit();
    } finally { if(store != null) Marshal.ReleaseComObject(store); if(device != null) Marshal.ReleaseComObject(device); Marshal.ReleaseComObject(enumerator); }
   }
@@ -197,8 +206,12 @@ namespace NoiseReduction.Platform {
    // прежние версии пакета снимаем, иначе они копятся в хранилище драйверов
    foreach(var published in Published()) PnpUtil("/delete-driver " + published + " /uninstall");
    PnpUtil("/add-driver \"" + Path.Combine(pack, "*.inf") + "\" /install");
+   // звуковая служба держит эффект из папки прежней версии, где моделей уже нет; перезапуск грузит новую,
+   // и только после него выбор пакета снова примется
+   Integration.RefreshAudioGraph();
    if(selected.Count == 0) return;
    foreach(var id in selected) Integration.SelectEffectPack(id);
+   // выбор применяется при сборке звукового графа, как при обычном включении
    Integration.RefreshAudioGraph();
   }
   public static void Uninstall() {

@@ -113,7 +113,7 @@ namespace NoiseReduction.WinUI
             record.Click += (_, _) => { if (controller.RecordingId == Id) controller.StopRecording(); else run(() => controller.RecordAsync(Id)); };
             listen.Click += (_, _) => controller.TogglePlayback(Id);
             listenSwitch.Toggled += (_, _) => { if (!updating) controller.SetListenProcessed(listenSwitch.IsOn); };
-            hookButton.Click += (_, _) => run(() => controller.IntegrateAsync(Id, true));
+            hookButton.Click += (_, _) => { if (hookButton.Tag != null) controller.OpenSoundSettings(Id); else run(() => controller.IntegrateAsync(Id, true)); };
             reset.Click += (_, _) => { presets.CustomOpen = false; controller.ResetProfile(Id); };
             diagnostics.Click += (_, _) => { var data = new DataPackage(); data.SetText(controller.BuildDiagnostics(Id)); Clipboard.SetContent(data); };
         }
@@ -180,10 +180,11 @@ namespace NoiseReduction.WinUI
                 bool enabling = controller.IntegratingId == Id;
                 hookBar.IsOpen = controller.ProfileEnabled(Id) && !device.Attached || enabling;
                 // у микрофонов с пакетом эффектов Windows выбор делается в Параметрах, кнопка открывает нужную страницу
-                bool pack = device.EffectPack && device.EnhancementsEnabled;
+                bool pack = controller.NeedsSettings(Id);
                 hookBar.Title = T(enabling ? "Включение…" : pack ? "Выберите Noise Reduction в Параметрах Windows" : device.EnhancementsEnabled ? "Шумоподавление не встроено в Windows" : "В Windows выключены улучшения звука");
                 hookBar.Message = T(enabling ? "Подтвердите запрос Windows, звук прервётся на пару секунд" : pack ? "Windows разрешает выбрать эффект только вам: в пункте Улучшения звука выберите Noise Reduction" : "Программы получают звук без обработки. Нажмите Включить, Windows попросит подтверждение");
                 hookButton.Content = T(pack ? "Открыть Параметры" : "Включить");
+                hookButton.Tag = pack ? "settings" : null;
                 hookButton.IsEnabled = idle;
 
                 bool precise = controller.DeepFilter(Id);
