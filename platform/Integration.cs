@@ -109,10 +109,10 @@ namespace NoiseReduction.Platform {
   internal const string DisableSysFxKey = "{1DA5D803-D492-4EDD-8C23-E0C0FFEE7F0E},5";
   // Off в настройках улучшений звука Windows выключает все эффекты микрофона, включение возвращает их
   static void EnableEnhancements(RegistryEngine e, RegistryKey root, string endpointId) { using(var fx = root.OpenSubKey(Fx(endpointId))) { object disabled = fx == null ? null : fx.GetValue(DisableSysFxKey); if(disabled != null && Convert.ToInt32(disabled) != 0) e.Set(Fx(endpointId), DisableSysFxKey, 0, RegistryValueKind.DWord); } }
-  public static void Attach(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); if(!EnumerateMicrophones().Any(d => d.Id == endpointId && d.Active)) throw new InvalidOperationException("Capture endpoint is unavailable"); e.Attach(Fx(endpointId)); EnableEnhancements(e, root, endpointId); ClearFormatCache(root, Properties(endpointId)); } }
-  public static void Detach(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); bool pack = PackManaged(root, Fx(endpointId)); e.Detach(Fx(endpointId)); e.Detach(Properties(endpointId)); ClearFormatCache(root, Properties(endpointId)); if(pack) TryPushSelection(root, endpointId); } }
-  public static void SelectEffectPack(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); if(!EnumerateMicrophones().Any(d => d.Id == endpointId && d.Active && d.EffectPack)) throw new InvalidOperationException("Capture endpoint is unavailable"); string component = EffectPack.Component(root); if(component == null) throw new InvalidOperationException("Noise Reduction effect pack is not installed"); e.Set(Fx(endpointId), EffectPack.ComponentKey, component, RegistryValueKind.String); e.Set(Properties(endpointId), EffectPack.SelectedKey, EffectPack.Id, RegistryValueKind.String); e.Set(Properties(endpointId), EffectPack.StateKey, EffectPack.State(), RegistryValueKind.Binary); EnableEnhancements(e, root, endpointId); ClearFormatCache(root, Properties(endpointId)); PushSelection(root, endpointId); } }
-  public static void DetachAll() { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); using(var capture = root.OpenSubKey(Capture)) if(capture != null) foreach(var id in capture.GetSubKeyNames()) { bool pack = PackManaged(root, Capture + "\\" + id + "\\FxProperties"); e.Detach(Capture + "\\" + id + "\\FxProperties"); e.Detach(Capture + "\\" + id + "\\Properties"); ClearFormatCache(root, Capture + "\\" + id + "\\Properties"); if(pack) TryPushSelection(root, "{0.0.1.00000000}." + id); } e.DetachJournaledEndpoints(); } }
+  public static void Attach(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); if(!EnumerateMicrophones().Any(d => d.Id == endpointId && d.Active)) throw new InvalidOperationException("Capture endpoint is unavailable"); e.Attach(Fx(endpointId)); EnableEnhancements(e, root, endpointId); DisableRaw(e, root, endpointId); ClearFormatCache(root, Properties(endpointId)); } }
+  public static void Detach(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); bool pack = PackManaged(root, Fx(endpointId)); e.Detach(Fx(endpointId)); e.Detach(Properties(endpointId)); ClearFormatCache(root, Properties(endpointId)); if(pack) TryPushSelection(root, endpointId); TryPushRaw(root, endpointId); } }
+  public static void SelectEffectPack(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); if(!EnumerateMicrophones().Any(d => d.Id == endpointId && d.Active && d.EffectPack)) throw new InvalidOperationException("Capture endpoint is unavailable"); string component = EffectPack.Component(root); if(component == null) throw new InvalidOperationException("Noise Reduction effect pack is not installed"); e.Set(Fx(endpointId), EffectPack.ComponentKey, component, RegistryValueKind.String); e.Set(Properties(endpointId), EffectPack.SelectedKey, EffectPack.Id, RegistryValueKind.String); e.Set(Properties(endpointId), EffectPack.StateKey, EffectPack.State(), RegistryValueKind.Binary); EnableEnhancements(e, root, endpointId); DisableRaw(e, root, endpointId); ClearFormatCache(root, Properties(endpointId)); PushSelection(root, endpointId); } }
+  public static void DetachAll() { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); using(var capture = root.OpenSubKey(Capture)) if(capture != null) foreach(var id in capture.GetSubKeyNames()) { bool pack = PackManaged(root, Capture + "\\" + id + "\\FxProperties"); e.Detach(Capture + "\\" + id + "\\FxProperties"); e.Detach(Capture + "\\" + id + "\\Properties"); ClearFormatCache(root, Capture + "\\" + id + "\\Properties"); if(pack) TryPushSelection(root, "{0.0.1.00000000}." + id); TryPushRaw(root, "{0.0.1.00000000}." + id); } e.DetachJournaledEndpoints(); } }
   // кэш форматов, который Windows сама стирает при смене эффектов и пересобирает при следующем запуске звука;
   // старый кэш может держать микрофон на прежней цепочке эффектов
   static readonly string[] FormatCache = { "{3d6e1656-2e50-4c4c-8d85-d0acae3c6c68},3", "{3d6e1656-2e50-4c4c-8d85-d0acae3c6c68},5", "{3d6e1656-2e50-4c4c-8d85-d0acae3c6c68},9", "{3d6e1656-2e50-4c4c-8d85-d0acae3c6c68},10", "{33b83365-ab41-4b3b-8f32-ab8d96168070},5", "{33b83365-ab41-4b3b-8f32-ab8d96168070},9", "{33b83365-ab41-4b3b-8f32-ab8d96168070},10", "{624f56de-fd24-473e-814a-de40aacaed16},3", "{e4870e26-3cc5-4cd2-ba46-ca0a9a70ed04},0" };
@@ -144,6 +144,29 @@ namespace NoiseReduction.Platform {
    } finally { if(store != null) Marshal.ReleaseComObject(store); if(device != null) Marshal.ReleaseComObject(device); Marshal.ReleaseComObject(enumerator); }
   }
   // при откате микрофон может быть уже отключён от ПК, тогда реестра достаточно
+  // Chrome и программы на Chromium пишут микрофон в режиме RAW, если устройство его заявляет, и тогда Windows не вызывает эффекты;
+  // без этого признака они открывают микрофон обычно, через шумодав. При выключении журнал возвращает исходное значение
+  internal const string RawSupportKey = "{8943b373-388c-4395-b557-bc6dbaffafdb},2";
+  static void DisableRaw(RegistryEngine e, RegistryKey root, string endpointId) {
+   byte[] current; using(var key = root.OpenSubKey(Properties(endpointId))) current = key == null ? null : key.GetValue(RawSupportKey) as byte[];
+   if(current == null || current.Length < 10 || current[0] != 11 || (current[8] == 0 && current[9] == 0)) return;
+   var off = (byte[])current.Clone(); off[8] = 0; off[9] = 0;
+   e.Set(Properties(endpointId), RawSupportKey, off, RegistryValueKind.Binary);
+   PushRaw(root, endpointId);
+  }
+  static void PushRaw(RegistryKey root, string endpointId) {
+   byte[] value; using(var key = root.OpenSubKey(Properties(endpointId))) value = key == null ? null : key.GetValue(RawSupportKey) as byte[];
+   if(value == null || value.Length < 10 || value[0] != 11) return;
+   var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator(); IMMDevice device = null; IPropertyStore store = null;
+   try {
+    Marshal.ThrowExceptionForHR(enumerator.GetDevice(endpointId, out device));
+    Marshal.ThrowExceptionForHR(device.OpenPropertyStore(2, out store));
+    var raw = new PropertyKey(new Guid("8943b373-388c-4395-b557-bc6dbaffafdb"), 2);
+    var flag = new PropVariant { Type = 11, Size = BitConverter.ToInt16(value, 8) };
+    store.SetValue(ref raw, ref flag); store.Commit();
+   } finally { if(store != null) Marshal.ReleaseComObject(store); if(device != null) Marshal.ReleaseComObject(device); Marshal.ReleaseComObject(enumerator); }
+  }
+  static void TryPushRaw(RegistryKey root, string endpointId) { try { PushRaw(root, endpointId); } catch(COMException) { } catch(InvalidCastException) { } }
   static void TryPushSelection(RegistryKey root, string endpointId) { try { PushSelection(root, endpointId); } catch(COMException) { } catch(InvalidCastException) { } }
   static void ClearFormatCache(RegistryKey root, string properties) {
    try { using(var key = root.OpenSubKey(properties, RegistryKeyPermissionCheck.ReadWriteSubTree, System.Security.AccessControl.RegistryRights.QueryValues | System.Security.AccessControl.RegistryRights.SetValue)) if(key != null) foreach(var name in FormatCache) key.DeleteValue(name, false); }
@@ -325,7 +348,7 @@ namespace NoiseReduction.Platform {
      if(now.Same(c.After)) Write(c,c.Before);
      else if(c.Name==Integration.CompositeKey && now.Exists && now.Kind==RegistryValueKind.MultiString) Write(c,new ValueSnapshot{Exists=true,Kind=RegistryValueKind.MultiString,Strings=((string[])now.Value()).Where(value=>!String.Equals(value,Integration.Clsid,StringComparison.OrdinalIgnoreCase)).ToArray()});
      else if(now.Same(c.Before)) { }
-     else if(c.Name==Integration.ModesKey || String.Equals(c.Name,Integration.DisableSysFxKey,StringComparison.OrdinalIgnoreCase)) { }
+     else if(c.Name==Integration.ModesKey || String.Equals(c.Name,Integration.DisableSysFxKey,StringComparison.OrdinalIgnoreCase) || String.Equals(c.Name,Integration.RawSupportKey,StringComparison.OrdinalIgnoreCase)) { }
      else throw new InvalidOperationException("Pending verification rollback conflict at "+c.Path);
     }
     File.Delete(file);
@@ -354,7 +377,7 @@ namespace NoiseReduction.Platform {
      else if(c.Name == Integration.CompositeKey && now.Kind == RegistryValueKind.MultiString && now.Exists) { var filtered=((string[])now.Value()).Where(s=>!String.Equals(s,Integration.Clsid,StringComparison.OrdinalIgnoreCase)).ToArray(); Write(c,new ValueSnapshot{Exists=true,Kind=RegistryValueKind.MultiString,Strings=filtered}); }
      else if(now.Same(c.Before)) { } else if(c.Name == Integration.ModesKey) { }
      // флаг улучшений Windows переписывает сама, после неё возвращать нечего
-     else if(String.Equals(c.Name, Integration.DisableSysFxKey, StringComparison.OrdinalIgnoreCase)) { } else throw new InvalidOperationException("Registry rollback conflict at " + path);
+     else if(String.Equals(c.Name, Integration.DisableSysFxKey, StringComparison.OrdinalIgnoreCase) || String.Equals(c.Name, Integration.RawSupportKey, StringComparison.OrdinalIgnoreCase)) { } else throw new InvalidOperationException("Registry rollback conflict at " + path);
     } File.Delete(file);
    }
   }
