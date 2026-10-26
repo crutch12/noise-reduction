@@ -11,7 +11,10 @@ if (Test-Path -LiteralPath $out) { Get-ChildItem -LiteralPath $out -File | Remov
 New-Item -ItemType Directory -Force $out | Out-Null
 $now = Get-Date
 # версия растёт с каждой сборкой, иначе Windows оставит ранее установленный пакет
-$version = '1.1.{0}.{1}' -f $now.DayOfYear, ($now.Hour * 60 + $now.Minute)
+. (Join-Path $PSScriptRoot 'version.ps1')
+$release = [version](Get-BuildVersion)
+# третье число год и день, четвёртое минута дня: так версия растёт и через границу года
+$version = '{0}.{1}.{2}.{3}' -f $release.Major, $release.Minor, ($now.Year % 100 * 1000 + $now.DayOfYear), ($now.Hour * 60 + $now.Minute)
 foreach ($inf in 'NoiseReductionApo.inf', 'NoiseReductionEffectPack.inf') {
     $text = (Get-Content -LiteralPath (Join-Path $repoPath "installer/pack/$inf") -Raw) -replace 'DriverVer\s*=\s*[^\r\n]+', ('DriverVer   = {0},{1}' -f $now.ToString('MM/dd/yyyy'), $version)
     [IO.File]::WriteAllText((Join-Path $out $inf), $text, [Text.Encoding]::ASCII)

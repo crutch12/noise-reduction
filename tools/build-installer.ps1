@@ -62,6 +62,10 @@ foreach ($name in ($payload.Keys | Sort-Object)) {
 }
 $arguments += Join-Path $repoPath 'platform/Integration.cs'
 $arguments += Join-Path $repoPath 'installer/Setup.cs'
+. (Join-Path $PSScriptRoot 'version.ps1')
+$versionPath = Join-Path $buildPath 'SetupVersion.cs'
+"[assembly: System.Reflection.AssemblyVersion(`"$(Get-BuildVersion).0`")]" | Set-Content -LiteralPath $versionPath -Encoding UTF8
+$arguments += $versionPath
 $arguments += Join-Path $repoPath 'installer/SetupWindow.cs'
 $arguments += Join-Path $repoPath 'app/Localization.cs'
 $arguments += @(Get-ChildItem -LiteralPath (Join-Path $repoPath 'app/i18n') -Filter '*.cs' | ForEach-Object FullName)

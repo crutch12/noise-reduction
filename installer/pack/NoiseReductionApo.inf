@@ -48,7 +48,8 @@ HKR,EffectPackRegistration\%EFFECT_CLSID%,%PKEY_FX_Author%,,%Provider%
 HKR,EffectPackRegistration\%EFFECT_CLSID%,%PKEY_FX_VersionMajor%,0x00010001,1
 HKR,EffectPackRegistration\%EFFECT_CLSID%,%PKEY_FX_VersionMinor%,0x00010001,1
 HKR,EffectPackRegistration\%EFFECT_CLSID%\FxProperties,%PKEY_FX_ApplyToCapture%,0x00010001,1
-HKR,EffectPackRegistration\%EFFECT_CLSID%\FxProperties,%PKEY_FX_Enumerator%,0x00010000,"USB"
+HKR,EffectPackRegistration\%EFFECT_CLSID%\FxProperties,%PKEY_FX_Enumerator%,0x00010000,"*"
+HKR,EffectPackRegistration\%EFFECT_CLSID%\FxProperties,%PKEY_FX_ExcludedDevices%,0x00010000,"ROOT\*","*VirtualAudio*","*Virtual_Audio*","*VirtualDevice*"
 HKR,EffectPackRegistration\%EFFECT_CLSID%\FxProperties,%PKEY_FX_Association%,0x00010000,%KSNODETYPE_MICROPHONE%,%KSNODETYPE_DESKTOP_MICROPHONE%,%KSNODETYPE_PERSONAL_MICROPHONE%,%KSNODETYPE_OMNI_DIRECTIONAL_MICROPHONE%,%KSNODETYPE_MICROPHONE_ARRAY%,%KSNODETYPE_PROCESSING_MICROPHONE_ARRAY%,%KSNODETYPE_HEADSET%,%KSNODETYPE_HEADSET_MICROPHONE%
 HKR,EffectPackRegistration\%EFFECT_CLSID%\FxProperties\FX\0\%NR_CONTEXT%\Default,%PKEY_NR_Effect_State%,0x00010001,0xffffffff
 HKR,EffectPackRegistration\%EFFECT_CLSID%\FxProperties\FX\0\%NR_CONTEXT%\User
@@ -93,6 +94,8 @@ PKEY_FX_Association = "{D04E05A6-594B-4fb6-A80D-01AF5EED7D1D},0"
 PKEY_FX_EndpointEffectClsid = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},7"
 PKEY_CompositeFX_EndpointEffectClsid = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},15"
 PKEY_FX_Enumerator = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},23"
+; список исключений как у Voice Clarity: виртуальные микрофоны пакет не трогает
+PKEY_FX_ExcludedDevices = "{6473F77A-DF09-41C9-B608-2D2420EA634F},2"
 PKEY_FX_VersionMajor = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},24"
 PKEY_FX_VersionMinor = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},25"
 PKEY_FX_Author = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},26"

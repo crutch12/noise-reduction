@@ -116,11 +116,12 @@ int wmain(int argc, wchar_t** argv) {
                 check(apo->IsInputFormatSupported(nullptr, hardware.Get(), &alternative) == S_FALSE && alternative,
                     "PCM format without opposite must suggest float32");
             }
-            wave.nSamplesPerSec = 44100; wave.nAvgBytesPerSec = 176400;
+            wave.nSamplesPerSec = 96000; wave.nAvgBytesPerSec = 384000;
             ComPtr<IAudioMediaType> unsupported;
             check(SUCCEEDED(CreateAudioMediaType(&wave, sizeof(wave), &unsupported)), "Negative media creation failed");
             ComPtr<IAudioMediaType> suggested;
-            check(apo->IsInputFormatSupported(nullptr, unsupported.Get(), &suggested) != S_OK, "44100 accepted without resampler");
+            check(apo->IsInputFormatSupported(nullptr, unsupported.Get(), &suggested) != S_OK, "96000 accepted");
+            wave.nSamplesPerSec = 48000; wave.nAvgBytesPerSec = 192000;
             std::array<float, 480> input{}, output{};
             APO_CONNECTION_DESCRIPTOR in{APO_CONNECTION_BUFFER_TYPE_EXTERNAL, reinterpret_cast<UINT_PTR>(input.data()), 480, media.Get(), APO_CONNECTION_DESCRIPTOR_SIGNATURE};
             APO_CONNECTION_DESCRIPTOR out{APO_CONNECTION_BUFFER_TYPE_EXTERNAL, reinterpret_cast<UINT_PTR>(output.data()), 480, media.Get(), APO_CONNECTION_DESCRIPTOR_SIGNATURE};
@@ -211,11 +212,36 @@ int wmain(int argc, wchar_t** argv) {
                 check(sound, "First channel was erased");
                 check(SUCCEEDED(config->UnlockForProcess()), "Multichannel unlock failed");
             }
+            // Bluetooth гарнитура: 16 кГц моно; при выключенном эффекте звук проходит пересчёт частоты без потерь
+            {
+                ComPtr<IAudioSystemEffects3> system_effects;
+                check(SUCCEEDED(apo.As(&system_effects)), "No system effects interface");
+                check(SUCCEEDED(system_effects->SetAudioSystemEffectState(AUDIO_EFFECT_TYPE_NOISE_SUPPRESSION, AUDIO_SYSTEMEFFECT_STATE_OFF)), "Effect state failed");
+                WAVEFORMATEX narrow{WAVE_FORMAT_IEEE_FLOAT, 1, 16000, 64000, 4, 32, 0};
+                ComPtr<IAudioMediaType> narrow_media;
+                check(SUCCEEDED(CreateAudioMediaType(&narrow, sizeof(narrow), &narrow_media)), "16 kHz media failed");
+                ComPtr<IAudioMediaType> narrow_supported;
+                check(apo->IsInputFormatSupported(nullptr, narrow_media.Get(), &narrow_supported) == S_OK, "16 kHz rejected");
+                std::vector<float> narrow_in(160), narrow_out(160);
+                in.pBuffer = reinterpret_cast<UINT_PTR>(narrow_in.data()); out.pBuffer = reinterpret_cast<UINT_PTR>(narrow_out.data());
+                in.pFormat = out.pFormat = narrow_media.Get(); in.u32MaxFrameCount = out.u32MaxFrameCount = 160;
+                check(SUCCEEDED(config->LockForProcess(1, &pin, 1, &pout)), "16 kHz lock failed");
+                ip.pBuffer = in.pBuffer; op.pBuffer = out.pBuffer; ip.u32BufferFlags = BUFFER_VALID; ip.u32ValidFrameCount = 160;
+                double in_power = 0, out_power = 0;
+                for (int frame = 0; frame < 100; ++frame) {
+                    for (size_t i = 0; i < 160; ++i) narrow_in[i] = 0.2f * std::sin(2 * 3.14159265f * 300.0f * float(frame * 160 + i) / 16000.0f);
+                    rt->APOProcess(1, &pip, 1, &pop);
+                    check(op.u32ValidFrameCount == 160 && op.u32BufferFlags != BUFFER_INVALID, "16 kHz output lost");
+                    if (frame >= 50) for (size_t i = 0; i < 160; ++i) { in_power += narrow_in[i] * narrow_in[i]; out_power += narrow_out[i] * narrow_out[i]; }
+                }
+                check(std::abs(10 * std::log10(out_power / in_power)) < 0.5, "16 kHz audio level changed");
+                check(SUCCEEDED(config->UnlockForProcess()), "16 kHz unlock failed");
+            }
         }
         check(can_unload() == S_OK, "COM references leaked");
         FreeLibrary(module);
         CoUninitialize();
-        std::cout << "PASS: COM lifecycle, format negotiation, latency, lock, silence, tail, oversize, unload\n";
+        std::cout << "PASS: COM lifecycle, format negotiation, latency, lock, silence, tail, oversize, unload, 16 kHz\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

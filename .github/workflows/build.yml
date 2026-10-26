@@ -4,7 +4,10 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+    # правки документации сборку не запускают
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE']
   pull_request:
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE']
   workflow_dispatch:
 
 permissions:
@@ -19,6 +22,14 @@ jobs:
       SIGNING: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' && github.event_name != 'pull_request' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Version
+        shell: pwsh
+        run: |
+          # версия из тега vX.Y.Z, для обычных сборок из последнего тега
+          if ($env:GITHUB_REF -like 'refs/tags/v*') { "NR_VERSION=$($env:GITHUB_REF_NAME.TrimStart('v'))" >> $env:GITHUB_ENV }
 
       - uses: actions/setup-dotnet@v4
         with:

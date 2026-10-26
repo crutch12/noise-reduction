@@ -15,7 +15,9 @@ for ($directory = New-Object IO.DirectoryInfo($output); $directory -ne $null; $d
     if ($directory.FullName -eq $repoPath) { break }
 }
 if (Test-Path -LiteralPath $output) { Remove-Item -LiteralPath $output -Recurse -Force }
-& $dotnet publish (Join-Path $repoPath 'app-winui/NoiseReduction.csproj') -c Release -p:Platform=x64 --packages (Join-Path $repoPath '.local/nuget') -o $output
+. (Join-Path $PSScriptRoot 'version.ps1')
+$version = Get-BuildVersion
+& $dotnet publish (Join-Path $repoPath 'app-winui/NoiseReduction.csproj') -c Release -p:Platform=x64 -p:Version=$version --packages (Join-Path $repoPath '.local/nuget') -o $output
 if ($LASTEXITCODE -ne 0) { throw 'WinUI publish failed' }
 $compiledResources = Join-Path $repoPath 'app-winui/bin/x64/Release/net10.0-windows10.0.26100.0/win-x64'
 foreach ($resource in @('NoiseReduction.pri', 'App.xbf', 'MainWindow.xbf', 'TrayFlyout.xbf')) {

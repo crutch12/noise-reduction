@@ -49,9 +49,17 @@ class IntegrationTests {
     engine.Attach(crash); engine.Detach(crash);
     string legacy = "Capture\\{66666666-6666-6666-6666-666666666666}\\FxProperties";
     using(var k=root.CreateSubKey(legacy)) k.SetValue(Integration.LegacyKey,oem,RegistryValueKind.String);
-    conflict=false; try { engine.Attach(legacy); } catch(InvalidOperationException) { conflict=true; }
-    Assert(conflict,"refuse unsafe legacy OEM migration");
+    engine.Attach(legacy);
+    using(var k=root.OpenSubKey(legacy)) { var chain=(string[])k.GetValue(Integration.CompositeKey); Assert(chain.Length==2 && chain[0]==oem && chain[1]==Integration.Clsid && (string)k.GetValue(Integration.LegacyKey)==oem,"legacy OEM effect is wrapped first in a composite chain"); }
+    engine.Detach(legacy);
     using(var k=root.OpenSubKey(legacy)) Assert((string)k.GetValue(Integration.LegacyKey)==oem && k.GetValue(Integration.CompositeKey)==null,"legacy remains exact");
+    // старые Windows: у микрофона нет раздела эффектов, он создаётся и после выключения убирается
+    string bare = "Capture\\{99999999-9999-9999-9999-999999999999}\\FxProperties";
+    root.CreateSubKey("Capture\\{99999999-9999-9999-9999-999999999999}").Dispose();
+    engine.Attach(bare);
+    using(var k=root.OpenSubKey(bare)) Assert(k!=null && RegistryEngine.Contains(k.GetValue(Integration.CompositeKey),Integration.Clsid),"effects key created for a bare endpoint");
+    engine.Detach(bare); engine.RemoveEmptyEffects(bare);
+    using(var k=root.OpenSubKey(bare)) Assert(k==null,"empty effects key removed after detach");
     string types="Registration";
     using(var k=root.CreateSubKey(types)) { k.SetValue("expand","%TEMP%\\test",RegistryValueKind.ExpandString); k.SetValue("binary",new byte[]{0,1,255},RegistryValueKind.Binary); }
     var checkpoint=engine.Checkpoint(); engine.Set(types,"expand","replace",RegistryValueKind.String); engine.Set(types,"binary",13,RegistryValueKind.DWord); engine.Set(types,"absent",42,RegistryValueKind.DWord);

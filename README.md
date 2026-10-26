@@ -1,116 +1,101 @@
-# Noise Reduction
+# Noise Reduction for Windows
 
-Windows-приложение для шумоподавления реальных микрофонов без виртуального входа
+System-wide AI noise suppression for real Windows microphones, without a virtual microphone
 
-Собраны приложение с треем, профилями, автозапуском, сравнением записи, нативный APO и EXE-установщик
-Системная обработка проверена в настоящем аудиографе Windows на встроенном Realtek, 4 канала 48 кГц
-Проверены Chrome на online-voice-recorder.com, тест микрофона Telegram Desktop и Windows Recorder
-Сборка остаётся экспериментальной, проверка других устройств и длительной работы ещё продолжается
-Защита аудиопроцесса Windows остаётся включённой
+Noise Reduction removes background noise from your microphone in every program: Teams, Zoom, Discord, Telegram, browsers, recorders and games. It does not add a virtual device you have to pick in each app. Instead it installs a Windows audio processing object (APO), so the noise suppression runs inside the Windows audio engine for the microphone itself
 
-## Приложение
+## Features
 
-Установщик: `dist/setup/NoiseReduction.Setup.exe`
-Настройки открываются через ярлык NoiseReduction в меню Пуск и иконку в трее
-Язык выбирается внизу окна: системный по умолчанию, English или Русский, изменение применяется сразу
-Меню трея позволяет переключать каждый микрофон и показывает доступные Windows данные об использовании приложениями
-Редкие действия подключения эффекта, диагностика и сброс силы подавления находятся в разделе Дополнительно
-Запуск без установки: `dist/app/NoiseReduction.exe`
+- Works in all apps at once, including Chrome and other Chromium based apps
+- Per microphone settings: on or off, model, strength, low cut filter, economy mode for multichannel arrays
+- Two local models: Fast (RNNoise, default) and Precise (DeepFilterNet 3)
+- Strength presets tuned per model, plus a custom slider
+- Test with your own voice: record a phrase, listen to the original and the processed version, change the model or strength while listening
+- Tray icon with a quick panel, Ctrl+Alt+N to pause and resume noise reduction
+- Notification when a new microphone is connected
+- USB, built in and Bluetooth microphones, sample rates from 8 to 48 kHz
+- 20 interface languages
+- Clean uninstall: every change to Windows audio settings is journaled and restored
 
-- Глобальный выключатель и настройки отдельно для каждого реального микрофона
-- Сила подавления от 0 до 60 дБ, исходно 24 дБ
-- Модель для каждого микрофона: Быстрая (RNNoise, по умолчанию) или Точная (DeepFilterNet 3), переключение без перерыва звука
-- Автозапуск включается и отключается в настройках
-- Крестик сворачивает в трей, Выход отключает вычисление модели
-- Сравнение записывает выбранный микрофон с bypass нашего эффекта и обрабатывает запись локально
-- Статус требует продвижения счётчика модели в настоящем аудиографе
-- Удаление через установленные приложения Windows восстанавливает принадлежащие нам изменения
+## Requirements
 
-Подключение и отключение эффекта перезапускают Windows Audio и ненадолго прерывают системный звук
-Обновление установленной версии также пересоздаёт аудиограф, сохраняя привязки и профили
-Изменение силы подавления и переключение обработки не требуют перезапуска аудиослужбы
+- Windows 10 version 2004 or newer, or Windows 11, x64
+- Administrator rights for installation and for turning noise reduction on for a microphone
 
-Профили хранятся в LocalAppData/NoiseReduction, конфигурация и журнал восстановления в ProgramData/NoiseReduction
-Установщик не включает личные записи и зависимости Python
-
-## Послушать результат
-
-После сборки открыть `dist/comparison/NoiseReduction.Compare.exe`
-Переключение варианта сохраняет позицию записи
-Варианты с пометкой "мягче" сохраняют небольшую долю исходного сигнала вместо максимально глубокого подавления
-Во всех вариантах одинаковое входное усиление, индивидуальная нормализация не применяется
-Длительность и задержка выровнены для прослушивания
-
-Папка `dist/comparison/audio` содержит личную запись, не распространять её вместе с будущей программой
-
-## Повторить сравнение
-
-Требуются Windows x64, PowerShell, uv и ffmpeg в PATH
-Использован ffmpeg из установленного на ПК пакета, точную версию фиксирует команда `ffmpeg -version`
-При отсутствии ffmpeg: `winget install --id Gyan.FFmpeg --exact`
-
-```powershell
-./tools/setup-lab.ps1
-./.local/venv/Scripts/python.exe tools/audio_bench.py my_mic_record.mp3
-./.local/venv/Scripts/python.exe -m pytest tools/tests -q
-./tools/build-audition.ps1
-```
-
-DeepFilterNet CLI закреплён на версии 0.5.6 с проверкой SHA-256
-RNNoise используется из pyrnnoise 0.4.5 через float C ABI, без преобразования результата в int16 внутри сторонней обёртки
-Python нужен только для лабораторного сравнения, нативное ядро от него не зависит
-Отчёт `.local/comparison/report.json` содержит времена, уровни, задержки и хеши бинарников
-Скорость обработки файла не равна задержке микрофона и не доказывает соблюдение сроков обработки под нагрузкой
-
-## Нативная сборка
-
-Требуются VS2022 Build Tools с C++ x64, Windows SDK 26100 и компонентом C++ ATL для тестового media-type host
-Для DeepFilterNet нужен Rust в `.local`: `rustup-init.exe -y --profile minimal --no-modify-path` с `RUSTUP_HOME=.local/rustup` и `CARGO_HOME=.local/cargo`, сборка `./tools/build-deepfilter.ps1`
-Сборка использует стандартную папку Build Tools в Program Files (x86)
-
-```powershell
-cmd /c native\build.cmd
-Copy-Item .local/venv/Lib/site-packages/pyrnnoise/rnnoise.dll build/rnnoise.dll
-./tools/build-deepfilter.ps1
-./build/processor_test.exe (Resolve-Path build/rnnoise.dll).Path
-./build/apo_test.exe (Resolve-Path build/NoiseReduction.Apo.dll).Path
-```
-
-Полная проверка после подготовки записи: `./tools/verify.ps1`
-Точные форматы подключённых микрофонов: `./build/device_probe.exe`
-
-Первый нативный вариант поддерживает от 1 до 8 каналов float32 48 кГц, каждый канал обрабатывается отдельно
-Задержка 30 мс: 20 мс у закреплённой модели RNNoise и 10 мс у адаптера кадров
-Отключение в ядре плавно переводит звук на исходный сигнал с той же задержкой, затем останавливает вычисление модели
-APO принимает Windows initialization v1/v2/v3, поддерживает управление эффектом и профилем endpoint
-
-```powershell
-./tools/build-app.ps1 -Test -NativeTest -UiTest
-./tools/build-installer.ps1
-```
-
-Полная проверка включает native, COM aggregation, буферы, controls/notifications, sandbox реестра, UI и installer self-test
-UI-тесты не записывают микрофон и восстанавливают временное значение автозапуска
-Настоящие установка, обновление и удаление проверены отдельно от sandbox
-
-Пока не подтверждены сон, физическое переподключение и многочасовая непрерывная работа
-RAW/exclusive/ASIO и частоты кроме 48 кГц не подтверждены
-Подписанного релиза и подтверждения Windows HLK нет
-Защита аудио и хранилища сертификатов автоматически не меняются
-Естественность голоса нужно оценивать на слух, численные тесты её не заменяют
-
-## Источники
-
-- [RNNoise](https://github.com/xiph/rnnoise)
-- [Python packaging RNNoise](https://github.com/pengzhendong/pyrnnoise)
-- [DeepFilterNet](https://github.com/Rikorose/DeepFilterNet)
-- [Windows APO](https://learn.microsoft.com/en-us/windows-hardware/drivers/audio/implementing-audio-processing-objects)
-
-Лицензии компонентов включены в установщик
+On Windows 11 24H2 and newer, microphones that Windows manages through audio effect packs (most USB and Bluetooth microphones) get Noise Reduction as an effect pack. On older systems the effect is added to the microphone's effect chain directly
 
 ## Download
 
 Download the latest installer from [GitHub Releases](https://github.com/crutch12/noise-reduction/releases). Releases are code signed with a certificate by [SignPath Foundation](https://signpath.org), see the policy below
+
+## How to use
+
+1. Run `NoiseReduction.Setup.exe` and confirm the installation
+2. Open Noise Reduction from the tray or the Start menu
+3. Turn on noise reduction for your microphone. Windows asks for administrator rights once per microphone
+4. Optionally pick the model and strength, and check the result with "Test with your voice"
+
+To uninstall, use "Uninstall the app" in the settings window or Windows Settings, Apps. Uninstalling restores the original microphone effects
+
+## How it works
+
+- `native/` is the APO, a COM DLL loaded by the Windows audio engine (`audiodg.exe`). It runs the model on 48 kHz audio, resamples other rates, mixes multichannel arrays when needed and reads its settings from a small shared memory file per microphone
+- `native/deepfilter/` is a Rust wrapper around DeepFilterNet with a C interface that never lets a panic reach the audio engine
+- `platform/` attaches and detaches the effect: registry based effect chains, Windows 11 effect packs, a journal that can roll everything back after a crash
+- `app-winui/` is the WinUI 3 settings window and tray app
+- `app-engine/` is a small elevated helper that applies and verifies changes for one microphone
+- `installer/` is the setup program and the effect pack driver package
+
+The engine verifies every change: after attaching the effect it records a short capture and checks that the model actually processed audio, otherwise the change is rolled back
+
+## Building
+
+Requirements:
+
+- Visual Studio 2022 or Build Tools with C++ x64 tools, ATL and the Windows SDK 10.0.26100
+- .NET 10 SDK
+- Rust stable (MSVC toolchain)
+- Python 3, only for the translation check
+
+```powershell
+./tools/fetch-rnnoise.ps1         # rnnoise.dll from pyrnnoise 0.4.5, verified by SHA-256
+./tools/build-deepfilter.ps1      # nr_deepfilter.dll
+cmd /c native\build.cmd           # APO and native tests
+./tools/build-winui.ps1           # app, output in dist/app
+./tools/build-installer.ps1       # installer, output in dist/setup
+```
+
+Local builds sign the effect pack catalog with a temporary self-signed certificate. Release builds in GitHub Actions are signed through SignPath
+
+Tests:
+
+```powershell
+./build/resampler_test.exe
+./build/processor_test.exe (Resolve-Path build/rnnoise.dll).Path
+./build/apo_test.exe (Resolve-Path build/NoiseReduction.Apo.dll).Path
+./build/control_test.exe
+./build/windows_control_test.exe (Resolve-Path build/NoiseReduction.Apo.dll).Path
+python tools/check-translations.py
+```
+
+The version comes from the git tag `vX.Y.Z`. Pushing such a tag builds a signed draft release
+
+## Translations
+
+Interface strings live in `app/Localization.cs` (Russian source and English) and `app/i18n/*.cs` (other languages). `tools/check-translations.py` checks that every language has every string
+
+## Limitations
+
+- Apps that open the microphone in exclusive mode or through ASIO bypass Windows audio effects
+- Turning noise reduction on for a microphone also makes apps that ask for raw unprocessed audio receive processed audio, as the microphone stops advertising raw mode while noise reduction is on
+- Precise model uses about twice the CPU of the Fast model
+
+## Credits
+
+- [RNNoise](https://github.com/xiph/rnnoise) by Xiph.Org, BSD 3-Clause
+- [pyrnnoise](https://github.com/pengzhendong/pyrnnoise) builds of RNNoise, Apache 2.0
+- [DeepFilterNet](https://github.com/Rikorose/DeepFilterNet), MIT or Apache 2.0
+- [Windows audio processing objects](https://learn.microsoft.com/windows-hardware/drivers/audio/windows-audio-processing-objects)
 
 ## Code signing policy
 

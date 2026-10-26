@@ -20,7 +20,6 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>../app/assets/NoiseReduction.ico</ApplicationIcon>
     <AssemblyName>NoiseReduction</AssemblyName>
-    <Version>1.1.0</Version>
     <Product>Noise Reduction</Product>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <RootNamespace>NoiseReduction.WinUI</RootNamespace>

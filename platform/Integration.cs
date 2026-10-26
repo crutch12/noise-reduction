@@ -24,7 +24,7 @@ namespace NoiseReduction.Platform {
   internal const string DefaultMode = "{C18E2F7E-933D-4965-B7D1-1EEF228D2AF3}";
   // браузеры пишут в режиме RAW, мессенджеры в режиме связи; без этих режимов Windows пропускает эффект
   internal static readonly string[] StreamingModes = { DefaultMode, "{98951333-B9CD-48B1-A0A3-FF40682D73F7}", "{FC1CFC9B-B9D6-4CFA-B5E0-4BB2166878B2}", "{9E90EA20-B493-4FD1-A1A8-7E1361A956CF}" };
-  const string Capture = @"SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture";
+  internal const string Capture = @"SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture";
   internal static string DataRoot { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "NoiseReduction"); } }
   public static string ControlRoot { get { return Path.Combine(DataRoot, "Endpoints"); } }
   public sealed class OperationLease : IDisposable {
@@ -110,9 +110,9 @@ namespace NoiseReduction.Platform {
   // Off в настройках улучшений звука Windows выключает все эффекты микрофона, включение возвращает их
   static void EnableEnhancements(RegistryEngine e, RegistryKey root, string endpointId) { using(var fx = root.OpenSubKey(Fx(endpointId))) { object disabled = fx == null ? null : fx.GetValue(DisableSysFxKey); if(disabled != null && Convert.ToInt32(disabled) != 0) e.Set(Fx(endpointId), DisableSysFxKey, 0, RegistryValueKind.DWord); } }
   public static void Attach(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); if(!EnumerateMicrophones().Any(d => d.Id == endpointId && d.Active)) throw new InvalidOperationException("Capture endpoint is unavailable"); e.Attach(Fx(endpointId)); EnableEnhancements(e, root, endpointId); DisableRaw(e, root, endpointId); ClearFormatCache(root, Properties(endpointId)); } }
-  public static void Detach(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); bool pack = PackManaged(root, Fx(endpointId)); e.Detach(Fx(endpointId)); e.Detach(Properties(endpointId)); ClearFormatCache(root, Properties(endpointId)); if(pack) TryPushSelection(root, endpointId); TryPushRaw(root, endpointId); } }
+  public static void Detach(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); bool pack = PackManaged(root, Fx(endpointId)); e.Detach(Fx(endpointId)); e.Detach(Properties(endpointId)); e.RemoveEmptyEffects(Fx(endpointId)); ClearFormatCache(root, Properties(endpointId)); if(pack) TryPushSelection(root, endpointId); TryPushRaw(root, endpointId); } }
   public static void SelectEffectPack(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); if(!EnumerateMicrophones().Any(d => d.Id == endpointId && d.Active && d.EffectPack)) throw new InvalidOperationException("Capture endpoint is unavailable"); string component = EffectPack.Component(root); if(component == null) throw new InvalidOperationException("Noise Reduction effect pack is not installed"); e.Set(Fx(endpointId), EffectPack.ComponentKey, component, RegistryValueKind.String); e.Set(Properties(endpointId), EffectPack.SelectedKey, EffectPack.Id, RegistryValueKind.String); e.Set(Properties(endpointId), EffectPack.StateKey, EffectPack.State(), RegistryValueKind.Binary); EnableEnhancements(e, root, endpointId); DisableRaw(e, root, endpointId); ClearFormatCache(root, Properties(endpointId)); PushSelection(root, endpointId); } }
-  public static void DetachAll() { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); using(var capture = root.OpenSubKey(Capture)) if(capture != null) foreach(var id in capture.GetSubKeyNames()) { bool pack = PackManaged(root, Capture + "\\" + id + "\\FxProperties"); e.Detach(Capture + "\\" + id + "\\FxProperties"); e.Detach(Capture + "\\" + id + "\\Properties"); ClearFormatCache(root, Capture + "\\" + id + "\\Properties"); if(pack) TryPushSelection(root, "{0.0.1.00000000}." + id); TryPushRaw(root, "{0.0.1.00000000}." + id); } e.DetachJournaledEndpoints(); } }
+  public static void DetachAll() { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); using(var capture = root.OpenSubKey(Capture)) if(capture != null) foreach(var id in capture.GetSubKeyNames()) { bool pack = PackManaged(root, Capture + "\\" + id + "\\FxProperties"); e.Detach(Capture + "\\" + id + "\\FxProperties"); e.Detach(Capture + "\\" + id + "\\Properties"); e.RemoveEmptyEffects(Capture + "\\" + id + "\\FxProperties"); ClearFormatCache(root, Capture + "\\" + id + "\\Properties"); if(pack) TryPushSelection(root, "{0.0.1.00000000}." + id); TryPushRaw(root, "{0.0.1.00000000}." + id); } e.DetachJournaledEndpoints(); } }
   // кэш форматов, который Windows сама стирает при смене эффектов и пересобирает при следующем запуске звука;
   // старый кэш может держать микрофон на прежней цепочке эффектов
   static readonly string[] FormatCache = { "{3d6e1656-2e50-4c4c-8d85-d0acae3c6c68},3", "{3d6e1656-2e50-4c4c-8d85-d0acae3c6c68},5", "{3d6e1656-2e50-4c4c-8d85-d0acae3c6c68},9", "{3d6e1656-2e50-4c4c-8d85-d0acae3c6c68},10", "{33b83365-ab41-4b3b-8f32-ab8d96168070},5", "{33b83365-ab41-4b3b-8f32-ab8d96168070},9", "{33b83365-ab41-4b3b-8f32-ab8d96168070},10", "{624f56de-fd24-473e-814a-de40aacaed16},3", "{e4870e26-3cc5-4cd2-ba46-ca0a9a70ed04},0" };
@@ -219,7 +219,7 @@ namespace NoiseReduction.Platform {
   public static void Install(string directory) {
    string pack = Path.Combine(directory, "Pack");
    string catalog = Path.Combine(pack, "NoiseReductionPack.cat");
-   if(!File.Exists(catalog)) return;
+   if(!File.Exists(catalog) || !Supported) return;
    if(File.Exists(Path.Combine(pack, "NoiseReductionPack.cer"))) {
     // сборка для разработки: временный сертификат без цепочки доверия
     var certificate = new X509Certificate2(Path.Combine(pack, "NoiseReductionPack.cer"));
@@ -256,6 +256,8 @@ namespace NoiseReduction.Platform {
     File.WriteAllText(TrustMarker, certificate.Thumbprint);
    } finally { store.Close(); }
   }
+  // пакеты эффектов появились в Windows 11 24H2, сборка 26100; на старых системах эффект встраивается через реестр
+  internal static bool Supported { get { return Environment.OSVersion.Version.Build >= 26100; } }
   public static void Uninstall() {
    foreach(var published in Published()) PnpUtil("/delete-driver " + published + " /uninstall");
    if(File.Exists(TrustMarker)) {
@@ -320,7 +322,10 @@ namespace NoiseReduction.Platform {
    if(key==null) {
     bool machine=String.Equals(root.Name,"HKEY_LOCAL_MACHINE",StringComparison.OrdinalIgnoreCase);
     bool registration=String.Equals(c.Path,@"SOFTWARE\Classes\CLSID\"+Integration.Clsid+@"\InprocServer32",StringComparison.OrdinalIgnoreCase) || String.Equals(c.Path,@"SOFTWARE\Classes\AudioEngine\AudioProcessingObjects\"+Integration.Clsid,StringComparison.OrdinalIgnoreCase) || String.Equals(c.Path,@"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\NoiseReduction",StringComparison.OrdinalIgnoreCase);
-    if(machine && !registration) throw new InvalidOperationException("Existing endpoint registry state is unavailable: "+c.Path);
+    // на старых Windows у USB микрофона может не быть раздела эффектов, создаём его только внутри существующего микрофона
+    bool effects=c.Path.EndsWith(@"\FxProperties",StringComparison.OrdinalIgnoreCase) && c.Path.StartsWith(Integration.Capture+@"\",StringComparison.OrdinalIgnoreCase);
+    if(effects) using(var endpoint=root.OpenSubKey(c.Path.Substring(0,c.Path.Length-@"\FxProperties".Length))) effects=endpoint!=null;
+    if(machine && !registration && !effects) throw new InvalidOperationException("Existing endpoint registry state is unavailable: "+c.Path);
     if(!value.Exists) return;
     key=root.CreateSubKey(c.Path);
    }
@@ -339,7 +344,8 @@ namespace NoiseReduction.Platform {
    readonly RegistryEngine engine; readonly string previous; readonly PendingAttachment pending; bool completed,disposed;
    internal VerificationScope(RegistryEngine engine,string path) {
     this.engine=engine; previous=CurrentTransactionId;
-    using(var key=engine.root.OpenSubKey(path)) { if(key==null) throw new InvalidOperationException("Endpoint registry state is unavailable"); if(Contains(key.GetValue(Integration.CompositeKey),Integration.Clsid) || Contains(key.GetValue(Integration.LegacyKey),Integration.Clsid) || EffectPack.Selected(key)) return; }
+    // раздела эффектов может ещё не быть (старые Windows), тогда это просто не подключённый микрофон
+    using(var key=engine.root.OpenSubKey(path)) { if(key!=null && (Contains(key.GetValue(Integration.CompositeKey),Integration.Clsid) || Contains(key.GetValue(Integration.LegacyKey),Integration.Clsid) || EffectPack.Selected(key))) return; }
     if(!String.IsNullOrEmpty(previous)) throw new InvalidOperationException("A registry verification transaction is already active");
     pending=new PendingAttachment{Version=1,Id=Guid.NewGuid().ToString("N"),Path=path}; engine.PublishPending(pending); CurrentTransactionId=pending.Id;
    }
@@ -382,13 +388,18 @@ namespace NoiseReduction.Platform {
   }
   public static bool Contains(object value,string clsid) { var list=value as string[]; if(list != null) return list.Any(s=>String.Equals(s,clsid,StringComparison.OrdinalIgnoreCase)); return String.Equals(value as string,clsid,StringComparison.OrdinalIgnoreCase); }
   public void Attach(string path) {
-   using(var key=root.OpenSubKey(path)) { if(key == null) throw new InvalidOperationException("Endpoint registry state is unavailable"); object existing=key.GetValue(Integration.CompositeKey); if(Contains(existing,Integration.Clsid)) { if(key.GetValue(Integration.ModesKey) == null) Set(path,Integration.ModesKey,Integration.StreamingModes,RegistryValueKind.MultiString); return; } if(existing != null && !(existing is string[])) throw new InvalidOperationException("Composite EFX has an incompatible registry type"); var chain=existing == null ? new List<string>() : new List<string>((string[])existing);
-    if(existing == null) { object legacy=key.GetValue(Integration.LegacyKey); if(legacy != null) throw new InvalidOperationException("Endpoint has a legacy OEM EFX chain; automatic migration is unsafe and was refused"); }
-    if(chain.Any(s=> { Guid g; return !Guid.TryParse(s,out g); })) throw new InvalidOperationException("Invalid OEM EFX CLSID");
-    chain.Add(Integration.Clsid);
-    Set(path,Integration.CompositeKey,chain.ToArray(),RegistryValueKind.MultiString);
-    try { if(key.GetValue(Integration.ModesKey) == null) Set(path,Integration.ModesKey,Integration.StreamingModes,RegistryValueKind.MultiString); } catch { Detach(path); throw; }
-   }
+   // раздела эффектов может не быть вовсе (USB на старых Windows), тогда Set создаст его сам
+   object existing, legacy, modes;
+   using(var key=root.OpenSubKey(path)) { existing=key == null ? null : key.GetValue(Integration.CompositeKey); legacy=key == null ? null : key.GetValue(Integration.LegacyKey); modes=key == null ? null : key.GetValue(Integration.ModesKey); }
+   if(Contains(existing,Integration.Clsid)) { if(modes == null) Set(path,Integration.ModesKey,Integration.StreamingModes,RegistryValueKind.MultiString); return; }
+   if(existing != null && !(existing is string[])) throw new InvalidOperationException("Composite EFX has an incompatible registry type");
+   var chain=existing == null ? new List<string>() : new List<string>((string[])existing);
+   // старый одиночный эффект производителя идёт первым в новой цепочке, его собственная запись не меняется
+   if(existing == null && legacy != null) { var single=legacy as string; if(single == null) throw new InvalidOperationException("Legacy OEM EFX has an incompatible registry type"); chain.Add(single); }
+   if(chain.Any(s=> { Guid g; return !Guid.TryParse(s,out g); })) throw new InvalidOperationException("Invalid OEM EFX CLSID");
+   chain.Add(Integration.Clsid);
+   Set(path,Integration.CompositeKey,chain.ToArray(),RegistryValueKind.MultiString);
+   try { if(modes == null) Set(path,Integration.ModesKey,Integration.StreamingModes,RegistryValueKind.MultiString); } catch { Detach(path); throw; }
   }
   string[] Files() { return Directory.Exists(journal) ? Directory.GetFiles(journal,"*.xml") : new string[0]; }
   string[] ReverseFiles() { return Files().OrderByDescending(f=> { var c=Load(f); return c.Sequence==0 ? File.GetCreationTimeUtc(f).Ticks : c.Sequence; }).ToArray(); }
@@ -405,6 +416,13 @@ namespace NoiseReduction.Platform {
      else if(String.Equals(c.Name, Integration.DisableSysFxKey, StringComparison.OrdinalIgnoreCase) || String.Equals(c.Name, Integration.RawSupportKey, StringComparison.OrdinalIgnoreCase)) { } else throw new InvalidOperationException("Registry rollback conflict at " + path);
     } File.Delete(file);
    }
+  }
+  // пустой раздел эффектов остаётся после отката, если его создавали мы; Windows он не нужен
+  public void RemoveEmptyEffects(string path) {
+   if(!path.EndsWith(@"\FxProperties",StringComparison.OrdinalIgnoreCase)) return;
+   using(var key=root.OpenSubKey(path)) { if(key == null || key.ValueCount > 0 || key.SubKeyCount > 0) return; }
+   if(Files().Any(f=>String.Equals(Load(f).Path,path,StringComparison.OrdinalIgnoreCase))) return;
+   try { root.DeleteSubKey(path,false); } catch(UnauthorizedAccessException) { } catch(System.Security.SecurityException) { }
   }
   public void DetachJournaledEndpoints() { foreach(var path in Files().Select(f=>Load(f).Path).Where(p=>p.EndsWith("\\FxProperties",StringComparison.OrdinalIgnoreCase) || p.EndsWith("\\Properties",StringComparison.OrdinalIgnoreCase)).Distinct().ToArray()) Detach(path); }
   public void RestoreRegistration() { RestorePrefix(@"SOFTWARE\Classes\"); }

@@ -18,7 +18,6 @@ using NoiseReduction.Platform;
 using NoiseReduction.Desktop;
 
 [assembly: AssemblyTitle("NoiseReduction Setup")]
-[assembly: AssemblyVersion("1.1.0.0")]
 public class InstallFileState { public string Name; public bool Existed; }
 public class InstallTransaction {
  public string Id; public int Version; public bool Complete,Committed; public int FileCount=-1,EngineCount=-1,SetupCount=-1;
@@ -170,7 +169,7 @@ class Setup {
    if(!sandbox) { Step(65,T("Регистрация в Windows")); Integration.RegisterEngine(directory);
    using(var root=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64)) {
     var e=new RegistryEngine(root,Path.Combine(DataRoot,"SetupJournal")); e.Recover();
-    e.Set(UninstallKey,"DisplayName","Noise Reduction",RegistryValueKind.String); e.Set(UninstallKey,"DisplayVersion","1.1.0",RegistryValueKind.String);
+    e.Set(UninstallKey,"DisplayName","Noise Reduction",RegistryValueKind.String); e.Set(UninstallKey,"DisplayVersion",Assembly.GetExecutingAssembly().GetName().Version.ToString(3),RegistryValueKind.String);
     e.Set(UninstallKey,"EstimatedSize",(int)(new DirectoryInfo(directory).EnumerateFiles("*",SearchOption.AllDirectories).Sum(file=>file.Length)/1024),RegistryValueKind.DWord);
     e.Set(UninstallKey,"Publisher","Noise Reduction",RegistryValueKind.String); e.Set(UninstallKey,"InstallLocation",directory,RegistryValueKind.String);
     e.Set(UninstallKey,"UninstallString","\""+Path.Combine(directory,"NoiseReduction.Setup.exe")+"\" --uninstall",RegistryValueKind.String);

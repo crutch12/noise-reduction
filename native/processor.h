@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <cmath>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -15,9 +16,15 @@ struct Backend {
     void (*strength)(void*, float) = nullptr;
 };
 
-// Срез гула ниже 80 Гц, Butterworth второго порядка для 48 кГц
+// Срез гула ниже 80 Гц, Butterworth второго порядка на частоте устройства
 class HighPass {
 public:
+    explicit HighPass(float rate = 48000.0f) noexcept {
+        const double w = 2 * 3.14159265358979323846 * 80.0 / rate, c = std::cos(w), alpha = std::sin(w) / (2 * 0.70710678118654752);
+        const double a0 = 1 + alpha;
+        b0 = static_cast<float>((1 + c) / 2 / a0); b1 = static_cast<float>(-(1 + c) / a0);
+        a1 = static_cast<float>(-2 * c / a0); a2 = static_cast<float>((1 - alpha) / a0);
+    }
     float process(float x) noexcept {
         const float y = b0 * x + z1_;
         z1_ = b1 * x - a1 * y + z2_;
@@ -26,7 +33,7 @@ public:
     }
     void reset() noexcept { z1_ = z2_ = 0; }
 private:
-    static constexpr float b0 = 0.99262254f, b1 = -1.98524509f, a1 = -1.98519066f, a2 = 0.98529951f;
+    float b0, b1, a1, a2;
     float z1_ = 0, z2_ = 0;
 };
 

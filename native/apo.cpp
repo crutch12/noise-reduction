@@ -1,5 +1,6 @@
 #include "rnnoise_backend.h"
 #include "deepfilter_backend.h"
+#include "resampler.h"
 #include "apo_id.h"
 #include "control.h"
 #include <audioenginebaseapo.h>
@@ -61,6 +62,11 @@ std::wstring module_file(const wchar_t* name) {
 }
 std::wstring model_path() { return module_file(L"rnnoise.dll"); }
 constexpr uint32_t deepfilter_bit = 8u;
+// Bluetooth гарнитуры в режиме звонка дают 8 и 16 кГц, многие USB микрофоны 44,1 кГц
+bool supported_rate(float rate) {
+    for (float allowed : { 8000.0f, 11025.0f, 16000.0f, 22050.0f, 24000.0f, 32000.0f, 44100.0f, 48000.0f }) if (rate == allowed) return true;
+    return false;
+}
 
 // набор обработчиков на все каналы, у DeepFilterNet модель только в первом
 struct ProcessorSet {
@@ -232,7 +238,8 @@ public:
             try {
                 std::lock_guard<std::mutex> lock(switch_mutex_);
                 install(build_set(wants_deepfilter(), channels_));
-                highpass_.assign(channels_, nr::HighPass{});
+                highpass_.assign(channels_, nr::HighPass(static_cast<float>(rate_)));
+                build_stages();
                 energy_.assign(channels_, 0.0f);
                 previous_settings_ = UINT32_MAX;
             }
@@ -262,7 +269,8 @@ public:
             scratch_in_.resize(in[0]->u32MaxFrameCount);
             scratch_out_.resize(in[0]->u32MaxFrameCount);
             install(build_set(wants_deepfilter(), input_format.dwSamplesPerFrame));
-            highpass_.assign(input_format.dwSamplesPerFrame, nr::HighPass{});
+            rate_ = static_cast<uint32_t>(input_format.fFramesPerSecond);
+            highpass_.assign(input_format.dwSamplesPerFrame, nr::HighPass(input_format.fFramesPerSecond));
             energy_.assign(input_format.dwSamplesPerFrame, 0.0f);
             previous_settings_ = UINT32_MAX;
             switch_channels_ = input_format.dwSamplesPerFrame;
@@ -270,6 +278,7 @@ public:
         catch (...) { return E_OUTOFMEMORY; }
         channels_ = input_format.dwSamplesPerFrame;
         max_frames_ = in[0]->u32MaxFrameCount;
+        try { build_stages(); } catch (...) { return E_OUTOFMEMORY; }
         m_bIsLocked = true;
         trace(L"LockForProcess succeeded");
         return S_OK;
@@ -321,7 +330,7 @@ public:
             processors[0]->set_enabled(true);
             if (settings != previous_settings_) processors[0]->set_attenuation(static_cast<float>(std::min(60u, (settings >> 8) & 255u)));
             const uint64_t before = processors[0]->processed_frames();
-            processors[0]->process(scratch_in_.data(), scratch_out_.data(), source.u32ValidFrameCount);
+            run(processors, 0, scratch_in_.data(), scratch_out_.data(), source.u32ValidFrameCount);
             inferred = processors[0]->processed_frames() - before;
             for (UINT32 i = 0; i < source.u32ValidFrameCount; ++i) {
                 for (UINT32 channel = 0; channel < channels_; ++channel) output[static_cast<size_t>(i) * channels_ + channel] = scratch_out_[i];
@@ -342,7 +351,7 @@ public:
                 const float sample = input[static_cast<size_t>(i) * channels_ + channel];
                 scratch_in_[i] = low_cut && std::isfinite(sample) ? highpass_[channel].process(sample) : sample;
             }
-            processors[channel]->process(input ? scratch_in_.data() : nullptr, scratch_out_.data(), source.u32ValidFrameCount);
+            run(processors, channel, input ? scratch_in_.data() : nullptr, scratch_out_.data(), source.u32ValidFrameCount);
             inferred += processors[channel]->processed_frames() - before;
             for (UINT32 i = 0; i < source.u32ValidFrameCount; ++i) {
                 output[static_cast<size_t>(i) * channels_ + channel] = scratch_out_[i];
@@ -369,6 +378,17 @@ private:
     void notify_effects() noexcept {
         std::lock_guard<std::mutex> lock(effects_mutex_);
         if (effects_event_) SetEvent(effects_event_);
+    }
+    void build_stages() {
+        std::vector<std::unique_ptr<nr::RateStage>> fresh;
+        if (rate_ != 48000) for (UINT32 i = 0; i < channels_; ++i) fresh.push_back(std::make_unique<nr::RateStage>(rate_, max_frames_));
+        stages_ = std::move(fresh);
+    }
+    // модель всегда работает на 48 кГц, на других частотах звук проходит через пересчёт туда и обратно
+    void run(std::vector<std::unique_ptr<nr::Processor>>& processors, UINT32 index, const float* in, float* out, UINT32 count) noexcept {
+        auto& processor = *processors[index];
+        if (stages_.empty()) { processor.process(in, out, count); return; }
+        stages_[index]->process(in, out, count, [&processor](const float* a, float* b, size_t n) { processor.process(a, b, n); });
     }
     bool wants_deepfilter() const noexcept { return !standalone_ && (controls_.config() & deepfilter_bit) && !deepfilter_failed_; }
     // вызывается под switch_mutex_, DeepFilterNet грузится при первом выборе
@@ -424,7 +444,7 @@ private:
         UNCOMPRESSEDAUDIOFORMAT format{};
         if (!media || FAILED(media->GetUncompressedAudioFormat(&format))) return false;
         return format.guidFormatType == KSDATAFORMAT_SUBTYPE_IEEE_FLOAT && format.dwSamplesPerFrame >= 1 && format.dwSamplesPerFrame <= 8 &&
-            format.dwBytesPerSampleContainer == 4 && format.dwValidBitsPerSample == 32 && format.fFramesPerSecond == 48000;
+            format.dwBytesPerSampleContainer == 4 && format.dwValidBitsPerSample == 32 && supported_rate(format.fFramesPerSecond);
     }
     static HRESULT negotiate(IAudioMediaType* opposite, IAudioMediaType* requested, IAudioMediaType** supported) {
         trace_format(L"Negotiate requested", requested);
@@ -433,7 +453,7 @@ private:
         if (!valid_format(requested)) {
             UNCOMPRESSEDAUDIOFORMAT format{}, other{};
             if (FAILED(requested->GetUncompressedAudioFormat(&format)) || format.guidFormatType != KSDATAFORMAT_SUBTYPE_PCM ||
-                format.fFramesPerSecond != 48000 || format.dwSamplesPerFrame < 1 || format.dwSamplesPerFrame > 8 ||
+                !supported_rate(format.fFramesPerSecond) || format.dwSamplesPerFrame < 1 || format.dwSamplesPerFrame > 8 ||
                 format.dwBytesPerSampleContainer < 1 || format.dwBytesPerSampleContainer > 4 ||
                 format.dwValidBitsPerSample < 1 || format.dwValidBitsPerSample > format.dwBytesPerSampleContainer * 8 ||
                 (opposite && (!valid_format(opposite) || FAILED(opposite->GetUncompressedAudioFormat(&other)) ||
@@ -475,6 +495,9 @@ private:
     std::vector<float> scratch_in_, scratch_out_;
     std::vector<nr::HighPass> highpass_;
     std::vector<float> energy_;
+    // пересчёт частоты по каналу, пусто при 48 кГц
+    std::vector<std::unique_ptr<nr::RateStage>> stages_;
+    uint32_t rate_ = 48000;
     UINT32 channels_ = 1;
     GUID clsid_;
     UINT32 max_frames_ = 0;
