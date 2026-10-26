@@ -10,6 +10,11 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>false</PublishSingleFile>
+    <!-- выкидываем неиспользуемый код .NET, свой код не трогаем -->
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
+    <!-- обрезка выключает встроенный COM, а микрофоны Windows перечисляются через него -->
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <EnableMsixTooling>false</EnableMsixTooling>
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -25,7 +30,10 @@
     <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
   <ItemGroup>
-    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
+    <!-- XAML находит часть типов WinUI во время работы, эти сборки обрезка не трогает -->
+    <TrimmerRootAssembly Include="Microsoft.WinUI" />
+  </ItemGroup>
+  <ItemGroup>
     <!-- только нужные части Windows App SDK, без ИИ, поиска и виджетов, иначе установщик тяжелее на десятки мегабайт -->
     <PackageReference Include="Microsoft.WindowsAppSDK.Base" Version="2.0.4" />
     <PackageReference Include="Microsoft.WindowsAppSDK.Foundation" Version="2.3.12" />

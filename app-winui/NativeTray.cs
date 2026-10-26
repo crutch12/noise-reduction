@@ -1,11 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Drawing;
-using System.Drawing.Drawing2D;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Windows.Forms;
 using Microsoft.Win32;
 using NoiseReduction.Desktop;
 using NoiseReduction.Platform;
@@ -18,22 +15,48 @@ namespace NoiseReduction.WinUI
         private const uint TPM_RIGHTBUTTON = 2, TPM_RETURNCMD = 0x100, TPM_BOTTOMALIGN = 0x20, TPM_RIGHTALIGN = 8;
         private const int CommandGlobal = 1, CommandSettings = 2, CommandExit = 3, CommandMicrophone = 100;
         private readonly DesktopController controller;
-        private readonly NotifyIcon tray;
-        private sealed class Owner : NativeWindow
+        private const uint WM_HOTKEY = 0x0312, WM_LBUTTONUP = 0x0202, WM_LBUTTONDBLCLK = 0x0203, WM_RBUTTONUP = 0x0205, WM_SETTINGCHANGE = 0x001A, WM_TRAY = 0x8000 + 1;
+        private const uint NIN_BALLOONHIDE = 0x403, NIN_BALLOONTIMEOUT = 0x404, NIN_BALLOONUSERCLICK = 0x405;
+        private const uint NIM_ADD = 0, NIM_MODIFY = 1, NIM_DELETE = 2, NIF_MESSAGE = 1, NIF_ICON = 2, NIF_TIP = 4, NIF_INFO = 0x10;
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct NotifyIconData
         {
-            internal Action Hotkey;
-            protected override void WndProc(ref Message message)
-            {
-                if (message.Msg == 0x0312) Hotkey?.Invoke();
-                base.WndProc(ref message);
-            }
+            public int Size; public IntPtr Window; public uint Id, Flags, CallbackMessage; public IntPtr Icon;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string Tip;
+            public uint State, StateMask;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string Info;
+            public uint TimeoutOrVersion;
+            [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string InfoTitle;
+            public uint InfoFlags; public Guid Item; public IntPtr BalloonIcon;
         }
-        private readonly Owner owner = new Owner();
-        private readonly Icon[] icons = new Icon[6];
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct WindowClass
+        {
+            public int Size; public uint Style; public WindowProcedure Procedure; public int ClassExtra, WindowExtra;
+            public IntPtr Instance, Icon, Cursor, Background; public string Menu, ClassName; public IntPtr SmallIcon;
+        }
+        [StructLayout(LayoutKind.Sequential)] private struct Point { public int X, Y; }
+        private delegate IntPtr WindowProcedure(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+
+        // окно только для сообщений трея, горячей клавиши и меню, на экране его нет
+        private readonly WindowProcedure procedure;
+        private readonly IntPtr window;
+        private readonly uint taskbarCreated;
+        private readonly IntPtr[] icons = new IntPtr[6];
+        private IntPtr currentIcon;
+        private string currentTip = "";
         private readonly Action reveal, flyout, exit;
-        private bool disposed, menuOpen;
+        private bool disposed, menuOpen, afterDoubleClick;
         private string balloonId;
         [DllImport("user32.dll")] private static extern int GetSystemMetrics(int index);
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)] private static extern bool Shell_NotifyIcon(uint message, ref NotifyIconData data);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern ushort RegisterClassEx(ref WindowClass windowClass);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr CreateWindowEx(uint exStyle, string className, string title, uint style, int x, int y, int width, int height, IntPtr parent, IntPtr menu, IntPtr instance, IntPtr parameter);
+        [DllImport("user32.dll")] private static extern bool DestroyWindow(IntPtr window);
+        [DllImport("user32.dll")] private static extern IntPtr DefWindowProc(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern uint RegisterWindowMessage(string name);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr GetModuleHandle(string name);
         [DllImport("user32.dll")] private static extern bool DestroyIcon(IntPtr icon);
         [DllImport("user32.dll")] private static extern IntPtr CreatePopupMenu();
         [DllImport("user32.dll")] private static extern bool DestroyMenu(IntPtr menu);
@@ -50,33 +73,22 @@ namespace NoiseReduction.WinUI
         internal NativeTray(DesktopController controller, Action reveal, Action flyout, Action exit)
         {
             this.controller = controller; this.reveal = reveal; this.flyout = flyout; this.exit = exit;
-            WindowsFormsSynchronizationContext.AutoInstall = false;
-            owner.CreateHandle(new CreateParams());
+            procedure = Procedure;
+            var windowClass = new WindowClass { Size = Marshal.SizeOf<WindowClass>(), Procedure = procedure, Instance = GetModuleHandle(null), ClassName = "NoiseReductionTray" };
+            RegisterClassEx(ref windowClass);
+            window = CreateWindowEx(0, "NoiseReductionTray", "Noise Reduction", 0, 0, 0, 0, 0, IntPtr.Zero, IntPtr.Zero, windowClass.Instance, IntPtr.Zero);
+            // после перезапуска Проводника значок нужно добавить заново
+            taskbarCreated = RegisterWindowMessage("TaskbarCreated");
             // Ctrl+Alt+N ставит шумодав на паузу и снимает с неё из любой программы
-            owner.Hotkey = () =>
-            {
-                if (disposed || controller.Busy) return;
-                controller.SetGlobal(!controller.GlobalEnabled);
-                tray.ShowBalloonTip(2000, "Noise Reduction", T(controller.GlobalEnabled ? "Шумоподавление включено" : "Шумоподавление на паузе"), ToolTipIcon.None);
-            };
-            HotkeyRegistered = RegisterHotKey(owner.Handle, 1, 0x0002 | 0x0001 | 0x4000, (uint)Keys.N);
-            tray = new NotifyIcon { Visible = true };
-            tray.MouseUp += (_, args) =>
-            {
-                if (args.Button == MouseButtons.Left) flyout();
-                else if (args.Button == MouseButtons.Right) ShowMenu();
-            };
-            // окно настроек забирает фокус, панель от первого клика при этом закрывается сама
-            tray.MouseDoubleClick += (_, args) => { if (args.Button == MouseButtons.Left) reveal(); };
+            HotkeyRegistered = RegisterHotKey(window, 1, 0x0002 | 0x0001 | 0x4000, 0x4E);
+            AddIcon();
             controller.Changed += Update;
             controller.NewMicrophone += device =>
             {
                 if (disposed) return;
                 balloonId = device.Id;
-                tray.ShowBalloonTip(10000, T("Новый микрофон"), ShortName(device.Name) + "\n" + T("Нажмите, чтобы включить шумоподавление"), ToolTipIcon.None);
+                Balloon(T("Новый микрофон"), ShortName(device.Name) + "\n" + T("Нажмите, чтобы включить шумоподавление"));
             };
-            tray.BalloonTipClicked += (_, _) => { if (balloonId != null) _ = controller.IntegrateAsync(balloonId, true); balloonId = null; };
-            tray.BalloonTipClosed += (_, _) => balloonId = null;
             controller.AnnounceNewMicrophones();
             Update();
             Promote();
@@ -98,7 +110,7 @@ namespace NoiseReduction.WinUI
                             path = path.Replace("{6D809377-6AF0-444B-8957-A3773F02200E}", Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), StringComparison.OrdinalIgnoreCase);
                             if (!string.Equals(path, Environment.ProcessPath, StringComparison.OrdinalIgnoreCase)) continue;
                             key.SetValue("IsPromoted", 1, RegistryValueKind.DWord);
-                            tray.Visible = false; tray.Visible = true;
+                            RemoveIcon(); AddIcon();
                         }
                 }
             }
@@ -116,6 +128,57 @@ namespace NoiseReduction.WinUI
             catch (Exception) { return false; }
         }
 
+        private IntPtr Procedure(IntPtr handle, uint message, IntPtr wParam, IntPtr lParam)
+        {
+            // ошибка, вылетевшая отсюда в Windows, молча закрыла бы всю программу
+            try
+            {
+                if (message == WM_HOTKEY) Hotkey();
+                else if (message == WM_TRAY)
+                {
+                    uint mouse = (uint)lParam.ToInt64() & 0xFFFF;
+                    // после двойного щелчка Windows шлёт ещё одно отпускание, панель на него не открываем
+                    if (mouse == WM_LBUTTONUP) { if (afterDoubleClick) afterDoubleClick = false; else flyout(); }
+                    else if (mouse == WM_RBUTTONUP) ShowMenu();
+                    // окно настроек забирает фокус, панель от первого клика при этом закрывается сама
+                    else if (mouse == WM_LBUTTONDBLCLK) { afterDoubleClick = true; reveal(); }
+                    else if (mouse == NIN_BALLOONUSERCLICK) { if (balloonId != null) _ = controller.IntegrateAsync(balloonId, true); balloonId = null; }
+                    else if (mouse == NIN_BALLOONHIDE || mouse == NIN_BALLOONTIMEOUT) balloonId = null;
+                }
+                // тема панели задач поменялась, значок перерисовываем под неё
+                else if (message == WM_SETTINGCHANGE) Update();
+                else if (message == taskbarCreated && taskbarCreated != 0 && !disposed) AddIcon();
+            }
+            catch (Exception) { }
+            return DefWindowProc(handle, message, wParam, lParam);
+        }
+
+        private void Hotkey()
+        {
+            if (disposed || controller.Busy) return;
+            controller.SetGlobal(!controller.GlobalEnabled);
+            Balloon("Noise Reduction", T(controller.GlobalEnabled ? "Шумоподавление включено" : "Шумоподавление на паузе"));
+        }
+
+        private NotifyIconData Data(uint flags) => new NotifyIconData { Size = Marshal.SizeOf<NotifyIconData>(), Window = window, Id = 1, Flags = flags, CallbackMessage = WM_TRAY, Icon = currentIcon, Tip = currentTip, Info = "", InfoTitle = "" };
+
+        private void AddIcon()
+        {
+            // версию не меняем: так Enter на значке с клавиатуры приходит как щелчок, а уведомления работают и без неё
+            var data = Data(NIF_MESSAGE | NIF_ICON | NIF_TIP);
+            Shell_NotifyIcon(NIM_ADD, ref data);
+        }
+
+        private void RemoveIcon() { var data = Data(0); Shell_NotifyIcon(NIM_DELETE, ref data); }
+
+        private void Balloon(string title, string text)
+        {
+            var data = Data(NIF_INFO);
+            data.InfoTitle = title.Length > 63 ? title.Substring(0, 63) : title;
+            data.Info = text.Length > 255 ? text.Substring(0, 255) : text;
+            Shell_NotifyIcon(NIM_MODIFY, ref data);
+        }
+
         private static string T(string value) => UiText.Get(value).Replace("&", "");
         private static string ShortName(string value) => value.Length <= 32 ? value : value.Substring(0, 31).TrimEnd() + "…";
 
@@ -126,11 +189,13 @@ namespace NoiseReduction.WinUI
             foreach (var device in controller.Devices) if (device.Id == controller.DefaultId) { current = device; break; }
             int state = !string.IsNullOrEmpty(controller.Error) ? 2 : current != null && controller.IsEnabled(current.Id) ? controller.HasProcessingError(current.Id) ? 2 : current.Attached ? 1 : 0 : 0;
             var icon = GetIcon(state, SystemLight());
-            if (tray.Icon != icon) tray.Icon = icon;
             string hint = "Noise Reduction\n" + T(state == 2 ? "Ошибка обработки" : state == 1 ? "Шумоподавление включено" : "Шумоподавление выключено");
             if (current != null) hint += "\n" + current.Name;
             hint = hint.Length > 127 ? hint.Substring(0, 126) + "…" : hint;
-            if (tray.Text != hint) tray.Text = hint;
+            if (icon == currentIcon && hint == currentTip) return;
+            currentIcon = icon; currentTip = hint;
+            var data = Data(NIF_ICON | NIF_TIP);
+            Shell_NotifyIcon(NIM_MODIFY, ref data);
         }
 
         private async void ShowMenu()
@@ -161,9 +226,9 @@ namespace NoiseReduction.WinUI
                     AppendMenu(menu, MF_STRING | MF_DEFAULT, (UIntPtr)CommandSettings, T("Настройки"));
                     AppendMenu(menu, MF_STRING | busy, (UIntPtr)CommandExit, T("Выход"));
                     GetCursorPos(out var point);
-                    SetForegroundWindow(owner.Handle);
-                    int command = TrackPopupMenuEx(menu, TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_BOTTOMALIGN | TPM_RIGHTALIGN, point.X, point.Y, owner.Handle, IntPtr.Zero);
-                    PostMessage(owner.Handle, 0, IntPtr.Zero, IntPtr.Zero);
+                    SetForegroundWindow(window);
+                    int command = TrackPopupMenuEx(menu, TPM_RIGHTBUTTON | TPM_RETURNCMD | TPM_BOTTOMALIGN | TPM_RIGHTALIGN, point.X, point.Y, window, IntPtr.Zero);
+                    PostMessage(window, 0, IntPtr.Zero, IntPtr.Zero);
                     if (command == CommandGlobal) controller.SetGlobal(!controller.GlobalEnabled);
                     else if (command == CommandSettings) reveal();
                     else if (command == CommandExit) exit();
@@ -179,43 +244,10 @@ namespace NoiseReduction.WinUI
             finally { menuOpen = false; }
         }
 
-        // тонкий контур микрофона с волной внутри, цвет волны показывает состояние
-        private Icon GetIcon(int state, bool light)
+        private IntPtr GetIcon(int state, bool light)
         {
             int index = state * 2 + (light ? 1 : 0);
-            if (icons[index] != null) return icons[index];
-            int size = Math.Max(16, GetSystemMetrics(49));
-            using (var bitmap = new Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format32bppArgb))
-            {
-                using (var graphics = Graphics.FromImage(bitmap))
-                {
-                    graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                    graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
-                    graphics.ScaleTransform(size / 16f, size / 16f);
-                    var ink = light ? Color.FromArgb(26, 26, 26) : Color.White;
-                    var wave = state == 1 ? (light ? Color.FromArgb(10, 140, 128) : Color.FromArgb(23, 210, 190)) : state == 2 ? (light ? Color.FromArgb(196, 43, 28) : Color.FromArgb(255, 110, 110)) : Color.FromArgb(140, 140, 140);
-                    using (var pen = new Pen(ink, 1.15f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
-                    using (var path = new GraphicsPath())
-                    {
-                        path.AddArc(4.5f, 0.75f, 7, 7, 180, 180); path.AddArc(4.5f, 3.75f, 7, 7, 0, 180); path.CloseFigure();
-                        graphics.DrawPath(pen, path);
-                        path.Reset();
-                        path.AddLine(2, 6.5f, 2, 8); path.AddArc(2, 2.25f, 12, 11.25f, 180, -180); path.AddLine(14, 8, 14, 6.5f);
-                        graphics.DrawPath(pen, path);
-                        graphics.DrawLine(pen, 8, 13.6f, 8, 15.25f);
-                        graphics.DrawLine(pen, 5.5f, 15.25f, 10.5f, 15.25f);
-                    }
-                    using (var pen = new Pen(wave, 1.35f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
-                    {
-                        var points = new PointF[17];
-                        for (int i = 0; i < points.Length; i++) { float t = i / 16f; points[i] = new PointF(5.9f + 4.2f * t, 6.2f - (float)Math.Sin(t * Math.PI * 2) * 1.9f); }
-                        graphics.DrawLines(pen, points);
-                    }
-                }
-                IntPtr handle = bitmap.GetHicon();
-                try { using (var icon = Icon.FromHandle(handle)) icons[index] = (Icon)icon.Clone(); }
-                finally { DestroyIcon(handle); }
-            }
+            if (icons[index] == IntPtr.Zero) icons[index] = TrayGlyph.Create(Math.Max(16, GetSystemMetrics(49)), state, light);
             return icons[index];
         }
 
@@ -223,9 +255,9 @@ namespace NoiseReduction.WinUI
         {
             if (disposed) return;
             disposed = true; controller.Changed -= Update;
-            UnregisterHotKey(owner.Handle, 1);
-            tray.Visible = false; tray.Dispose(); owner.DestroyHandle();
-            foreach (var icon in icons) if (icon != null) icon.Dispose();
+            UnregisterHotKey(window, 1);
+            RemoveIcon(); DestroyWindow(window);
+            foreach (var icon in icons) if (icon != IntPtr.Zero) DestroyIcon(icon);
         }
     }
 }
