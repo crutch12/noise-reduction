@@ -6,10 +6,14 @@ using static NoiseReduction.WinUI.MicrophoneText;
 
 namespace NoiseReduction.WinUI
 {
-    // Три пресета силы, точное значение в дБ остаётся за ними
+    // Три пресета силы, точное значение в дБ остаётся за ними; у каждой модели свой рабочий диапазон
     internal sealed class StrengthPresets
     {
-        internal static readonly int[] Values = { 12, 24, 40 };
+        // Быстрая: доля исходного звука, 60 значит без подмешивания; Точная: предел самой модели, 60 снимает его и включает постфильтр
+        internal static readonly int[] FastValues = { 6, 12, 60 };
+        internal static readonly int[] PreciseValues = { 12, 24, 60 };
+        internal static int[] ValuesFor(bool precise) => precise ? PreciseValues : FastValues;
+        internal int[] Values { get; private set; } = PreciseValues;
         private static readonly string[] Names = { "Мягко", "Обычно", "Сильно" };
         private readonly ToggleButton[] buttons = new ToggleButton[3];
         private readonly ToggleButton custom;
@@ -24,11 +28,11 @@ namespace NoiseReduction.WinUI
         {
             for (int index = 0; index < buttons.Length; index++)
             {
-                int value = Values[index];
+                int position = index;
                 var button = new ToggleButton { HorizontalAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(8, 4, 8, 5) };
                 // в панели трея кнопки мельче, чтобы не перевешивали название микрофона
                 if (compact) { button.Padding = new Thickness(6, 1, 6, 2); button.MinHeight = 0; button.Height = 24; button.FontSize = 12; }
-                button.Click += (_, _) => { if (!updating) Selected?.Invoke(value); };
+                button.Click += (_, _) => { if (!updating) Selected?.Invoke(Values[position]); };
                 View.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 Grid.SetColumn(button, index); View.Children.Add(button);
                 buttons[index] = button;
@@ -42,12 +46,13 @@ namespace NoiseReduction.WinUI
 
         internal void Localize()
         {
-            for (int index = 0; index < buttons.Length; index++) { buttons[index].Content = T(Names[index]); ToolTipService.SetToolTip(buttons[index], Values[index] + " " + T("дБ")); }
+            for (int index = 0; index < buttons.Length; index++) { buttons[index].Content = T(Names[index]); ToolTipService.SetToolTip(buttons[index], Values[index] >= 60 ? T("Максимум") : Values[index] + " " + T("дБ")); }
             if (custom != null) custom.Content = T("Своё");
         }
 
-        internal void Update(int value, bool enabled)
+        internal void Update(int value, bool enabled, bool precise)
         {
+            if (Values != ValuesFor(precise)) { Values = ValuesFor(precise); Localize(); }
             updating = true;
             bool preset = Array.IndexOf(Values, value) >= 0;
             for (int index = 0; index < buttons.Length; index++) { buttons[index].IsChecked = Values[index] == value && !CustomOpen; buttons[index].IsEnabled = enabled; }

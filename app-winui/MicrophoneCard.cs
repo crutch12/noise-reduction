@@ -108,14 +108,24 @@ namespace NoiseReduction.WinUI
             slider.ValueChanged += (_, args) => { if (!updating) controller.SetAttenuation(Id, (int)Math.Round(args.NewValue)); };
             lowCut.Toggled += (_, _) => { if (!updating) controller.SetLowCut(Id, lowCut.IsOn); };
             economy.Toggled += (_, _) => { if (!updating) controller.SetEconomy(Id, economy.IsOn); };
-            fastModel.Click += (_, _) => { if (!updating) controller.SetDeepFilter(Id, false); Update(); };
-            preciseModel.Click += (_, _) => { if (!updating) controller.SetDeepFilter(Id, true); Update(); };
+            fastModel.Click += (_, _) => { if (!updating) SwitchModel(false); Update(); };
+            preciseModel.Click += (_, _) => { if (!updating) SwitchModel(true); Update(); };
             record.Click += (_, _) => { if (controller.RecordingId == Id) controller.StopRecording(); else run(() => controller.RecordAsync(Id)); };
             listen.Click += (_, _) => controller.TogglePlayback(Id);
             listenSwitch.Toggled += (_, _) => { if (!updating) controller.SetListenProcessed(listenSwitch.IsOn); };
             hookButton.Click += (_, _) => { if (hookButton.Tag != null) controller.OpenSoundSettings(Id); else run(() => controller.IntegrateAsync(Id, true)); };
             reset.Click += (_, _) => { presets.CustomOpen = false; controller.ResetProfile(Id); };
             diagnostics.Click += (_, _) => { var data = new DataPackage(); data.SetText(controller.BuildDiagnostics(Id)); Clipboard.SetContent(data); };
+        }
+
+        // у моделей разные шкалы силы, поэтому выбранный пресет переносим по месту, а не по числу
+        private void SwitchModel(bool precise)
+        {
+            bool was = controller.DeepFilter(Id);
+            if (was == precise) return;
+            int index = Array.IndexOf(StrengthPresets.ValuesFor(was), controller.Attenuation(Id));
+            controller.SetDeepFilter(Id, precise);
+            if (index >= 0) { presets.CustomOpen = false; controller.SetAttenuation(Id, StrengthPresets.ValuesFor(precise)[index]); }
         }
 
         private DeviceInfo Device { get { foreach (var device in controller.Devices) if (device.Id == Id) return device; return null; } }
@@ -141,7 +151,7 @@ namespace NoiseReduction.WinUI
             reset.Content = T("Сбросить настройки");
             diagnostics.Content = T("Скопировать диагностику");
             Tip(fastModel, "RNNoise, почти не нагружает процессор");
-            Tip(preciseModel, "DeepFilterNet, нагрузка чуть выше");
+            Tip(preciseModel, "DeepFilterNet, нагрузка примерно вдвое выше");
             Tip(slider, "Сила в децибелах");
             Tip(listenSwitch, "Переключение на ходу");
             Tip(lowCut, "Гул ниже 80 Гц: сеть, вентиляторы");
@@ -193,12 +203,12 @@ namespace NoiseReduction.WinUI
 
                 int value = controller.Attenuation(Id);
                 // значение вне пресетов сразу открывает ползунок
-                if (Array.IndexOf(StrengthPresets.Values, value) < 0) presets.CustomOpen = true;
-                presets.Update(value, idle);
+                if (Array.IndexOf(StrengthPresets.ValuesFor(precise), value) < 0) presets.CustomOpen = true;
+                presets.Update(value, idle, precise);
                 if ((int)slider.Value != value) slider.Value = value;
                 slider.IsEnabled = idle;
                 slider.Visibility = presets.CustomOpen ? Visibility.Visible : Visibility.Collapsed;
-                strengthValue.Text = presets.CustomOpen ? value + " " + T("дБ") : "";
+                strengthValue.Text = presets.CustomOpen ? (value >= 60 ? T("Максимум") : value + " " + T("дБ")) : "";
 
                 bool recording = controller.RecordingId == Id;
                 var elapsed = DateTime.UtcNow - controller.RecordingStarted;

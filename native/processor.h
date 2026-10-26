@@ -11,6 +11,8 @@ struct Backend {
     float (*frame)(void*, float*, const float*);
     // задержка модели вместе с адаптером кадров, 0 значит как у RNNoise
     size_t latency = 0;
+    // своя сила подавления у модели; без неё сила задаётся подмешиванием исходного звука
+    void (*strength)(void*, float) = nullptr;
 };
 
 // Срез гула ниже 80 Гц, Butterworth второго порядка для 48 кГц
@@ -68,6 +70,8 @@ private:
     void* state_;
     std::atomic<bool> enabled_;
     std::atomic<float> floor_{0.0630957344f};
+    std::atomic<float> strength_{24.0f};
+    float applied_strength_ = -1.0f;
     float current_floor_ = 0.0630957344f;
     std::array<float, frame_size> input_{};
     std::array<float, frame_size> output_{};

@@ -84,6 +84,24 @@ pub unsafe extern "C" fn nr_df_process_frame(st: *mut State, out: *mut f32, inpu
     }
 }
 
+/// Strength in dB: the model's own attenuation limit, 60 and above removes the limit and adds the post filter
+#[no_mangle]
+pub unsafe extern "C" fn nr_df_set_strength(st: *mut State, db: f32) {
+    if st.is_null() || !db.is_finite() {
+        return;
+    }
+    let state = &mut *st;
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if db >= 60.0 {
+            state.model.set_atten_lim(100.0);
+            state.model.set_pf_beta(0.02);
+        } else {
+            state.model.set_atten_lim(db.max(0.0));
+            state.model.set_pf_beta(0.0);
+        }
+    }));
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn nr_df_destroy(st: *mut State) {
     if !st.is_null() {

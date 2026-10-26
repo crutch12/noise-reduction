@@ -13,7 +13,12 @@ Processor::~Processor() { if (state_) backend_.destroy(state_); }
 
 void Processor::set_attenuation(float db) noexcept {
     if (!std::isfinite(db)) return;
-    floor_.store(std::pow(10.0f, -std::clamp(db, 0.0f, 60.0f) / 20.0f), std::memory_order_relaxed);
+    db = std::clamp(db, 0.0f, 60.0f);
+    strength_.store(db, std::memory_order_relaxed);
+    // модель со своей силой отдаёт готовый результат, исходный звук подмешивать не нужно;
+    // у остальных 60 дБ значит без подмешивания
+    // при 0 дБ у такой модели честный обход: только исходный звук
+    floor_.store(backend_.strength ? (db > 0.0f ? 0.0f : 1.0f) : db >= 60.0f ? 0.0f : std::pow(10.0f, -db / 20.0f), std::memory_order_relaxed);
 }
 
 void Processor::process(const float* input, float* output, size_t count) noexcept {
@@ -37,6 +42,9 @@ void Processor::process(const float* input, float* output, size_t count) noexcep
         if (++position_ == frame_size) {
             position_ = 0;
             if (state_ && (enabled || blend_ > 0)) {
+                // силу модели меняем только здесь, в том же потоке, что и обработку
+                const float strength = strength_.load(std::memory_order_relaxed);
+                if (backend_.strength && strength != applied_strength_) { backend_.strength(state_, strength); applied_strength_ = strength; }
                 backend_.frame(state_, output_.data(), input_.data());
                 ++processed_frames_;
                 if (warmup_) --warmup_;

@@ -10,10 +10,11 @@ DeepFilterBackend::DeepFilterBackend(const wchar_t* path) {
     api_.create = reinterpret_cast<decltype(api_.create)>(GetProcAddress(module_, "nr_df_create"));
     api_.destroy = reinterpret_cast<decltype(api_.destroy)>(GetProcAddress(module_, "nr_df_destroy"));
     api_.frame = reinterpret_cast<decltype(api_.frame)>(GetProcAddress(module_, "nr_df_process_frame"));
+    api_.strength = reinterpret_cast<decltype(api_.strength)>(GetProcAddress(module_, "nr_df_set_strength"));
     auto frame_size = reinterpret_cast<int (*)()>(GetProcAddress(module_, "nr_df_get_frame_size"));
     auto latency = reinterpret_cast<int (*)(const void*)>(GetProcAddress(module_, "nr_df_get_latency"));
 #pragma warning(pop)
-    if (!api_.create || !api_.destroy || !api_.frame || !frame_size || !latency || frame_size() != Processor::frame_size) {
+    if (!api_.create || !api_.destroy || !api_.frame || !api_.strength || !frame_size || !latency || frame_size() != Processor::frame_size) {
         FreeLibrary(module_);
         module_ = nullptr;
         throw std::runtime_error("Unsupported DeepFilterNet ABI or frame size");
