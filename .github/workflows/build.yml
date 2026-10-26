@@ -59,6 +59,8 @@ jobs:
         run: |
           cmd /c native\build.cmd
           if ($LASTEXITCODE -ne 0) { throw 'Native build failed' }
+          ./build/resampler_test.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Resampler tests failed' }
           ./build/processor_test.exe (Resolve-Path build/rnnoise.dll).Path
           if ($LASTEXITCODE -ne 0) { throw 'Processor tests failed' }
           ./build/apo_test.exe (Resolve-Path build/NoiseReduction.Apo.dll).Path
