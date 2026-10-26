@@ -146,6 +146,13 @@ namespace NoiseReduction.WinUI
         public bool LowCut(string id) => Settings.For(id).LowCut;
         public void SetLowCut(string id, bool enabled) { Change(() => Settings.For(id).LowCut = enabled); }
         public bool Economy(string id) => Settings.For(id).Economy;
+        // страница свойств этого микрофона, там пункт Улучшения звука
+        public void OpenSoundSettings(string id)
+        {
+            try { using (Process.Start(new ProcessStartInfo("ms-settings:sound-properties?endpointId=" + Uri.EscapeDataString(id)) { UseShellExecute = true })) { } }
+            catch (Exception error) { Error = error.Message; }
+            notes[id] = "В Параметрах в пункте Улучшения звука выберите Noise Reduction"; Notify();
+        }
         public void SetEconomy(string id, bool enabled) { Change(() => Settings.For(id).Economy = enabled); }
         public bool DeepFilter(string id) => Settings.For(id).DeepFilter;
         public void SetDeepFilter(string id, bool enabled) { Change(() => Settings.For(id).DeepFilter = enabled); }
@@ -285,6 +292,9 @@ namespace NoiseReduction.WinUI
         public async Task IntegrateAsync(string id, bool attach)
         {
             if (Busy || disposed || !devices.Any(device => device.Id == id)) return;
+            // пакет эффектов Windows включает только сам пользователь в Параметрах, программам это не разрешено
+            var target = devices.First(device => device.Id == id);
+            if (attach && target.EffectPack) { OpenSoundSettings(id); return; }
             bool succeeded = false;
             state.Integrating = true; IntegratingId = id; Error = null;
             notes[id] = attach ? "Windows проверяет обработку, звук не сохраняется и не воспроизводится" : "Отключение эффекта"; Notify();

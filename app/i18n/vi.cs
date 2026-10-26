@@ -205,7 +205,11 @@ namespace NoiseReduction.Desktop
             { "Подтвердите запрос Windows, звук прервётся на пару секунд", "Hãy xác nhận yêu cầu của Windows, âm thanh sẽ tạm dừng vài giây" },
             { "Включите переключатель, Windows попросит подтверждение", "Hãy bật công tắc, Windows sẽ yêu cầu xác nhận" },
             { "Крестик оставляет программу в трее", "Nút đóng giữ ứng dụng trong khay hệ thống" },
-            { "Удалить программу", "Gỡ cài đặt ứng dụng" }
+            { "Удалить программу", "Gỡ cài đặt ứng dụng" },
+            { "Выберите Noise Reduction в Параметрах Windows", "Chọn Noise Reduction trong Cài đặt Windows" },
+            { "Windows разрешает выбрать эффект только вам: в пункте Улучшения звука выберите Noise Reduction", "Chỉ bạn mới có thể chọn hiệu ứng trong Windows: trong Cải thiện âm thanh, chọn Noise Reduction" },
+            { "Открыть Параметры", "Mở Cài đặt" },
+            { "В Параметрах в пункте Улучшения звука выберите Noise Reduction", "Trong Cài đặt, ở mục Cải thiện âm thanh, chọn Noise Reduction" }
         };
     }
 }

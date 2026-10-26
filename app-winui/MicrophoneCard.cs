@@ -179,9 +179,11 @@ namespace NoiseReduction.WinUI
                 // включён в программе, но не встроен в Windows: объясняем и даём одну кнопку
                 bool enabling = controller.IntegratingId == Id;
                 hookBar.IsOpen = controller.ProfileEnabled(Id) && !device.Attached || enabling;
-                hookBar.Title = T(enabling ? "Включение…" : device.EnhancementsEnabled ? "Шумоподавление не встроено в Windows" : "В Windows выключены улучшения звука");
-                hookBar.Message = T(enabling ? "Подтвердите запрос Windows, звук прервётся на пару секунд" : "Программы получают звук без обработки. Нажмите Включить, Windows попросит подтверждение");
-                hookButton.Content = T("Включить");
+                // у микрофонов с пакетом эффектов Windows выбор делается в Параметрах, кнопка открывает нужную страницу
+                bool pack = device.EffectPack && device.EnhancementsEnabled;
+                hookBar.Title = T(enabling ? "Включение…" : pack ? "Выберите Noise Reduction в Параметрах Windows" : device.EnhancementsEnabled ? "Шумоподавление не встроено в Windows" : "В Windows выключены улучшения звука");
+                hookBar.Message = T(enabling ? "Подтвердите запрос Windows, звук прервётся на пару секунд" : pack ? "Windows разрешает выбрать эффект только вам: в пункте Улучшения звука выберите Noise Reduction" : "Программы получают звук без обработки. Нажмите Включить, Windows попросит подтверждение");
+                hookButton.Content = T(pack ? "Открыть Параметры" : "Включить");
                 hookButton.IsEnabled = idle;
 
                 bool precise = controller.DeepFilter(Id);

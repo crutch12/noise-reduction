@@ -107,10 +107,37 @@ namespace NoiseReduction.Platform {
   internal const string DisableSysFxKey = "{1DA5D803-D492-4EDD-8C23-E0C0FFEE7F0E},5";
   // Off в настройках улучшений звука Windows выключает все эффекты микрофона, включение возвращает их
   static void EnableEnhancements(RegistryEngine e, RegistryKey root, string endpointId) { using(var fx = root.OpenSubKey(Fx(endpointId))) { object disabled = fx == null ? null : fx.GetValue(DisableSysFxKey); if(disabled != null && Convert.ToInt32(disabled) != 0) e.Set(Fx(endpointId), DisableSysFxKey, 0, RegistryValueKind.DWord); } }
-  public static void Attach(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); if(!EnumerateMicrophones().Any(d => d.Id == endpointId && d.Active)) throw new InvalidOperationException("Capture endpoint is unavailable"); e.Attach(Fx(endpointId)); EnableEnhancements(e, root, endpointId); } }
-  public static void Detach(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); e.Detach(Fx(endpointId)); e.Detach(Properties(endpointId)); } }
-  public static void SelectEffectPack(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); if(!EnumerateMicrophones().Any(d => d.Id == endpointId && d.Active && d.EffectPack)) throw new InvalidOperationException("Capture endpoint is unavailable"); string component = EffectPack.Component(root); if(component == null) throw new InvalidOperationException("Noise Reduction effect pack is not installed"); e.Set(Fx(endpointId), EffectPack.ComponentKey, component, RegistryValueKind.String); e.Set(Properties(endpointId), EffectPack.SelectedKey, EffectPack.Id, RegistryValueKind.String); e.Set(Properties(endpointId), EffectPack.StateKey, EffectPack.State(), RegistryValueKind.Binary); EnableEnhancements(e, root, endpointId); } }
-  public static void DetachAll() { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); using(var capture = root.OpenSubKey(Capture)) if(capture != null) foreach(var id in capture.GetSubKeyNames()) { e.Detach(Capture + "\\" + id + "\\FxProperties"); e.Detach(Capture + "\\" + id + "\\Properties"); } e.DetachJournaledEndpoints(); } }
+  public static void Attach(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); if(!EnumerateMicrophones().Any(d => d.Id == endpointId && d.Active)) throw new InvalidOperationException("Capture endpoint is unavailable"); e.Attach(Fx(endpointId)); EnableEnhancements(e, root, endpointId); ClearFormatCache(root, Properties(endpointId)); } }
+  public static void Detach(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); bool pack = PackManaged(root, Fx(endpointId)); e.Detach(Fx(endpointId)); e.Detach(Properties(endpointId)); ClearFormatCache(root, Properties(endpointId)); if(pack) TryPushSelection(root, endpointId); } }
+  public static void SelectEffectPack(string endpointId) { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); if(!EnumerateMicrophones().Any(d => d.Id == endpointId && d.Active && d.EffectPack)) throw new InvalidOperationException("Capture endpoint is unavailable"); string component = EffectPack.Component(root); if(component == null) throw new InvalidOperationException("Noise Reduction effect pack is not installed"); e.Set(Fx(endpointId), EffectPack.ComponentKey, component, RegistryValueKind.String); e.Set(Properties(endpointId), EffectPack.SelectedKey, EffectPack.Id, RegistryValueKind.String); e.Set(Properties(endpointId), EffectPack.StateKey, EffectPack.State(), RegistryValueKind.Binary); EnableEnhancements(e, root, endpointId); ClearFormatCache(root, Properties(endpointId)); PushSelection(root, endpointId); } }
+  public static void DetachAll() { using(var operation = new OperationLease()) using(var root = Machine()) { var e = Engine(root); e.Recover(); using(var capture = root.OpenSubKey(Capture)) if(capture != null) foreach(var id in capture.GetSubKeyNames()) { bool pack = PackManaged(root, Capture + "\\" + id + "\\FxProperties"); e.Detach(Capture + "\\" + id + "\\FxProperties"); e.Detach(Capture + "\\" + id + "\\Properties"); ClearFormatCache(root, Capture + "\\" + id + "\\Properties"); if(pack) TryPushSelection(root, "{0.0.1.00000000}." + id); } e.DetachJournaledEndpoints(); } }
+  // кэш форматов, который Windows сама стирает при смене эффектов и пересобирает при следующем запуске звука;
+  // старый кэш может держать микрофон на прежней цепочке эффектов
+  static readonly string[] FormatCache = { "{3d6e1656-2e50-4c4c-8d85-d0acae3c6c68},3", "{3d6e1656-2e50-4c4c-8d85-d0acae3c6c68},5", "{3d6e1656-2e50-4c4c-8d85-d0acae3c6c68},9", "{3d6e1656-2e50-4c4c-8d85-d0acae3c6c68},10", "{33b83365-ab41-4b3b-8f32-ab8d96168070},5", "{33b83365-ab41-4b3b-8f32-ab8d96168070},9", "{33b83365-ab41-4b3b-8f32-ab8d96168070},10", "{624f56de-fd24-473e-814a-de40aacaed16},3", "{e4870e26-3cc5-4cd2-ba46-ca0a9a70ed04},0" };
+  static bool PackManaged(RegistryKey root, string fx) { using(var key = root.OpenSubKey(fx)) return key != null && EffectPack.Managed(key); }
+  // выбор пакета держит служба звука: прямую запись в реестр она не видит и может перезаписать своей копией,
+  // поэтому те же значения отдаём ей через хранилище свойств устройства, как делают Параметры Windows
+  static void PushSelection(RegistryKey root, string endpointId) {
+   string text; byte[] blob;
+   using(var key = root.OpenSubKey(Properties(endpointId))) { if(key == null) return; text = key.GetValue(EffectPack.SelectedKey) as string; blob = key.GetValue(EffectPack.StateKey) as byte[]; }
+   var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator(); IMMDevice device = null; IPropertyStore store = null;
+   try {
+    Marshal.ThrowExceptionForHR(enumerator.GetDevice(endpointId, out device));
+    Marshal.ThrowExceptionForHR(device.OpenPropertyStore(2, out store));
+    var format = new Guid("c876062a-a276-4ed6-b15b-3962e69007f8");
+    var selected = new PropertyKey(format, 2); var state = new PropertyKey(format, 3);
+    var value = new PropVariant(); if(text != null) { value.Type = 31; value.Pointer = Marshal.StringToCoTaskMemUni(text); }
+    try { store.SetValue(ref selected, ref value); } finally { PropVariantClear(ref value); }
+    if(blob != null) { var data = new PropVariant { Type = 65, Size = blob.Length, Data = Marshal.AllocCoTaskMem(blob.Length) }; Marshal.Copy(blob, 0, data.Data, blob.Length); try { store.SetValue(ref state, ref data); } finally { PropVariantClear(ref data); } }
+    store.Commit();
+   } finally { if(store != null) Marshal.ReleaseComObject(store); if(device != null) Marshal.ReleaseComObject(device); Marshal.ReleaseComObject(enumerator); }
+  }
+  // при откате микрофон может быть уже отключён от ПК, тогда реестра достаточно
+  static void TryPushSelection(RegistryKey root, string endpointId) { try { PushSelection(root, endpointId); } catch(COMException) { } catch(InvalidCastException) { } }
+  static void ClearFormatCache(RegistryKey root, string properties) {
+   try { using(var key = root.OpenSubKey(properties, RegistryKeyPermissionCheck.ReadWriteSubTree, System.Security.AccessControl.RegistryRights.QueryValues | System.Security.AccessControl.RegistryRights.SetValue)) if(key != null) foreach(var name in FormatCache) key.DeleteValue(name, false); }
+   catch(UnauthorizedAccessException) { } catch(System.Security.SecurityException) { }
+  }
   public static void RegisterEngine(string installationDirectory) {
    string dll = Path.Combine(Path.GetFullPath(installationDirectory), "NoiseReduction.Apo.dll"); if(!File.Exists(dll)) throw new FileNotFoundException("APO library is missing", dll);
    PrepareDirectories();
@@ -412,7 +439,7 @@ namespace NoiseReduction.Platform {
   }
  }
  [StructLayout(LayoutKind.Sequential)] struct PropertyKey { public Guid Format; public uint Id; public PropertyKey(Guid format,uint id){Format=format;Id=id;} }
- [StructLayout(LayoutKind.Explicit,Size=24)] struct PropVariant { [FieldOffset(0)] public ushort Type; [FieldOffset(8)] public IntPtr Pointer; }
+ [StructLayout(LayoutKind.Explicit,Size=24)] struct PropVariant { [FieldOffset(0)] public ushort Type; [FieldOffset(8)] public IntPtr Pointer; [FieldOffset(8)] public int Size; [FieldOffset(16)] public IntPtr Data; }
  [ComImport,Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumerator { }
  [ComImport,Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] interface IMMDeviceEnumerator { [PreserveSig]int EnumAudioEndpoints(int flow,uint mask,out IMMDeviceCollection devices); [PreserveSig]int GetDefaultAudioEndpoint(int flow,int role,out IMMDevice device); [PreserveSig]int GetDevice([MarshalAs(UnmanagedType.LPWStr)]string id,out IMMDevice device); }
  [ComImport,Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] interface IMMDeviceCollection { [PreserveSig]int GetCount(out uint count); [PreserveSig]int Item(uint index,out IMMDevice device); }

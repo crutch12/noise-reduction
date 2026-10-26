@@ -205,7 +205,11 @@ namespace NoiseReduction.Desktop
             { "Подтвердите запрос Windows, звук прервётся на пару секунд", "Potwierdź monit systemu Windows, dźwięk zostanie przerwany na kilka sekund" },
             { "Включите переключатель, Windows попросит подтверждение", "Włącz przełącznik, system Windows poprosi o potwierdzenie" },
             { "Крестик оставляет программу в трее", "Zamknięcie okna zostawia program w zasobniku" },
-            { "Удалить программу", "Odinstaluj aplikację" }
+            { "Удалить программу", "Odinstaluj aplikację" },
+            { "Выберите Noise Reduction в Параметрах Windows", "Wybierz Noise Reduction w Ustawieniach systemu Windows" },
+            { "Windows разрешает выбрать эффект только вам: в пункте Улучшения звука выберите Noise Reduction", "Tylko Ty możesz wybrać efekt w systemie Windows: w Ulepszeniach dźwięku wybierz Noise Reduction" },
+            { "Открыть Параметры", "Otwórz Ustawienia" },
+            { "В Параметрах в пункте Улучшения звука выберите Noise Reduction", "W Ustawieniach, w Ulepszeniach dźwięku, wybierz Noise Reduction" }
         };
     }
 }

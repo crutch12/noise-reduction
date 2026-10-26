@@ -75,7 +75,7 @@ Apo_CopyFiles = 13
 
 [Strings]
 Provider = "Noise Reduction"
-ApoDescription = "Noise Reduction APO"
+ApoDescription = "Noise Reduction"
 DiskName = "Noise Reduction"
 NR_CLSID = "{BDD6A3F4-ED4E-4D4D-AA82-D695A550E59F}"
 EFFECT_CLSID = "{3A9F5C0E-7B21-4D8E-9F43-6C2B1D8E0A57}"
