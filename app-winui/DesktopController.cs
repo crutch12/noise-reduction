@@ -53,6 +53,10 @@ namespace NoiseReduction.WinUI
         private DateTime refreshAt;
         private readonly List<DeviceInfo> pendingNew = new List<DeviceInfo>();
         private string recordingDirectory, comparisonId;
+        // исходная запись для пересчёта и имя файла с текущей обработкой
+        private float[] recordedSamples;
+        private string processedName = "processed.wav";
+        private int reprocessVersion;
         private bool disposed, scanning;
         internal Settings Settings { get; }
         public event Action Changed;
@@ -123,7 +127,7 @@ namespace NoiseReduction.WinUI
         public int Attenuation(string id) => Settings.For(id).Attenuation;
         public string Note(string id) => notes.TryGetValue(id, out var note) ? note : null;
         public IReadOnlyList<AppUse> Usage(string id) => usage.TryGetValue(id, out var apps) ? apps : null;
-        public bool CanCompare(string id) => !disposed && !Busy && comparisonId == id && recordingDirectory != null && File.Exists(Path.Combine(recordingDirectory, "original.wav")) && File.Exists(Path.Combine(recordingDirectory, "processed.wav"));
+        public bool CanCompare(string id) => !disposed && !Busy && comparisonId == id && recordingDirectory != null && File.Exists(Path.Combine(recordingDirectory, "original.wav")) && File.Exists(Path.Combine(recordingDirectory, processedName));
 
         public bool HasProcessingError(string id)
         {
@@ -142,7 +146,7 @@ namespace NoiseReduction.WinUI
 
         public void SetGlobal(bool enabled) { Change(() => Settings.Enabled = enabled); }
         public void SetProfile(string id, bool enabled) { Change(() => { Settings.For(id).Enabled = enabled; if (enabled) Settings.Enabled = true; }); }
-        public void SetAttenuation(string id, int attenuation) { Change(() => Settings.For(id).Attenuation = Math.Clamp(attenuation, 0, 60)); }
+        public void SetAttenuation(string id, int attenuation) { Change(() => Settings.For(id).Attenuation = Math.Clamp(attenuation, 0, 60)); Reprocess(id); }
         public bool LowCut(string id) => Settings.For(id).LowCut;
         public void SetLowCut(string id, bool enabled) { Change(() => Settings.For(id).LowCut = enabled); }
         public bool Economy(string id) => Settings.For(id).Economy;
@@ -155,7 +159,7 @@ namespace NoiseReduction.WinUI
         }
         public void SetEconomy(string id, bool enabled) { Change(() => Settings.For(id).Economy = enabled); }
         public bool DeepFilter(string id) => Settings.For(id).DeepFilter;
-        public void SetDeepFilter(string id, bool enabled) { Change(() => Settings.For(id).DeepFilter = enabled); }
+        public void SetDeepFilter(string id, bool enabled) { Change(() => Settings.For(id).DeepFilter = enabled); Reprocess(id); }
         public void ResetProfile(string id) { Change(() => { var profile = Settings.For(id); profile.Attenuation = 24; profile.LowCut = false; profile.Economy = false; profile.DeepFilter = true; }); }
         public string WindowTheme => Settings.WindowTheme ?? "system";
         public string TrayTheme => Settings.TrayTheme ?? "system";
@@ -349,6 +353,7 @@ namespace NoiseReduction.WinUI
                 if (disposed) { DeleteRecording(directory); return; }
                 OriginalPeaks = Peaks(result[0], 240); ProcessedPeaks = Peaks(result[1], 240);
                 DeleteRecording(recordingDirectory); recordingDirectory = directory; comparisonId = id;
+                recordedSamples = result[0]; processedName = "processed.wav"; reprocessVersion++;
                 notes.Remove(id);
             }
             catch (Exception error) { if (!disposed) { Error = error.Message; notes.Remove(id); } DeleteRecording(directory); }
@@ -359,6 +364,40 @@ namespace NoiseReduction.WinUI
             }
         }
         public void StopRecording() { stopRequested = true; }
+
+        // новая сила или модель сразу применяются к готовой записи, прослушивание продолжается с того же места
+        private async void Reprocess(string id)
+        {
+            if (disposed || comparisonId != id || recordedSamples == null) return;
+            int version = ++reprocessVersion;
+            // ползунок шлёт много значений подряд, считаем только последнее
+            await Task.Delay(150);
+            if (disposed || version != reprocessVersion || comparisonId != id) return;
+            int attenuation = Attenuation(id); bool deepFilter = DeepFilter(id);
+            var samples = recordedSamples; string directory = recordingDirectory, name = "processed-" + version + ".wav";
+            float[] result;
+            try { result = await Task.Run(() => { var output = Comparison.ProcessCaptured(samples, attenuation, deepFilter); Comparison.WriteWave(Path.Combine(directory, name), output); return output; }); }
+            catch (Exception error) { if (!disposed) { Error = error.Message; Notify(); } return; }
+            if (disposed || version != reprocessVersion || directory != recordingDirectory) { TryDelete(Path.Combine(directory, name)); return; }
+            ProcessedPeaks = Peaks(result, 240);
+            string previous = processedName; processedName = name;
+            if (processed != null && original != null)
+            {
+                var dispatcher = DispatcherQueue.GetForCurrentThread();
+                var next = Open(name);
+                next.MediaOpened += (player, _) => dispatcher.TryEnqueue(() =>
+                {
+                    if (processed != player || original == null) return;
+                    player.PlaybackSession.Position = original.PlaybackSession.Position;
+                    player.Play();
+                });
+                var old = processed; processed = next; ApplyListen();
+                old.Pause(); old.Dispose();
+            }
+            TryDelete(Path.Combine(directory, previous));
+            Notify();
+        }
+        private static void TryDelete(string path) { try { File.Delete(path); } catch (Exception) { } }
 
         // пик каждых 20 мс для живой волны, вызывается из потока записи
         private void Collect(float[] packet)
@@ -390,7 +429,7 @@ namespace NoiseReduction.WinUI
             Error = null;
             try
             {
-                original = Open("original.wav"); processed = Open("processed.wav");
+                original = Open("original.wav"); processed = Open(processedName);
                 ApplyListen();
                 original.Play(); processed.Play();
                 Playing = true;

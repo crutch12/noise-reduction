@@ -22,6 +22,8 @@ namespace NoiseReduction.Platform {
   internal const string LegacyKey = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},7";
   internal const string ModesKey = "{D3993A3F-99C2-4402-B5EC-A92A0367664B},7";
   internal const string DefaultMode = "{C18E2F7E-933D-4965-B7D1-1EEF228D2AF3}";
+  // браузеры пишут в режиме RAW, мессенджеры в режиме связи; без этих режимов Windows пропускает эффект
+  internal static readonly string[] StreamingModes = { DefaultMode, "{98951333-B9CD-48B1-A0A3-FF40682D73F7}", "{FC1CFC9B-B9D6-4CFA-B5E0-4BB2166878B2}", "{9E90EA20-B493-4FD1-A1A8-7E1361A956CF}" };
   const string Capture = @"SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture";
   static string DataRoot { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "NoiseReduction"); } }
   public static string ControlRoot { get { return Path.Combine(DataRoot, "Endpoints"); } }
@@ -332,12 +334,12 @@ namespace NoiseReduction.Platform {
   }
   public static bool Contains(object value,string clsid) { var list=value as string[]; if(list != null) return list.Any(s=>String.Equals(s,clsid,StringComparison.OrdinalIgnoreCase)); return String.Equals(value as string,clsid,StringComparison.OrdinalIgnoreCase); }
   public void Attach(string path) {
-   using(var key=root.OpenSubKey(path)) { if(key == null) throw new InvalidOperationException("Endpoint registry state is unavailable"); object existing=key.GetValue(Integration.CompositeKey); if(Contains(existing,Integration.Clsid)) { if(key.GetValue(Integration.ModesKey) == null) Set(path,Integration.ModesKey,new[]{Integration.DefaultMode},RegistryValueKind.MultiString); return; } if(existing != null && !(existing is string[])) throw new InvalidOperationException("Composite EFX has an incompatible registry type"); var chain=existing == null ? new List<string>() : new List<string>((string[])existing);
+   using(var key=root.OpenSubKey(path)) { if(key == null) throw new InvalidOperationException("Endpoint registry state is unavailable"); object existing=key.GetValue(Integration.CompositeKey); if(Contains(existing,Integration.Clsid)) { if(key.GetValue(Integration.ModesKey) == null) Set(path,Integration.ModesKey,Integration.StreamingModes,RegistryValueKind.MultiString); return; } if(existing != null && !(existing is string[])) throw new InvalidOperationException("Composite EFX has an incompatible registry type"); var chain=existing == null ? new List<string>() : new List<string>((string[])existing);
     if(existing == null) { object legacy=key.GetValue(Integration.LegacyKey); if(legacy != null) throw new InvalidOperationException("Endpoint has a legacy OEM EFX chain; automatic migration is unsafe and was refused"); }
     if(chain.Any(s=> { Guid g; return !Guid.TryParse(s,out g); })) throw new InvalidOperationException("Invalid OEM EFX CLSID");
     chain.Add(Integration.Clsid);
     Set(path,Integration.CompositeKey,chain.ToArray(),RegistryValueKind.MultiString);
-    try { if(key.GetValue(Integration.ModesKey) == null) Set(path,Integration.ModesKey,new[]{Integration.DefaultMode},RegistryValueKind.MultiString); } catch { Detach(path); throw; }
+    try { if(key.GetValue(Integration.ModesKey) == null) Set(path,Integration.ModesKey,Integration.StreamingModes,RegistryValueKind.MultiString); } catch { Detach(path); throw; }
    }
   }
   string[] Files() { return Directory.Exists(journal) ? Directory.GetFiles(journal,"*.xml") : new string[0]; }

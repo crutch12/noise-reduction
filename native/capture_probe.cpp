@@ -4,18 +4,28 @@
 #include <audioclient.h>
 #include <wrl/client.h>
 #include <iostream>
+#include <cwchar>
 #include <stdexcept>
 using Microsoft::WRL::ComPtr;
 static void check(HRESULT result, const char* message) {
     if (FAILED(result)) { std::cerr << message << " HRESULT=" << std::hex << result << '\n'; throw std::runtime_error(message); }
 }
-static void exercise(const wchar_t* id) {
+// mode: пусто, raw или communications, как открывают микрофон браузеры и мессенджеры
+static void exercise(const wchar_t* id, const wchar_t* mode) {
     ComPtr<IMMDeviceEnumerator> enumerator;
     check(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&enumerator)), "Create enumerator");
     ComPtr<IMMDevice> device;
     check(enumerator->GetDevice(id, &device), "Open capture endpoint");
     ComPtr<IAudioClient> client;
     check(device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr, reinterpret_cast<void**>(client.GetAddressOf())), "Activate capture");
+    if (mode) {
+        ComPtr<IAudioClient2> client2;
+        check(client.As(&client2), "Get IAudioClient2");
+        AudioClientProperties properties{sizeof(properties), FALSE, AudioCategory_Other, AUDCLNT_STREAMOPTIONS_NONE};
+        if (wcscmp(mode, L"raw") == 0) properties.Options = AUDCLNT_STREAMOPTIONS_RAW;
+        else if (wcscmp(mode, L"communications") == 0) properties.eCategory = AudioCategory_Communications;
+        check(client2->SetClientProperties(&properties), "Set client properties");
+    }
     WAVEFORMATEX* format = nullptr;
     check(client->GetMixFormat(&format), "Get capture format");
     HRESULT init = client->Initialize(AUDCLNT_SHAREMODE_SHARED, AUDCLNT_STREAMFLAGS_NOPERSIST, 1000000, 0, format, nullptr);
@@ -43,11 +53,11 @@ static void exercise(const wchar_t* id) {
     std::cout << "PASS: shared capture graph delivered " << std::dec << total << " frames, samples discarded\n";
 }
 int wmain(int argc, wchar_t** argv) {
-    if (argc != 2) return 2;
+    if (argc != 2 && argc != 3) return 2;
     HRESULT init = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     if (FAILED(init)) return 1;
     int code = 0;
-    try { exercise(argv[1]); } catch (const std::exception& error) { std::cerr << error.what() << '\n'; code = 1; }
+    try { exercise(argv[1], argc == 3 ? argv[2] : nullptr); } catch (const std::exception& error) { std::cerr << error.what() << '\n'; code = 1; }
     CoUninitialize();
     return code;
 }
