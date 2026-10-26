@@ -146,7 +146,7 @@ namespace NoiseReduction.WinUI
             Tip(listenSwitch, "Переключение на ходу");
             Tip(lowCut, "Гул ниже 80 Гц: сеть, вентиляторы");
             Tip(economy, "Каналы обрабатываются вместе, нагрузка ниже");
-            Tip(reset, "Обычная сила, остальное выключено");
+            Tip(reset, "Точная модель и обычная сила, остальное выключено");
         }
 
         private static void Tip(FrameworkElement control, string text)

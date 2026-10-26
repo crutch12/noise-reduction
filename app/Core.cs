@@ -19,8 +19,8 @@ namespace NoiseReduction.Desktop
         [DataMember] public int Attenuation = 24;
         [DataMember] public bool LowCut;
         [DataMember] public bool Economy;
-        [DataMember] public bool DeepFilter;
-        [OnDeserializing] private void Defaults(StreamingContext context) { Enabled = true; Attenuation = 24; LowCut = false; Economy = false; DeepFilter = false; }
+        [DataMember] public bool DeepFilter = true;
+        [OnDeserializing] private void Defaults(StreamingContext context) { Enabled = true; Attenuation = 24; LowCut = false; Economy = false; DeepFilter = true; }
     }
     [DataContract]
     public sealed class Settings
