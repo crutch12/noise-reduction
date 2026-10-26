@@ -6,6 +6,8 @@ static void check(bool ok, const char* text) { if (!ok) throw std::runtime_error
 int main() {
     wchar_t folder[MAX_PATH], path[MAX_PATH];
     GetTempPathW(MAX_PATH, folder);
+    // на машинах сборки временная папка бывает коротким именем вроде RUNNER~1, а проверка файла сравнивает полный путь
+    GetLongPathNameW(folder, folder, MAX_PATH);
     GetTempFileNameW(folder, L"nrc", 0, path);
     try {
         HANDLE file = CreateFileW(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
