@@ -409,8 +409,9 @@ namespace NoiseReduction.Desktop
                 foreach (var pair in originalTexts) pair.Key.Text = UiText.Get(pair.Value);
                 foreach (var pair in originalNames) pair.Key.AccessibleName = UiText.Get(pair.Value);
                 language.Items.Clear();
-                language.Items.Add(new LanguageOption("system")); language.Items.Add(new LanguageOption("ru")); language.Items.Add(new LanguageOption("en"));
-                language.SelectedIndex = settings.Language == "ru" ? 1 : settings.Language == "en" ? 2 : 0;
+                language.Items.Add(new LanguageOption("system"));
+                foreach (string id in Languages.Ids) language.Items.Add(new LanguageOption(id));
+                language.SelectedIndex = Array.IndexOf(Languages.Ids, settings.Language) + 1;
                 if (tray.ContextMenuStrip != null)
                 {
                     tray.ContextMenuStrip.Items["TraySettings"].Text = UiText.Get("Настройки");

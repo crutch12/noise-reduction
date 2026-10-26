@@ -9,6 +9,8 @@
   <ItemGroup>
     <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
     <Compile Include="../app/Core.cs" />
+    <Compile Include="../app/Localization.cs" />
+    <Compile Include="../app/i18n/*.cs" />
     <Compile Include="../app/SecureControl.cs" />
     <Compile Include="../app/Comparison.cs" />
     <Compile Include="../app/tests/CoreTests.cs" />

@@ -4,11 +4,34 @@ using System.Globalization;
 
 namespace NoiseReduction.Desktop
 {
+    // языки интерфейса с названием на самом языке, порядок как в списке выбора
+    public static class Languages
+    {
+        public static readonly string[] Ids = { "en", "zh", "es", "hi", "ar", "pt", "ru", "fr", "de", "ja", "ko", "it", "tr", "pl", "uk", "id", "vi", "nl", "th", "fa" };
+        public static readonly string[] Names = { "English", "中文（简体）", "Español", "हिन्दी", "العربية", "Português", "Русский", "Français", "Deutsch", "日本語", "한국어", "Italiano", "Türkçe", "Polski", "Українська", "Bahasa Indonesia", "Tiếng Việt", "Nederlands", "ไทย", "فارسی" };
+        public static string Name(string id) { int index = Array.IndexOf(Ids, id); return index < 0 ? id : Names[index]; }
+    }
+    public static class LanguagePreference
+    {
+        public static string Normalize(string value)
+        {
+            value = (value ?? "system").Trim().ToLowerInvariant();
+            return Array.IndexOf(Languages.Ids, value) >= 0 ? value : "system";
+        }
+        // язык системы без перевода заменяется английским
+        public static string Resolve(string preference, string systemCulture)
+        {
+            preference = Normalize(preference);
+            if (preference != "system") return preference;
+            try { string id = CultureInfo.GetCultureInfo(systemCulture ?? "").TwoLetterISOLanguageName; return Array.IndexOf(Languages.Ids, id) >= 0 ? id : "en"; }
+            catch (CultureNotFoundException) { return "en"; }
+        }
+    }
     internal sealed class LanguageOption
     {
         internal readonly string Id;
         internal LanguageOption(string id) { Id = id; }
-        public override string ToString() { return Id == "ru" ? "Русский" : Id == "en" ? "English" : UiText.Get("Как в системе"); }
+        public override string ToString() { return Id == "system" ? UiText.Get("Как в системе") : Languages.Name(Id); }
     }
     internal static class UiText
     {
@@ -183,6 +206,28 @@ namespace NoiseReduction.Desktop
             { "Шумоподавление не встроено в Windows", "Noise reduction isn't set up in Windows" },
             { "В Windows выключены улучшения звука", "Audio enhancements are off in Windows" },
             { "Параметры Windows", "Windows Settings" },
+            { "Установка Noise Reduction", "Install Noise Reduction" },
+            { "Переустановка Noise Reduction", "Reinstall Noise Reduction" },
+            { "Удаление Noise Reduction", "Uninstall Noise Reduction" },
+            { "Шумоподавление для всех микрофонов в любых программах. Защита звука Windows остаётся включённой", "Noise reduction for every microphone in every app. Windows audio protection stays on" },
+            { "Noise Reduction уже установлен и будет переустановлен. Настройки микрофонов сохранятся", "Noise Reduction is already installed and will be reinstalled. Microphone settings are kept" },
+            { "Эффекты микрофонов вернутся к настройкам Windows", "Microphone effects will return to Windows settings" },
+            { "Установить", "Install" },
+            { "Переустановить", "Reinstall" },
+            { "Удалить", "Uninstall" },
+            { "Отмена", "Cancel" },
+            { "Закрыть", "Close" },
+            { "Не получилось", "Something went wrong" },
+            { "Noise Reduction удалён", "Noise Reduction was removed" },
+            { "Подготовка", "Preparing" },
+            { "Распаковка файлов", "Unpacking files" },
+            { "Замена файлов, звук Windows ненадолго прервётся", "Replacing files, Windows audio will pause briefly" },
+            { "Регистрация в Windows", "Registering with Windows" },
+            { "Установка эффекта для USB микрофонов", "Installing the effect for USB microphones" },
+            { "Отключение эффектов от микрофонов", "Detaching effects from microphones" },
+            { "Перезапуск звука Windows", "Restarting Windows audio" },
+            { "Удаление пакета эффекта", "Removing the effect package" },
+            { "Удаление файлов", "Removing files" },
             { "Модель", "Model" },
             { "Быстрая", "Fast" },
             { "Точная", "Precise" },
@@ -195,15 +240,25 @@ namespace NoiseReduction.Desktop
             { "Включите переключатель, Windows попросит подтверждение", "Turn on the switch, Windows will ask for confirmation" },
             { "Крестик оставляет программу в трее", "Closing the window keeps the app in the tray" }
         };
+        private static readonly Dictionary<string, Dictionary<string, string>> Tables = Translations.All(English);
         private static readonly List<string> MessageKeys = SortedKeys();
         private static List<string> SortedKeys()
         { var keys = new List<string>(English.Keys); keys.Sort((a, b) => b.Length.CompareTo(a.Length)); return keys; }
+        internal static bool RightToLeft { get { string id = EffectiveLanguage; return id == "ar" || id == "fa"; } }
+        // перевода нет, тогда английский, а русский исходник только для русского интерфейса
+        private static string Lookup(string language, string source)
+        {
+            Dictionary<string, string> table; string value;
+            if (Tables.TryGetValue(language, out table) && table.TryGetValue(source, out value) && !string.IsNullOrEmpty(value)) return value;
+            return English.TryGetValue(source, out value) ? value : source;
+        }
         internal static string Get(string source)
-        { string value; return EffectiveLanguage == "en" && English.TryGetValue(source, out value) ? value : source; }
+        { string language = EffectiveLanguage; return language == "ru" || source == null ? source : Lookup(language, source); }
         internal static string Message(string source)
         {
-            if (EffectiveLanguage != "en" || source == null) return source;
-            foreach (string key in MessageKeys) source = source.Replace(key, English[key]);
+            string language = EffectiveLanguage;
+            if (language == "ru" || source == null) return source;
+            foreach (string key in MessageKeys) if (source.Contains(key)) source = source.Replace(key, Lookup(language, key));
             return source;
         }
     }

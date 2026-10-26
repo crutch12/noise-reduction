@@ -89,10 +89,11 @@ namespace NoiseReduction.WinUI
             if (LanguagePicker.Items.Count == 0)
             {
                 LanguagePicker.Items.Add(new ComboBoxItem { Tag = "system" });
-                LanguagePicker.Items.Add(new ComboBoxItem { Content = "English", Tag = "en" });
-                LanguagePicker.Items.Add(new ComboBoxItem { Content = "Русский", Tag = "ru" });
+                for (int index = 0; index < Languages.Ids.Length; index++) LanguagePicker.Items.Add(new ComboBoxItem { Content = Languages.Names[index], Tag = Languages.Ids[index] });
             }
             ((ComboBoxItem)LanguagePicker.Items[0]).Content = T("Как в системе");
+            // арабский и персидский пишутся справа налево, заголовок окна остаётся как у Windows
+            WindowRoot.FlowDirection = UiText.RightToLeft ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
             Reselect(LanguagePicker);
             StartupLabel.Text = T("Запускать при входе в Windows");
             TrayHelp.Text = T("Закрытое окно остаётся в трее") + (NativeTray.HotkeyRegistered ? "\n" + T("Ctrl+Alt+N включает и выключает шумоподавление") : "");
@@ -161,7 +162,7 @@ namespace NoiseReduction.WinUI
                 StartupSwitch.IsOn = controller.StartupEnabled;
                 NewMicrophonesSwitch.IsOn = controller.EnableNewMicrophones;
                 NewMicrophonesSwitch.IsEnabled = !controller.Busy;
-                LanguagePicker.SelectedIndex = controller.Language == "en" ? 1 : controller.Language == "ru" ? 2 : 0;
+                LanguagePicker.SelectedIndex = Array.IndexOf(Languages.Ids, controller.Language) + 1;
                 WindowThemePicker.SelectedIndex = Math.Max(0, Array.IndexOf(ThemeIds, controller.WindowTheme));
                 TrayThemePicker.SelectedIndex = Math.Max(0, Array.IndexOf(ThemeIds, controller.TrayTheme));
                 ApplyTheme();

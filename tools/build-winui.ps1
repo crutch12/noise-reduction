@@ -21,6 +21,7 @@ foreach ($resource in @('NoiseReduction.pri', 'App.xbf', 'MainWindow.xbf', 'Tray
 }
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
 $engineSources = @('app-engine/Program.cs', 'app/Core.cs', 'app/SecureControl.cs', 'app/Comparison.cs', 'app/Localization.cs', 'platform/Integration.cs') | ForEach-Object { Join-Path $repoPath $_ }
+$engineSources += @(Get-ChildItem -LiteralPath (Join-Path $repoPath 'app/i18n') -Filter '*.cs' | ForEach-Object FullName)
 & $compiler /nologo /target:winexe /platform:x64 /optimize+ "/win32icon:$(Join-Path $repoPath 'app/assets/NoiseReduction.ico')" "/out:$output/NoiseReduction.Engine.exe" /r:System.Runtime.Serialization.dll /r:System.ServiceProcess.dll /r:System.Windows.Forms.dll $engineSources
 if ($LASTEXITCODE -ne 0) { throw 'Engine helper compilation failed' }
 Copy-Item -LiteralPath (Join-Path $repoPath 'app/NoiseReduction.exe.config') -Destination "$output/NoiseReduction.Engine.exe.config" -Force

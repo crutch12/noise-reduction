@@ -4,7 +4,7 @@ $repoRoot = Split-Path $PSScriptRoot -Parent
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
 $output = Join-Path $repoRoot 'dist/app'
 New-Item -ItemType Directory -Force $output | Out-Null
-$sources = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'app') -Filter '*.cs' | ForEach-Object FullName)
+$sources = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'app') -Filter '*.cs' | ForEach-Object FullName) + @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'app/i18n') -Filter '*.cs' | ForEach-Object FullName)
 $integration = @((Join-Path $repoRoot 'platform/Integration.cs'), (Join-Path $repoRoot 'platform/CaptureSessions.cs'))
 $icon = Join-Path $repoRoot 'app/assets/NoiseReduction.ico'
 $manifest = Join-Path $repoRoot 'app/NoiseReduction.manifest'
@@ -19,7 +19,7 @@ foreach ($library in @('NoiseReduction.Apo.dll', 'rnnoise.dll')) {
 if ($Test) {
     $testOutput = Join-Path $repoRoot '.local'
     New-Item -ItemType Directory -Force $testOutput | Out-Null
-    & $compiler /nologo /target:exe /platform:x64 "/out:$testOutput/CoreTests.exe" /r:System.Runtime.Serialization.dll (Join-Path $repoRoot 'app/Core.cs') (Join-Path $repoRoot 'app/SecureControl.cs') (Join-Path $repoRoot 'app/Comparison.cs') (Join-Path $repoRoot 'app/tests/CoreTests.cs') (Join-Path $repoRoot 'app/tests/SecurityTests.cs')
+    & $compiler /nologo /target:exe /platform:x64 "/out:$testOutput/CoreTests.exe" /r:System.Runtime.Serialization.dll (Join-Path $repoRoot 'app/Core.cs') (Join-Path $repoRoot 'app/SecureControl.cs') (Join-Path $repoRoot 'app/Comparison.cs') (Join-Path $repoRoot 'app/Localization.cs') @(Get-ChildItem -LiteralPath (Join-Path $repoRoot 'app/i18n') -Filter '*.cs' | ForEach-Object FullName) (Join-Path $repoRoot 'app/tests/CoreTests.cs') (Join-Path $repoRoot 'app/tests/SecurityTests.cs')
     if ($LASTEXITCODE -ne 0) { throw 'Test compilation failed' }
     & "$testOutput/CoreTests.exe"
     if ($LASTEXITCODE -ne 0) { throw 'App tests failed' }

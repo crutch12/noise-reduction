@@ -144,6 +144,7 @@ namespace NoiseReduction.WinUI
                 else if (rows.Count == 0 && renderedLanguage != controller.Language && MicrophoneRows.Children.FirstOrDefault() is TextBlock empty) empty.Text = T("Доступные микрофоны не найдены");
                 if (renderedLanguage != controller.Language)
                 {
+                    FlyoutRoot.FlowDirection = UiText.RightToLeft ? FlowDirection.RightToLeft : FlowDirection.LeftToRight;
                     GlobalLabel.Text = T("Шумоподавление");
                     Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(GlobalSwitch, T("Шумоподавление"));
                     SettingsLabel.Text = T("Настройки");

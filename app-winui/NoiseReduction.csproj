@@ -32,6 +32,7 @@
     <Compile Include="../app/SecureControl.cs" Link="Shared/SecureControl.cs" />
     <Compile Include="../app/Comparison.cs" Link="Shared/Comparison.cs" />
     <Compile Include="../app/Localization.cs" Link="Shared/Localization.cs" />
+    <Compile Include="../app/i18n/*.cs" LinkBase="Shared/i18n" />
     <Compile Include="../platform/Integration.cs" Link="Platform/Integration.cs" />
     <Compile Include="../platform/CaptureSessions.cs" Link="Platform/CaptureSessions.cs" />
     <Content Include="../app/assets/NoiseReduction.ico" Link="NoiseReduction.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />

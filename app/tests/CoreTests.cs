@@ -48,7 +48,7 @@ class CoreTests
             string path = Path.Combine(root, "settings.json");
             Settings settings = Settings.Load(path);
             Check(settings.Language == "system", "new settings follow system UI language");
-            Check(LanguagePreference.Resolve("system", "ru-RU") == "ru" && LanguagePreference.Resolve("system", "en-US") == "en" && LanguagePreference.Resolve("system", "de-DE") == "en", "system language resolves Russian or English fallback");
+            Check(LanguagePreference.Resolve("system", "ru-RU") == "ru" && LanguagePreference.Resolve("system", "en-US") == "en" && LanguagePreference.Resolve("system", "de-DE") == "de" && LanguagePreference.Resolve("system", "zh-CN") == "zh" && LanguagePreference.Resolve("system", "sw-KE") == "en", "system language resolves a supported language or English fallback");
             Check(LanguagePreference.Resolve("en", "ru-RU") == "en" && LanguagePreference.Resolve("ru", "en-US") == "ru", "explicit language overrides system UI language");
             Check(LanguagePreference.Normalize("invalid") == "system" && LanguagePreference.Resolve("system", "invalid-culture") == "en", "invalid language settings fall back safely");
             settings.Language = "en"; settings.Save(path);

@@ -44,10 +44,13 @@ $payload['payload-sha256.txt'] = $hashPath
 $setupPath = Join-Path $distPath 'NoiseReduction.Setup.exe'
 try { if (Test-Path -LiteralPath $setupPath) { [IO.File]::Open($setupPath, 'Open', 'ReadWrite', 'None').Dispose() } }
 catch { $setupPath = Join-Path $distPath ('NoiseReduction.Setup.' + (Get-Date -Format 'HHmmss') + '.exe'); Write-Warning "NoiseReduction.Setup.exe is in use, building $setupPath" }
-$arguments = @('/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/warnaserror+', '/r:System.Windows.Forms.dll', '/r:System.ServiceProcess.dll', '/r:Microsoft.CSharp.dll', "/win32icon:$(Join-Path $repoPath 'app/assets/NoiseReduction.ico')", "/win32manifest:$(Join-Path $repoPath 'installer/Setup.manifest')", "/out:$setupPath")
+$arguments = @('/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/warnaserror+', '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll', '/r:System.ServiceProcess.dll', '/r:Microsoft.CSharp.dll', "/win32icon:$(Join-Path $repoPath 'app/assets/NoiseReduction.ico')", "/win32manifest:$(Join-Path $repoPath 'installer/Setup.manifest')", "/out:$setupPath")
 foreach ($name in ($payload.Keys | Sort-Object)) { $arguments += "/resource:$($payload[$name]),payload.$name" }
 $arguments += Join-Path $repoPath 'platform/Integration.cs'
 $arguments += Join-Path $repoPath 'installer/Setup.cs'
+$arguments += Join-Path $repoPath 'installer/SetupWindow.cs'
+$arguments += Join-Path $repoPath 'app/Localization.cs'
+$arguments += @(Get-ChildItem -LiteralPath (Join-Path $repoPath 'app/i18n') -Filter '*.cs' | ForEach-Object FullName)
 $responsePath = Join-Path $buildPath 'setup.rsp'
 $arguments | ForEach-Object { '"' + $_ + '"' } | Set-Content -LiteralPath $responsePath -Encoding UTF8
 & $cscPath "@$responsePath"

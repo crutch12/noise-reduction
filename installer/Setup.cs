@@ -14,6 +14,7 @@ using System.Threading;
 using System.Security.AccessControl;
 using Microsoft.Win32;
 using NoiseReduction.Platform;
+using NoiseReduction.Desktop;
 
 [assembly: AssemblyTitle("NoiseReduction Setup")]
 [assembly: AssemblyVersion("1.1.0.0")]
@@ -26,6 +27,9 @@ public class InstallTransaction {
 class Setup {
  const string UninstallKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\NoiseReduction";
  static bool silent;
+ // шаги для окна установки, в тихом режиме никуда не выводятся
+ static Action<int,string> Step=delegate { };
+ static string T(string source) { return UiText.Get(source); }
  static string InstallRoot { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),"NoiseReduction"); } }
  static string Shortcut { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms),"Noise Reduction.lnk"); } }
  static string LegacyShortcut { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonPrograms),"NoiseReduction.lnk"); } }
@@ -148,6 +152,7 @@ class Setup {
   string stage=Path.Combine(directory,"stage-"+Guid.NewGuid().ToString("N")); Directory.CreateDirectory(stage);
   bool committed=false; string previousTransaction=RegistryEngine.CurrentTransactionId;
   try {
+   Step(10,T("Распаковка файлов"));
    Extract(stage); File.Copy(Assembly.GetExecutingAssembly().Location,SafeFile(stage,"NoiseReduction.Setup.exe"));
    File.WriteAllLines(SafeFile(stage,"installed-files.txt"),names.Where(n=>n!="installed-files.txt").Select(n=>n+"|"+Hash(SafeFile(stage,n))).ToArray());
    var state=new InstallTransaction { Id=Guid.NewGuid().ToString("N"),Version=3,Complete=true,OriginalRunningServices=new string[0],GraphRestoreRequired=owned.Contains("NoiseReduction.Apo.dll") && (!sandbox || services!=null),Files=names.Concat(obsolete).Select(name=>new InstallFileState { Name=name,Existed=File.Exists(SafeFile(directory,name)) }).ToArray(),EngineCheckpoint=new string[0],SetupCheckpoint=new string[0] };
@@ -157,10 +162,11 @@ class Setup {
    RegistryEngine.CurrentTransactionId=state.Id;
    Action replace=delegate {
     try {
+    Step(45,T("Замена файлов, звук Windows ненадолго прервётся"));
     if(!sandbox && state.GraphRestoreRequired) WaitForPayloadRelease(directory,names.Concat(obsolete),10000);
     foreach(var name in names) { string destination=PrepareFile(directory,name); if(File.Exists(destination)) File.Replace(SafeFile(stage,name),destination,SafeFile(directory,name+".nr-backup")); else File.Move(SafeFile(stage,name),destination); if(afterReplace!=null) afterReplace(name); }
     foreach(var name in obsolete) { string destination=SafeFile(directory,name),backup=SafeFile(directory,name+".nr-backup"); if(File.Exists(backup)) throw new IOException("An unfinished obsolete-file backup exists"); if(File.Exists(destination)) File.Move(destination,backup); if(afterReplace!=null) afterReplace(name); }
-   if(!sandbox) { Integration.RegisterEngine(directory);
+   if(!sandbox) { Step(65,T("Регистрация в Windows")); Integration.RegisterEngine(directory);
    using(var root=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64)) {
     var e=new RegistryEngine(root,Path.Combine(DataRoot,"SetupJournal")); e.Recover();
     e.Set(UninstallKey,"DisplayName","Noise Reduction",RegistryValueKind.String); e.Set(UninstallKey,"DisplayVersion","1.1.0",RegistryValueKind.String);
@@ -178,6 +184,7 @@ class Setup {
    else replace();
    state.Committed=true; PublishTransaction(transaction,state); committed=true; CleanupCommitted(directory,transaction,state);
    // пакет эффектов ставим после замены файлов, когда звук Windows снова запущен, без него остальное работает
+   if(!sandbox) Step(80,T("Установка эффекта для USB микрофонов"));
    if(!sandbox) try { EffectPack.Install(directory); } catch(Exception packError) { try { File.AppendAllText(Path.Combine(DataRoot,"setup-errors.log"),DateTime.UtcNow.ToString("o")+" effect pack: "+packError+Environment.NewLine); } catch { } }
   } catch {
    if(!committed) RecoverInstall(directory,transaction,sandbox,services,milliseconds);
@@ -188,10 +195,14 @@ class Setup {
   RecoverInstall(directory,SafeFile(directory,"install-transaction.txt"),sandbox);
   var names=ManifestFiles(directory);
   if(!sandbox) {
+  Step(10,T("Отключение эффектов от микрофонов"));
   bool hadEffects=Integration.EnumerateMicrophones().Any(device=>device.Attached);
   Integration.DetachAll();
+  Step(30,T("Перезапуск звука Windows"));
   if(hadEffects) Integration.RefreshAudioGraph();
+  Step(55,T("Удаление пакета эффекта"));
   EffectPack.Uninstall();
+  Step(75,T("Удаление файлов"));
   // процесс, запустивший удаление, и звук Windows отпускают файлы не мгновенно
   for(int attempt=0;;attempt++) { try { foreach(var name in names) { string file=SafeFile(directory,name); if(File.Exists(file)) using(var probe=new FileStream(file,FileMode.Open,FileAccess.ReadWrite,FileShare.None)) { } } break; } catch(IOException) { if(attempt>=30) break; Thread.Sleep(500); } }
   try { foreach(var name in names) { string file=SafeFile(directory,name); if(File.Exists(file)) using(var probe=new FileStream(file,FileMode.Open,FileAccess.ReadWrite,FileShare.None)) { } } } catch(IOException ex) { throw new IOException("Microphone effects were detached. Close NoiseReduction and other microphone applications, then retry uninstall",ex); }
@@ -326,6 +337,12 @@ class Setup {
   }
  }
  // explorer запускает программу без повышенных прав, как обычный ярлык
+ const string RunKey=@"Software\Microsoft\Windows\CurrentVersion\Run";
+ static string StartupValue() { using(var key=Registry.CurrentUser.OpenSubKey(RunKey)) return key==null ? null : key.GetValue("NoiseReduction") as string; }
+ // автозапуск того же вида, что ставит сама программа
+ static void SetStartup(bool enabled) {
+  using(var key=Registry.CurrentUser.CreateSubKey(RunKey)) { if(enabled) key.SetValue("NoiseReduction","\""+Path.Combine(InstallRoot,"NoiseReduction.exe")+"\" --tray"); else key.DeleteValue("NoiseReduction",false); }
+ }
  static void StartApp() {
   string target=Path.Combine(InstallRoot,"NoiseReduction.exe");
   if(File.Exists(target)) try { using(Process.Start(new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),"explorer.exe"),"\""+target+"\""))) { } } catch(Exception) { }
@@ -338,19 +355,34 @@ class Setup {
    if(!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator)) { var elevated=Process.Start(new ProcessStartInfo(Assembly.GetExecutingAssembly().Location,String.Join(" ",args.Select(a=>"\""+a+"\""))) { UseShellExecute=true,Verb="runas" }); elevated.WaitForExit(); return elevated.ExitCode; }
    RequireAdmin();
    if(args.Contains("--uninstall-worker")) { int index=Array.IndexOf(args,"--uninstall-worker"); int pid=Int32.Parse(args[index+1]); try { using(var parent=Process.GetProcessById(pid)) if(!parent.WaitForExit(30000)) throw new IOException("Original setup process did not exit"); } catch(ArgumentException) { } }
-   // спрашиваем до блокировки, иначе ожидающее окно мешает подключать микрофоны
    bool remove=args.Contains("--uninstall") || args.Contains("--uninstall-worker");
-   if(!silent && !args.Contains("--uninstall-worker") && MessageBox.Show(remove?"Remove Noise Reduction and restore microphone effects?":"Install Noise Reduction? Windows audio protections will remain enabled", "Noise Reduction",MessageBoxButtons.OKCancel,MessageBoxIcon.Question)!=DialogResult.OK) return 1;
-   using(var operation = new Integration.OperationLease()) {
+   bool worker=args.Contains("--uninstall-worker");
+   // установленная копия не может удалить сама себя, удаление продолжает её временная копия
    if(args.Contains("--uninstall") && String.Equals(Path.GetFullPath(Assembly.GetExecutingAssembly().Location),Path.Combine(InstallRoot,"NoiseReduction.Setup.exe"),StringComparison.OrdinalIgnoreCase)) {
-    string temp=StageUninstallWorker();
-    var process=Process.Start(new ProcessStartInfo(temp,"--uninstall-worker "+Process.GetCurrentProcess().Id+" --silent") {UseShellExecute=false,CreateNoWindow=true}); if(process==null) throw new IOException("Cannot launch uninstall worker"); return 0;
+    Action<Action<int,string>> handOff=delegate {
+     using(var operation = new Integration.OperationLease()) {
+      string temp=StageUninstallWorker();
+      var process=Process.Start(new ProcessStartInfo(temp,"--uninstall-worker "+Process.GetCurrentProcess().Id+(silent?" --silent":"")) {UseShellExecute=false,CreateNoWindow=true}); if(process==null) throw new IOException("Cannot launch uninstall worker");
+     }
+    };
+    if(silent) { handOff(delegate { }); return 0; }
+    return SetupWindow.Run(T("Удаление Noise Reduction"),T("Эффекты микрофонов вернутся к настройкам Windows"),T("Удалить"),true,null,handOff) ? 0 : 1;
    }
-   if(args.Contains("--uninstall-worker")) { StopApp(); Uninstall(InstallRoot,false); }
-   else if(remove) { StopApp(); Uninstall(InstallRoot,false); } else { StopApp(); Install(InstallRoot,false); }
-   if(remove) { if(!silent) MessageBox.Show("Noise Reduction was removed","Noise Reduction",MessageBoxButtons.OK,MessageBoxIcon.Information); }
-   else StartApp();
-   return 0; }
+   Action<Action<int,string>> work=report => {
+    Step=report;
+    using(var operation = new Integration.OperationLease()) { StopApp(); if(remove) Uninstall(InstallRoot,false); else Install(InstallRoot,false); }
+   };
+   if(silent) work(delegate { });
+   else if(remove) { if(!SetupWindow.Run(T("Удаление Noise Reduction"),T("Эффекты микрофонов вернутся к настройкам Windows"),T("Удалить"),!worker,T("Noise Reduction удалён"),work)) return 1; }
+   else {
+    bool installed=File.Exists(Path.Combine(InstallRoot,"NoiseReduction.exe"));
+    string heading=installed?T("Переустановка Noise Reduction"):T("Установка Noise Reduction");
+    string question=installed?T("Noise Reduction уже установлен и будет переустановлен. Настройки микрофонов сохранятся"):T("Шумоподавление для всех микрофонов в любых программах. Защита звука Windows остаётся включённой");
+    bool startup=!installed || StartupValue()!=null;
+    if(!SetupWindow.Run(heading,question,installed?T("Переустановить"):T("Установить"),true,null,T("Запускать при входе в Windows"),startup,report => { work(report); SetStartup(SetupWindow.OptionChecked); })) return 1;
+   }
+   if(!remove) StartApp();
+   return 0;
   } catch(Exception ex) { Console.Error.WriteLine(args.Contains("--self-test") ? ex.ToString() : ex.Message); try { if(!args.Contains("--self-test") && !args.Contains("--extract")) { Directory.CreateDirectory(DataRoot); File.AppendAllText(Path.Combine(DataRoot,"setup-errors.log"),DateTime.UtcNow.ToString("o")+" "+ex+Environment.NewLine); } } catch { } if(!silent) MessageBox.Show(ex.Message,"Noise Reduction setup",MessageBoxButtons.OK,MessageBoxIcon.Error); return 2; }
  }
 }
