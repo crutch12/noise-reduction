@@ -1,4 +1,5 @@
 #include "resampler.h"
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -32,7 +33,7 @@ int main() {
                 double ss = 0, sc = 0, cc = 0, ys = 0, yc = 0;
                 const double w = 2 * pi * tone / rate;
                 for (size_t i = rate / 2; i < total; ++i) { double s = std::sin(w * i), c = std::cos(w * i); ss += s * s; sc += s * c; cc += c * c; ys += output[i] * s; yc += output[i] * c; }
-                const double det = ss * cc - sc * sc, a = (ys * cc - yc * sc) / det, b = (yc * ss - ys * sc) / det;
+                const double det = std::max(ss * cc - sc * sc, 1e-12), a = (ys * cc - yc * sc) / det, b = (yc * ss - ys * sc) / det;
                 double error = 0, power = 0;
                 for (size_t i = rate / 2; i < total; ++i) { double fit = a * std::sin(w * i) + b * std::cos(w * i); error += (output[i] - fit) * (output[i] - fit); power += fit * fit; }
                 const double amplitude = std::sqrt(a * a + b * b), db = 10 * std::log10(error / power + 1e-20);
