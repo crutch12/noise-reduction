@@ -182,6 +182,7 @@ namespace NoiseReduction.Desktop
             { "Включение…", "Turning on…" },
             { "Шумоподавление не встроено в Windows", "Noise reduction isn't set up in Windows" },
             { "В Windows выключены улучшения звука", "Audio enhancements are off in Windows" },
+            { "Параметры Windows", "Windows Settings" },
             { "Программы получают звук без обработки. Нажмите Включить, Windows попросит подтверждение", "Apps get unprocessed audio. Click Turn on, Windows will ask for confirmation" },
             { "Подтвердите запрос Windows, звук прервётся на пару секунд", "Confirm the Windows prompt, audio pauses for a couple of seconds" },
             { "Включите переключатель, Windows попросит подтверждение", "Turn on the switch, Windows will ask for confirmation" },

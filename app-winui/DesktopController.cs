@@ -251,9 +251,19 @@ namespace NoiseReduction.WinUI
                 case "ms-teams": return "Teams";
                 case "zoom": return "Zoom";
                 case "soundrecorder": case "voicerecorder": return UiText.Get("Запись звука");
+                case "systemsettings": return UiText.Get("Параметры Windows");
             }
-            return name.Length > 0 ? char.ToUpperInvariant(name[0]) + name.Substring(1) : name;
+            if (!descriptions.TryGetValue(name, out var title))
+            {
+                // у процесса без доступа описание не прочитать, тогда остаётся имя файла
+                try { using var process = Process.GetProcessById((int)session.ProcessId); title = process.MainModule?.FileVersionInfo.FileDescription?.Trim(); }
+                catch (Exception) { title = null; }
+                if (string.IsNullOrEmpty(title) || title.Length > 32) title = name.Length > 0 ? char.ToUpperInvariant(name[0]) + name.Substring(1) : name;
+                descriptions[name] = title;
+            }
+            return title;
         }
+        private static readonly Dictionary<string, string> descriptions = new(StringComparer.OrdinalIgnoreCase);
 
         private void ApplyControls(bool bypass)
         {
