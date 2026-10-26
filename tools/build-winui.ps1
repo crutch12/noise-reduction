@@ -1,7 +1,9 @@
 $ErrorActionPreference = 'Stop'
 $repoPath = Split-Path -Parent $PSScriptRoot
+# .NET из .local у разработчика, иначе установленный в системе, как на машинах GitHub
 $dotnet = Join-Path $repoPath '.local/dotnet/dotnet.exe'
-if (!(Test-Path -LiteralPath $dotnet)) { throw 'Install the .NET 10 SDK in .local/dotnet or configure this build to use an installed SDK' }
+if (!(Test-Path -LiteralPath $dotnet)) { $dotnet = (Get-Command dotnet -ErrorAction SilentlyContinue).Source }
+if (!$dotnet) { throw 'Install the .NET 10 SDK in .local/dotnet or system wide' }
 $env:DOTNET_GENERATE_ASPNET_CERTIFICATE = 'false'
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
 $env:DOTNET_NOLOGO = '1'

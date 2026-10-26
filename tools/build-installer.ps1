@@ -1,5 +1,7 @@
+param([switch]$PackReady)
 $ErrorActionPreference = 'Stop'
 $repoPath = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'vs.ps1')
 $cscPath = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
 $buildPath = Join-Path $repoPath 'build'
 $distPath = Join-Path $repoPath 'dist/setup'
@@ -22,16 +24,16 @@ foreach ($required in @('NoiseReduction.exe', 'NoiseReduction.dll', 'NoiseReduct
     if (-not $payload.ContainsKey($required)) { throw "Missing WinUI package input: $required" }
 }
 # пакет эффектов для микрофонов под пакетами Windows, подписан при сборке
-& (Join-Path $repoPath 'tools/build-pack.ps1') | Out-Null
+# готовый подписанный пакет из CI не пересобираем
+if (-not $PackReady) { & (Join-Path $repoPath 'tools/build-pack.ps1') | Out-Null }
 foreach ($file in Get-ChildItem -LiteralPath (Join-Path $buildPath 'pack') -File) { $payload["Pack/$($file.Name)"] = $file.FullName }
 $payload['NoiseReduction.Apo.dll'] = Join-Path $buildPath 'NoiseReduction.Apo.dll'
 $payload['rnnoise.dll'] = Join-Path $buildPath 'rnnoise.dll'
 $payload['nr_deepfilter.dll'] = Join-Path $buildPath 'nr_deepfilter.dll'
 if ((Get-FileHash -LiteralPath $payload['rnnoise.dll'] -Algorithm SHA256).Hash.ToLowerInvariant() -ne '06770aeb8855ef942b5dcdb436f84dfdd5867b716ba4b4c8a2c66ade03197f31') { throw 'RNNoise DLL differs from the licensed pyrnnoise 0.4.5 payload; update provenance and notices before packaging' }
-$redistPath = Get-ChildItem 'C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Redist/MSVC' -Directory | Where-Object Name -Match '^14\.' | Sort-Object Name -Descending | Select-Object -First 1
-if (-not $redistPath) { throw 'MSVC x64 redistributable directory is missing' }
+$redistPath = Get-RedistPath
 foreach ($name in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
-    $payload[$name] = Join-Path $redistPath.FullName "x64/Microsoft.VC143.CRT/$name"
+    $payload[$name] = Join-Path $redistPath $name
 }
 Get-ChildItem (Join-Path $repoPath 'installer/licenses') -File | ForEach-Object { $payload[$_.Name] = $_.FullName }
 $payload['THIRD-PARTY-NOTICES.txt'] = Join-Path $repoPath 'installer/THIRD-PARTY-NOTICES.txt'

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath artifact configuration "catalog": the Windows audio effect pack driver catalog -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <catalog-file path="NoiseReductionPack.cat">
+      <authenticode-sign/>
+    </catalog-file>
+  </zip-file>
+</artifact-configuration>

@@ -25,7 +25,7 @@ namespace NoiseReduction.Platform {
   // браузеры пишут в режиме RAW, мессенджеры в режиме связи; без этих режимов Windows пропускает эффект
   internal static readonly string[] StreamingModes = { DefaultMode, "{98951333-B9CD-48B1-A0A3-FF40682D73F7}", "{FC1CFC9B-B9D6-4CFA-B5E0-4BB2166878B2}", "{9E90EA20-B493-4FD1-A1A8-7E1361A956CF}" };
   const string Capture = @"SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio\Capture";
-  static string DataRoot { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "NoiseReduction"); } }
+  internal static string DataRoot { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "NoiseReduction"); } }
   public static string ControlRoot { get { return Path.Combine(DataRoot, "Endpoints"); } }
   public sealed class OperationLease : IDisposable {
    readonly Mutex mutex;
@@ -218,14 +218,19 @@ namespace NoiseReduction.Platform {
   }
   public static void Install(string directory) {
    string pack = Path.Combine(directory, "Pack");
-   if(!File.Exists(Path.Combine(pack, "NoiseReductionPack.cer"))) return;
-   var certificate = new X509Certificate2(Path.Combine(pack, "NoiseReductionPack.cer"));
-   foreach(var name in new[] { StoreName.Root, StoreName.TrustedPublisher }) {
-    var store = new X509Store(name, StoreLocation.LocalMachine);
-    store.Open(OpenFlags.ReadWrite);
-    try { foreach(var old in store.Certificates.Cast<X509Certificate2>().Where(c => c.Subject == Subject && c.Thumbprint != certificate.Thumbprint).ToArray()) store.Remove(old); store.Add(certificate); }
-    finally { store.Close(); }
+   string catalog = Path.Combine(pack, "NoiseReductionPack.cat");
+   if(!File.Exists(catalog)) return;
+   if(File.Exists(Path.Combine(pack, "NoiseReductionPack.cer"))) {
+    // сборка для разработки: временный сертификат без цепочки доверия
+    var certificate = new X509Certificate2(Path.Combine(pack, "NoiseReductionPack.cer"));
+    foreach(var name in new[] { StoreName.Root, StoreName.TrustedPublisher }) {
+     var store = new X509Store(name, StoreLocation.LocalMachine);
+     store.Open(OpenFlags.ReadWrite);
+     try { foreach(var old in store.Certificates.Cast<X509Certificate2>().Where(c => c.Subject == Subject && c.Thumbprint != certificate.Thumbprint).ToArray()) store.Remove(old); store.Add(certificate); }
+     finally { store.Close(); }
+    }
    }
+   else TrustPublisher(new X509Certificate2(X509Certificate.CreateFromSignedFile(catalog)));
    // переустановка пакета сбрасывает выбор в микрофонах, после неё выбираем пакет заново
    var selected = Integration.EnumerateMicrophones().Where(device => device.EffectPack && device.Attached).Select(device => device.Id).ToList();
    // прежние версии пакета снимаем, иначе они копятся в хранилище драйверов
@@ -239,8 +244,28 @@ namespace NoiseReduction.Platform {
    // выбор применяется при сборке звукового графа, как при обычном включении
    Integration.RefreshAudioGraph();
   }
+  // подписанный выпуск уже доверен через корневой центр, издателя добавляем, только чтобы Windows ставила пакет без вопроса,
+  // и запоминаем, что добавили именно мы, чтобы при удалении не тронуть чужое доверие
+  static string TrustMarker { get { return Path.Combine(Integration.DataRoot, "trusted-publisher.txt"); } }
+  static void TrustPublisher(X509Certificate2 certificate) {
+   var store = new X509Store(StoreName.TrustedPublisher, StoreLocation.LocalMachine);
+   store.Open(OpenFlags.ReadWrite);
+   try {
+    if(store.Certificates.Find(X509FindType.FindByThumbprint, certificate.Thumbprint, false).Count > 0) return;
+    store.Add(certificate);
+    File.WriteAllText(TrustMarker, certificate.Thumbprint);
+   } finally { store.Close(); }
+  }
   public static void Uninstall() {
    foreach(var published in Published()) PnpUtil("/delete-driver " + published + " /uninstall");
+   if(File.Exists(TrustMarker)) {
+    string thumbprint = File.ReadAllText(TrustMarker).Trim();
+    var publishers = new X509Store(StoreName.TrustedPublisher, StoreLocation.LocalMachine);
+    publishers.Open(OpenFlags.ReadWrite);
+    try { foreach(var added in publishers.Certificates.Find(X509FindType.FindByThumbprint, thumbprint, false).Cast<X509Certificate2>().ToArray()) publishers.Remove(added); }
+    finally { publishers.Close(); }
+    File.Delete(TrustMarker);
+   }
    foreach(var name in new[] { StoreName.Root, StoreName.TrustedPublisher }) {
     var store = new X509Store(name, StoreLocation.LocalMachine);
     store.Open(OpenFlags.ReadWrite);

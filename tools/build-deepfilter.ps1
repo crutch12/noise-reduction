@@ -2,10 +2,10 @@ $ErrorActionPreference = 'Stop'
 $repoPath = Split-Path -Parent $PSScriptRoot
 $labPath = Join-Path $repoPath '.local'
 # Rust ставится в .local через rustup-init, как и остальные инструменты сборки
-$env:RUSTUP_HOME = Join-Path $labPath 'rustup'
-$env:CARGO_HOME = Join-Path $labPath 'cargo'
-$cargo = Join-Path $env:CARGO_HOME 'bin/cargo.exe'
-if (-not (Test-Path -LiteralPath $cargo)) { throw 'Install Rust into .local with rustup-init -y --profile minimal --no-modify-path' }
+$cargo = Join-Path $labPath 'cargo/bin/cargo.exe'
+if (Test-Path -LiteralPath $cargo) { $env:RUSTUP_HOME = Join-Path $labPath 'rustup'; $env:CARGO_HOME = Join-Path $labPath 'cargo' }
+else { $cargo = (Get-Command cargo -ErrorAction SilentlyContinue).Source }
+if (-not $cargo) { throw 'Install Rust into .local with rustup-init -y --profile minimal --no-modify-path, or system wide' }
 $crate = Join-Path $repoPath 'native/deepfilter'
 & $cargo build --release --locked --manifest-path (Join-Path $crate 'Cargo.toml')
 if ($LASTEXITCODE -ne 0) { throw 'DeepFilterNet build failed' }

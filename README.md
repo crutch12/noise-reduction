@@ -107,3 +107,21 @@ RAW/exclusive/ASIO и частоты кроме 48 кГц не подтверж�
 - [Windows APO](https://learn.microsoft.com/en-us/windows-hardware/drivers/audio/implementing-audio-processing-objects)
 
 Лицензии компонентов включены в установщик
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org)
+
+- Releases are built from this repository by GitHub Actions ([build.yml](.github/workflows/build.yml)) and signed only after manual approval
+- Signed are our own binaries (NoiseReduction.exe, NoiseReduction.dll, NoiseReduction.Engine.exe, NoiseReduction.Apo.dll, nr_deepfilter.dll), the effect pack driver catalog and the installer. Third party files (.NET, Windows App SDK, MSVC runtime, rnnoise.dll) are shipped as published by their authors
+- Artifact configurations: [docs/signing](docs/signing)
+- Committers and reviewers: [crutch12](https://github.com/crutch12)
+- Approvers: [crutch12](https://github.com/crutch12)
+
+### Privacy
+
+This program will not transfer any information to other networked systems. Microphone audio is processed locally and test recordings stay in a temporary folder until the app closes
+
+## License
+
+[MIT](LICENSE). Third party components keep their own licenses, see [installer/THIRD-PARTY-NOTICES.txt](installer/THIRD-PARTY-NOTICES.txt)
