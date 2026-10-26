@@ -19,7 +19,7 @@ namespace NoiseReduction.WinUI
     {
         private readonly DesktopController controller;
         private readonly List<MicrophoneCard> cards = new List<MicrophoneCard>();
-        private bool updating, dismissed;
+        private bool updating, dismissed, reopened;
         private string renderedLanguage;
         private string localError;
         [DllImport("user32.dll")] private static extern uint GetDpiForWindow(IntPtr window);
@@ -43,10 +43,17 @@ namespace NoiseReduction.WinUI
                 presenter.PreferredMinimumWidth = 440 * dpi / 96;
                 presenter.PreferredMinimumHeight = 420 * dpi / 96;
             }
+            // окно только прячем: WinUI не отдаёт память закрытых окон, и каждое новое добавляло бы мегабайты
             AppWindow.Closing += (_, args) =>
             {
                 if (App.CurrentApp.Exiting) return;
                 args.Cancel = true; AppWindow.Hide(); controller.WatchUsage = false;
+                // скрытое окно ничего не рисует, а при открытии выглядит как новое: начало списка, всё свёрнуто, без старой записи
+                foreach (var card in cards) { card.Release(); card.ResetView(); }
+                SettingsScroll.ChangeView(null, 0, null, true);
+                ErrorBar.IsOpen = false; dismissed = false; localError = null;
+                reopened = true;
+                controller.ForgetRecording();
             };
             controller.Changed += ControllerChanged;
             Render();
@@ -61,8 +68,11 @@ namespace NoiseReduction.WinUI
             // фокус без рамки, иначе Windows сразу подсвечивает первый переключатель
             DispatcherQueue.TryEnqueue(() => FocusSink.Focus(FocusState.Programmatic));
             controller.WatchUsage = true;
+            bool fresh = reopened; reopened = false;
+            if (fresh) controller.Refresh();
             _ = controller.ScanUsageAsync();
             Render();
+            if (fresh) ExpandDefault();
         }
 
         private static string UninstallerPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "NoiseReduction", "NoiseReduction.Setup.exe");
@@ -146,6 +156,13 @@ namespace NoiseReduction.WinUI
             if (Content is FrameworkElement root) root.RequestedTheme = controller.WindowTheme == "light" ? ElementTheme.Light : controller.WindowTheme == "dark" ? ElementTheme.Dark : ElementTheme.Default;
         }
 
+        // раскрыт микрофон по умолчанию, остальные свёрнуты
+        private void ExpandDefault()
+        {
+            var expand = cards.FirstOrDefault(card => card.Id == controller.DefaultId) ?? cards.FirstOrDefault();
+            if (expand != null) expand.View.IsExpanded = true;
+        }
+
         private void Render()
         {
             updating = true;
@@ -161,8 +178,7 @@ namespace NoiseReduction.WinUI
                         if (!previous.TryGetValue(id, out var card)) { card = new MicrophoneCard(controller, id, Run); card.Localize(); }
                         cards.Add(card); MicrophoneList.Children.Add(card.View);
                     }
-                    var expand = cards.FirstOrDefault(card => card.Id == controller.DefaultId) ?? cards.FirstOrDefault();
-                    if (expand != null && previous.Count == 0) expand.View.IsExpanded = true;
+                    if (previous.Count == 0) ExpandDefault();
                 }
                 if (renderedLanguage != controller.Language) Localize();
                 EmptyText.Visibility = cards.Count == 0 ? Visibility.Visible : Visibility.Collapsed;

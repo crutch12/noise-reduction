@@ -44,7 +44,7 @@ namespace NoiseReduction.WinUI
             listener = ThreadPool.RegisterWaitForSingleObject(activate, delegate
             {
                 var app = App.CurrentApp;
-                if (app != null && app.Window != null) app.Window.DispatcherQueue.TryEnqueue(delegate { app.Window.Reveal(); });
+                if (app != null && app.Dispatcher != null) app.Dispatcher.TryEnqueue(app.ShowSettings);
             }, null, Timeout.Infinite, false);
         }
     }

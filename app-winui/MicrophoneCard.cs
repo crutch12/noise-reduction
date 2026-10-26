@@ -69,12 +69,7 @@ namespace NoiseReduction.WinUI
             var advancedContent = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
             advancedContent.Children.Add(advancedLabel); advancedContent.Children.Add(advancedChevron);
             advanced.Content = advancedContent;
-            advanced.Click += (_, _) =>
-            {
-                bool open = extra.Visibility != Visibility.Visible;
-                extra.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
-                advancedChevron.Glyph = open ? "" : "";
-            };
+            advanced.Click += (_, _) => SetAdvanced(extra.Visibility != Visibility.Visible);
 
             var models = new Grid { ColumnSpacing = 4 };
             models.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -163,6 +158,23 @@ namespace NoiseReduction.WinUI
         {
             ToolTipService.SetToolTip(control, T(text));
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(control, T(text));
+        }
+
+        private void SetAdvanced(bool open)
+        {
+            extra.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+            advancedChevron.Glyph = open ? "" : "";
+        }
+
+        // волна подписана на каждый кадр, закрытое окно её отпускает
+        internal void Release() => waveform.Hide();
+
+        // закрытое окно открывается как новое: всё свёрнуто, своя сила не раскрыта
+        internal void ResetView()
+        {
+            View.IsExpanded = false;
+            SetAdvanced(false);
+            presets.CustomOpen = false;
         }
 
         internal void Update()

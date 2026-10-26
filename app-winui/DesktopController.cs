@@ -45,6 +45,8 @@ namespace NoiseReduction.WinUI
         private readonly DesktopState state = new DesktopState();
         private MediaPlayer original, processed;
         private volatile bool stopRequested;
+        private bool discardRecording;
+        private DeviceEvents deviceEvents;
         private readonly List<float> livePeaks = new List<float>();
         private float bucketPeak;
         private int bucketCount;
@@ -107,6 +109,9 @@ namespace NoiseReduction.WinUI
             timer.Interval = TimeSpan.FromSeconds(1);
             timer.Tick += Tick;
             timer.Start();
+            // без подписки остаётся обычный опрос раз в несколько секунд
+            try { deviceEvents = new DeviceEvents(dispatcher, () => { if (!disposed) Refresh(); }); }
+            catch (Exception) { deviceEvents = null; }
         }
 
         private void Tick(DispatcherQueueTimer sender, object args)
@@ -341,7 +346,7 @@ namespace NoiseReduction.WinUI
             int attenuation = Attenuation(id);
             bool deepFilter = DeepFilter(id);
             StopPlayback(); state.CaptureEndpoint = id; comparisonId = null; Error = null;
-            stopRequested = false; RecordingStarted = DateTime.UtcNow;
+            stopRequested = false; discardRecording = false; RecordingStarted = DateTime.UtcNow;
             lock (livePeaks) livePeaks.Clear();
             bucketPeak = 0; bucketCount = 0; OriginalPeaks = ProcessedPeaks = null;
             string directory = Path.Combine(Path.GetTempPath(), "NoiseReduction-" + Guid.NewGuid().ToString("N"));
@@ -350,7 +355,7 @@ namespace NoiseReduction.WinUI
             {
                 Directory.CreateDirectory(directory); ApplyControls(false);
                 var result = await Task.Run(() => Comparison.Create(id, directory, attenuation, () => stopRequested, Collect, deepFilter));
-                if (disposed) { DeleteRecording(directory); return; }
+                if (disposed || discardRecording) { notes.Remove(id); DeleteRecording(directory); return; }
                 OriginalPeaks = Peaks(result[0], 240); ProcessedPeaks = Peaks(result[1], 240);
                 DeleteRecording(recordingDirectory); recordingDirectory = directory; comparisonId = id;
                 recordedSamples = result[0]; processedName = "processed.wav"; reprocessVersion++;
@@ -364,6 +369,18 @@ namespace NoiseReduction.WinUI
             }
         }
         public void StopRecording() { stopRequested = true; }
+
+        // закрытое окно забывает проверку: запись, прослушивание и файлы
+        public void ForgetRecording()
+        {
+            if (disposed) return;
+            if (RecordingId != null) { discardRecording = true; stopRequested = true; }
+            StopPlayback();
+            reprocessVersion++;
+            DeleteRecording(recordingDirectory); recordingDirectory = null; comparisonId = null; recordedSamples = null;
+            OriginalPeaks = ProcessedPeaks = null;
+            Notify();
+        }
 
         // новая сила или модель сразу применяются к готовой записи, прослушивание продолжается с того же места
         private async void Reprocess(string id)
@@ -481,6 +498,7 @@ namespace NoiseReduction.WinUI
         {
             if (disposed) return;
             timer.Stop(); timer.Tick -= Tick;
+            try { deviceEvents?.Dispose(); } catch (Exception) { }
             try { ApplyControls(true); }
             finally
             {

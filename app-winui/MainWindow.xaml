@@ -16,7 +16,7 @@
                 <TextBlock Text="Noise Reduction" Style="{ThemeResource CaptionTextBlockStyle}" VerticalAlignment="Center" />
             </StackPanel>
         </Grid>
-        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+        <ScrollViewer x:Name="SettingsScroll" Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
             <!-- средняя колонка не шире 760, крайние делят остаток поровну, контент всегда по центру -->
             <Grid>
                 <Grid.ColumnDefinitions>

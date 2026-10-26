@@ -54,6 +54,9 @@ namespace NoiseReduction.Platform {
   internal static string EndpointGuid(string id) { int start = id.LastIndexOf('{'); Guid guid; if(start < 0 || !Guid.TryParse(id.Substring(start), out guid)) throw new ArgumentException("Invalid capture endpoint ID"); return guid.ToString("B"); }
   static string Fx(string id) { return Capture + "\\" + EndpointGuid(id) + "\\FxProperties"; }
   static string Properties(string id) { return Capture + "\\" + EndpointGuid(id) + "\\Properties"; }
+  // подписка на события микрофонов через тот же перечислитель, иначе .NET путает обёртки одного COM-объекта
+  public static object WatchEndpoints(IntPtr client) { var enumerator=(IMMDeviceEnumerator)new MMDeviceEnumerator(); Marshal.ThrowExceptionForHR(enumerator.RegisterEndpointNotificationCallback(client)); return enumerator; }
+  public static void StopWatchingEndpoints(object enumerator,IntPtr client) { ((IMMDeviceEnumerator)enumerator).UnregisterEndpointNotificationCallback(client); }
   public static string GetDefaultMicrophoneId() {
    var enumerator=(IMMDeviceEnumerator)new MMDeviceEnumerator(); IMMDevice device=null;
    try {
@@ -522,7 +525,7 @@ namespace NoiseReduction.Platform {
  [StructLayout(LayoutKind.Sequential)] struct PropertyKey { public Guid Format; public uint Id; public PropertyKey(Guid format,uint id){Format=format;Id=id;} }
  [StructLayout(LayoutKind.Explicit,Size=24)] struct PropVariant { [FieldOffset(0)] public ushort Type; [FieldOffset(8)] public IntPtr Pointer; [FieldOffset(8)] public int Size; [FieldOffset(16)] public IntPtr Data; }
  [ComImport,Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDeviceEnumerator { }
- [ComImport,Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] interface IMMDeviceEnumerator { [PreserveSig]int EnumAudioEndpoints(int flow,uint mask,out IMMDeviceCollection devices); [PreserveSig]int GetDefaultAudioEndpoint(int flow,int role,out IMMDevice device); [PreserveSig]int GetDevice([MarshalAs(UnmanagedType.LPWStr)]string id,out IMMDevice device); }
+ [ComImport,Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] interface IMMDeviceEnumerator { [PreserveSig]int EnumAudioEndpoints(int flow,uint mask,out IMMDeviceCollection devices); [PreserveSig]int GetDefaultAudioEndpoint(int flow,int role,out IMMDevice device); [PreserveSig]int GetDevice([MarshalAs(UnmanagedType.LPWStr)]string id,out IMMDevice device); [PreserveSig]int RegisterEndpointNotificationCallback(IntPtr client); [PreserveSig]int UnregisterEndpointNotificationCallback(IntPtr client); }
  [ComImport,Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] interface IMMDeviceCollection { [PreserveSig]int GetCount(out uint count); [PreserveSig]int Item(uint index,out IMMDevice device); }
  [ComImport,Guid("D666063F-1587-4E43-81F1-B948E807363F"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] interface IMMDevice { [PreserveSig]int Activate(ref Guid iid,uint context,IntPtr parameters,[MarshalAs(UnmanagedType.IUnknown)]out object instance); [PreserveSig]int OpenPropertyStore(uint mode,out IPropertyStore store); [PreserveSig]int GetId([MarshalAs(UnmanagedType.LPWStr)]out string id); [PreserveSig]int GetState(out uint state); }
  [ComImport,Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"),InterfaceType(ComInterfaceType.InterfaceIsIUnknown)] interface IPropertyStore { int GetCount(out uint count); int GetAt(uint index,out PropertyKey key); [PreserveSig]int GetValue(ref PropertyKey key,out PropVariant value); int SetValue(ref PropertyKey key,ref PropVariant value); int Commit(); }
