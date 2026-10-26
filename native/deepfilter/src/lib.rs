@@ -25,8 +25,9 @@ pub extern "C" fn nr_df_get_frame_size() -> i32 {
 #[no_mangle]
 pub extern "C" fn nr_df_create(_model: *mut c_void) -> *mut State {
     catch_unwind(|| {
-        // предел ослабления снят, силу подавления задаёт сам эффект смешиванием с исходным звуком
-        let params = RuntimeParams::default_with_ch(1).with_atten_lim(100.0);
+        // предел ослабления снят, силу подавления задаёт сам эффект смешиванием с исходным звуком;
+        // пороги как в утилите deep-filter: с порогами библиотеки модель посреди речи то включает, то пропускает шаги и звук булькает
+        let params = RuntimeParams::default_with_ch(1).with_atten_lim(100.0).with_thresholds(-15.0, 35.0, 35.0);
         let model = DfTract::new(DfParams::default(), &params).ok()?;
         if model.hop_size != FRAME || model.sr != 48000 {
             return None;
