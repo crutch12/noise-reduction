@@ -16,17 +16,19 @@ for ($directory = New-Object IO.DirectoryInfo($output); $directory -ne $null; $d
 }
 if (Test-Path -LiteralPath $output) { Remove-Item -LiteralPath $output -Recurse -Force }
 . (Join-Path $PSScriptRoot 'version.ps1')
+. (Join-Path $PSScriptRoot 'vs.ps1')
 $version = Get-BuildVersion
-& $dotnet publish (Join-Path $repoPath 'app-winui/NoiseReduction.csproj') -c Release -p:Platform=x64 -p:Version=$version --packages (Join-Path $repoPath '.local/nuget') -o $output
+$arch = Get-BuildArch
+& $dotnet publish (Join-Path $repoPath 'app-winui/NoiseReduction.csproj') -c Release -p:Platform=$arch -p:Version=$version --packages (Join-Path $repoPath '.local/nuget') -o $output
 if ($LASTEXITCODE -ne 0) { throw 'WinUI publish failed' }
-$compiledResources = Join-Path $repoPath 'app-winui/bin/x64/Release/net10.0-windows10.0.26100.0/win-x64'
+$compiledResources = Join-Path $repoPath "app-winui/bin/$arch/Release/net10.0-windows10.0.26100.0/win-$arch"
 foreach ($resource in @('NoiseReduction.pri', 'App.xbf', 'MainWindow.xbf', 'TrayFlyout.xbf')) {
     Copy-Item -LiteralPath (Join-Path $compiledResources $resource) -Destination $output -Force
 }
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
 $engineSources = @('app-engine/Program.cs', 'app/Core.cs', 'app/SecureControl.cs', 'app/Comparison.cs', 'app/Localization.cs', 'platform/Integration.cs') | ForEach-Object { Join-Path $repoPath $_ }
 $engineSources += @(Get-ChildItem -LiteralPath (Join-Path $repoPath 'app/i18n') -Filter '*.cs' | ForEach-Object FullName)
-& $compiler /nologo /target:winexe /platform:x64 /optimize+ "/win32icon:$(Join-Path $repoPath 'app/assets/NoiseReduction.ico')" "/out:$output/NoiseReduction.Engine.exe" /r:System.Runtime.Serialization.dll /r:System.ServiceProcess.dll /r:System.Windows.Forms.dll $engineSources
+& $compiler /nologo /target:winexe $(if ($arch -eq 'arm64') { '/platform:anycpu' } else { '/platform:x64' }) /optimize+ "/win32icon:$(Join-Path $repoPath 'app/assets/NoiseReduction.ico')" "/out:$output/NoiseReduction.Engine.exe" /r:System.Runtime.Serialization.dll /r:System.ServiceProcess.dll /r:System.Windows.Forms.dll $engineSources
 if ($LASTEXITCODE -ne 0) { throw 'Engine helper compilation failed' }
 Copy-Item -LiteralPath (Join-Path $repoPath 'app/NoiseReduction.exe.config') -Destination "$output/NoiseReduction.Engine.exe.config" -Force
 foreach ($library in @('NoiseReduction.Apo.dll', 'rnnoise.dll', 'nr_deepfilter.dll')) {

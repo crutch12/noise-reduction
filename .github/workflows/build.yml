@@ -16,7 +16,15 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-2025
+    # arm64 собирается и тестируется на родной машине, кросс-сборка не дала бы запустить тесты
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-2025
+          - arch: arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
     env:
       # подпись включается, когда в настройках репозитория заданы переменные SignPath
       SIGNING: ${{ vars.SIGNPATH_ORGANIZATION_ID != '' && github.event_name != 'pull_request' }}
@@ -46,7 +54,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             native/deepfilter/target
-          key: deepfilter-${{ hashFiles('native/deepfilter/Cargo.lock', 'native/deepfilter/src/**') }}
+          key: deepfilter-${{ matrix.arch }}-${{ hashFiles('native/deepfilter/Cargo.lock', 'native/deepfilter/src/**') }}
 
       - name: Models
         shell: pwsh
@@ -74,7 +82,7 @@ jobs:
         shell: pwsh
         run: |
           $csc = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
-          & $csc /nologo /platform:x64 /warnaserror+ /r:System.ServiceProcess.dll /out:build\IntegrationTests.exe platform\Integration.cs platform\IntegrationTests.cs
+          & $csc /nologo /platform:$(if ('${{ matrix.arch }}' -eq 'arm64') { 'anycpu' } else { 'x64' }) /warnaserror+ /r:System.ServiceProcess.dll /out:build\IntegrationTests.exe platform\Integration.cs platform\IntegrationTests.cs
           if ($LASTEXITCODE -ne 0) { throw 'Integration test compilation failed' }
           ./build/IntegrationTests.exe
           if ($LASTEXITCODE -ne 0) { throw 'Integration tests failed' }
@@ -101,7 +109,7 @@ jobs:
         if: env.SIGNING == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: unsigned-binaries
+          name: unsigned-binaries-${{ matrix.arch }}
           path: signing/binaries
 
       - name: Sign binaries
@@ -135,7 +143,7 @@ jobs:
         if: env.SIGNING == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: unsigned-catalog
+          name: unsigned-catalog-${{ matrix.arch }}
           path: build/pack/NoiseReductionPack.cat
 
       - name: Sign catalog
@@ -166,7 +174,7 @@ jobs:
         if: env.SIGNING == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: unsigned-installer
+          name: unsigned-installer-${{ matrix.arch }}
           path: dist/setup/NoiseReduction.Setup.exe
 
       - name: Sign installer
@@ -190,7 +198,7 @@ jobs:
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
-          name: NoiseReduction.Setup
+          name: NoiseReduction.Setup-${{ matrix.arch }}
           path: dist/setup/NoiseReduction.Setup.exe
 
   # публикация отдельно: только ей нужно право записи в репозиторий
@@ -203,12 +211,21 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: NoiseReduction.Setup
+          pattern: NoiseReduction.Setup-*
+      - name: Files
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          for arch in x64 arm64; do
+            mv "NoiseReduction.Setup-$arch/NoiseReduction.Setup.exe" "NoiseReduction-$version-$arch-setup.exe"
+          done
+          sha256sum NoiseReduction-*.exe > SHA256SUMS.txt
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
-          files: NoiseReduction.Setup.exe
-          draft: true
+          files: |
+            NoiseReduction-*-setup.exe
+            SHA256SUMS.txt
+          generate_release_notes: true
           body: |
-            Windows installer: NoiseReduction.Setup.exe
-
-            Free code signing provided by SignPath.io, certificate by SignPath Foundation
+            Installers:
+            - `x64-setup.exe` for PCs with Intel or AMD processors, Windows 10 2004 or newer
+            - `arm64-setup.exe` for PCs with Snapdragon and other ARM processors, Windows 11

@@ -20,17 +20,18 @@ Noise Reduction removes background noise from your microphone in every program: 
 ## Requirements
 
 - Windows 10 version 2004 or newer, or Windows 11, x64
+- Windows 11 on ARM64 (Snapdragon and other ARM processors)
 - Administrator rights for installation and for turning noise reduction on for a microphone
 
 On Windows 11 24H2 and newer, microphones that Windows manages through audio effect packs (most USB and Bluetooth microphones) get Noise Reduction as an effect pack. On older systems the effect is added to the microphone's effect chain directly
 
 ## Download
 
-Download the latest installer from [GitHub Releases](https://github.com/crutch12/noise-reduction/releases). Releases are code signed with a certificate by [SignPath Foundation](https://signpath.org), see the policy below
+Download the latest installer from [GitHub Releases](https://github.com/crutch12/noise-reduction/releases): `x64-setup.exe` for Intel and AMD processors, `arm64-setup.exe` for ARM. Releases are code signed with a certificate by [SignPath Foundation](https://signpath.org), see the policy below
 
 ## How to use
 
-1. Run `NoiseReduction.Setup.exe` and confirm the installation
+1. Run the installer and confirm the installation
 2. Open Noise Reduction from the tray or the Start menu
 3. Turn on noise reduction for your microphone. Windows asks for administrator rights once per microphone
 4. Optionally pick the model and strength, and check the result with "Test with your voice"
@@ -52,7 +53,7 @@ The engine verifies every change: after attaching the effect it records a short 
 
 Requirements:
 
-- Visual Studio 2022 or Build Tools with C++ x64 tools, ATL and the Windows SDK 10.0.26100
+- Visual Studio 2022 or Build Tools with C++ x64 or ARM64 tools, ATL and the Windows SDK 10.0.26100
 - .NET 10 SDK
 - Rust stable (MSVC toolchain)
 - Python 3, only for the translation check

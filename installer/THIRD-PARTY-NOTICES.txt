@@ -4,6 +4,7 @@ rnnoise.dll contains the RNNoise model and engine, obtained from pyrnnoise 0.4.5
 Source: https://github.com/pengzhendong/pyrnnoise
 Distribution version: https://pypi.org/project/pyrnnoise/0.4.5/
 RNNoise upstream: https://github.com/xiph/rnnoise
+The ARM64 build compiles rnnoise.dll from the same upstream commit 70f1d256acd4b34a572f999a05c87bf00b67730d and model, as pyrnnoise has no Windows ARM64 wheel
 The pyrnnoise distribution is Apache-2.0, see pyrnnoise-LICENSE.txt
 RNNoise is BSD-3-Clause, see RNNoise-COPYING.txt
 No Python runtime or Python package is required by the installed application

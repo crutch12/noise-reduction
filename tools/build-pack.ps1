@@ -15,13 +15,19 @@ $now = Get-Date
 $release = [version](Get-BuildVersion)
 # третье число год и день, четвёртое минута дня: так версия растёт и через границу года
 $version = '{0}.{1}.{2}.{3}' -f $release.Major, $release.Minor, ($now.Year % 100 * 1000 + $now.DayOfYear), ($now.Hour * 60 + $now.Minute)
+$redist = Get-RedistPath
+$redistFiles = Get-RedistFiles
+# в inf записана x64, для ARM меняем раздел и убираем библиотеки, которых нет в этой архитектуре
+$platform = if ((Get-BuildArch) -eq 'arm64') { 'NTarm64' } else { 'NTamd64' }
+$missing = @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') | Where-Object { $_ -notin $redistFiles }
 foreach ($inf in 'NoiseReductionApo.inf', 'NoiseReductionEffectPack.inf') {
     $text = (Get-Content -LiteralPath (Join-Path $repoPath "installer/pack/$inf") -Raw) -replace 'DriverVer\s*=\s*[^\r\n]+', ('DriverVer   = {0},{1}' -f $now.ToString('MM/dd/yyyy'), $version)
+    $text = $text -replace 'NTamd64', $platform
+    foreach ($name in $missing) { $text = $text -replace ('(?m)^' + [regex]::Escape($name) + '( = 1)?\r?\n'), '' }
     [IO.File]::WriteAllText((Join-Path $out $inf), $text, [Text.Encoding]::ASCII)
 }
 Copy-Item -LiteralPath (Join-Path $repoPath 'build/NoiseReduction.Apo.dll'), (Join-Path $repoPath 'build/rnnoise.dll'), (Join-Path $repoPath 'build/nr_deepfilter.dll') -Destination $out
-$redist = Get-RedistPath
-foreach ($name in 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') { Copy-Item -LiteralPath (Join-Path $redist $name) -Destination $out }
+foreach ($name in $redistFiles) { Copy-Item -LiteralPath (Join-Path $redist $name) -Destination $out }
 # каталог по всем файлам пакета; подпись либо временная для разработки, либо через SignPath в CI (-Unsigned)
 $cdf = @('[CatalogHeader]', 'Name=NoiseReductionPack.cat', "ResultDir=$out", 'PublicVersion=0x0000001', 'EncodingType=0x00010001', 'CATATTR1=0x10010001:OSAttr:2:10.0', '', '[CatalogFiles]')
 foreach ($file in Get-ChildItem -LiteralPath $out -File | Where-Object { $_.Extension -in '.inf', '.dll' }) { $cdf += "<hash>$($file.Name)=$($file.FullName)" }

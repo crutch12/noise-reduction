@@ -30,9 +30,9 @@ foreach ($file in Get-ChildItem -LiteralPath (Join-Path $buildPath 'pack') -File
 $payload['NoiseReduction.Apo.dll'] = Join-Path $buildPath 'NoiseReduction.Apo.dll'
 $payload['rnnoise.dll'] = Join-Path $buildPath 'rnnoise.dll'
 $payload['nr_deepfilter.dll'] = Join-Path $buildPath 'nr_deepfilter.dll'
-if ((Get-FileHash -LiteralPath $payload['rnnoise.dll'] -Algorithm SHA256).Hash.ToLowerInvariant() -ne '06770aeb8855ef942b5dcdb436f84dfdd5867b716ba4b4c8a2c66ade03197f31') { throw 'RNNoise DLL differs from the licensed pyrnnoise 0.4.5 payload; update provenance and notices before packaging' }
+if ((Get-BuildArch) -eq 'x64' -and (Get-FileHash -LiteralPath $payload['rnnoise.dll'] -Algorithm SHA256).Hash.ToLowerInvariant() -ne '06770aeb8855ef942b5dcdb436f84dfdd5867b716ba4b4c8a2c66ade03197f31') { throw 'RNNoise DLL differs from the licensed pyrnnoise 0.4.5 payload; update provenance and notices before packaging' }
 $redistPath = Get-RedistPath
-foreach ($name in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
+foreach ($name in Get-RedistFiles) {
     $payload[$name] = Join-Path $redistPath $name
 }
 Get-ChildItem (Join-Path $repoPath 'installer/licenses') -File | ForEach-Object { $payload[$_.Name] = $_.FullName }
@@ -46,7 +46,9 @@ $payload['payload-sha256.txt'] = $hashPath
 $setupPath = Join-Path $distPath 'NoiseReduction.Setup.exe'
 try { if (Test-Path -LiteralPath $setupPath) { [IO.File]::Open($setupPath, 'Open', 'ReadWrite', 'None').Dispose() } }
 catch { $setupPath = Join-Path $distPath ('NoiseReduction.Setup.' + (Get-Date -Format 'HHmmss') + '.exe'); Write-Warning "NoiseReduction.Setup.exe is in use, building $setupPath" }
-$arguments = @('/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/warnaserror+', '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll', '/r:System.ServiceProcess.dll', '/r:Microsoft.CSharp.dll', "/win32icon:$(Join-Path $repoPath 'app/assets/NoiseReduction.ico')", "/win32manifest:$(Join-Path $repoPath 'installer/Setup.manifest')", "/out:$setupPath")
+# старый csc не знает arm64: на ARM собираем anycpu, .NET Framework 4.8.1 запускает его нативно
+$platform = if ((Get-BuildArch) -eq 'arm64') { @('/platform:anycpu', '/define:ARM64') } else { @('/platform:x64') }
+$arguments = @('/nologo', '/target:winexe') + $platform + @('/optimize+', '/warnaserror+', '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll', '/r:System.ServiceProcess.dll', '/r:Microsoft.CSharp.dll', "/win32icon:$(Join-Path $repoPath 'app/assets/NoiseReduction.ico')", "/win32manifest:$(Join-Path $repoPath 'installer/Setup.manifest')", "/out:$setupPath")
 # файлы лежат в установщике сжатыми, распаковка проверяет их по payload-sha256.txt
 $packedPath = Join-Path $buildPath 'payload-gz'
 Remove-Item -LiteralPath $packedPath -Recurse -Force -ErrorAction SilentlyContinue

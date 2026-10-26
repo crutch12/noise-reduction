@@ -50,6 +50,7 @@ namespace NoiseReduction.Desktop
             { "Улучшения звука Windows включены", "Windows ses geliştirmeleri açık" },
             { "Запускать при &входе в Windows", "Windows'ta oturum açılırken &başlat" },
             { "Запускать при входе в Windows", "Windows'ta oturum açılırken başlat" },
+            { "Этот установщик не подходит для вашего компьютера. Скачайте версию для {0}", "Bu yükleyici bilgisayarınıza uygun değil. {0} sürümünü indirin" },
             { "Крестик оставляет программу в трее, Выход в меню трея отключает обработку", "Kapat düğmesi uygulamayı sistem tepsisinde tutar, tepsi menüsündeki Çıkış işlemeyi kapatır" },
             { "Общий выключатель сохраняет настройки каждого микрофона", "Genel anahtar her mikrofonun ayarlarını korur" },
             { "Максимальное ослабление фонового шума от 0 до 60 дБ", "Arka plan gürültüsünün en fazla azaltılması, 0 ile 60 dB arası" },

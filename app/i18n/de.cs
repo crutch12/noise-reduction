@@ -50,6 +50,7 @@ namespace NoiseReduction.Desktop
             { "Улучшения звука Windows включены", "Windows-Audioverbesserungen sind aktiviert" },
             { "Запускать при &входе в Windows", "Beim Anmelden an &Windows starten" },
             { "Запускать при входе в Windows", "Beim Anmelden an Windows starten" },
+            { "Этот установщик не подходит для вашего компьютера. Скачайте версию для {0}", "Dieses Installationsprogramm passt nicht zu Ihrem PC. Laden Sie die Version für {0} herunter" },
             { "Крестик оставляет программу в трее, Выход в меню трея отключает обработку", "Beim Schließen bleibt die App im Infobereich, Beenden im Menü des Infobereichs schaltet die Verarbeitung aus" },
             { "Общий выключатель сохраняет настройки каждого микрофона", "Der Hauptschalter behält die Einstellungen jedes Mikrofons bei" },
             { "Максимальное ослабление фонового шума от 0 до 60 дБ", "Maximale Dämpfung des Hintergrundrauschens von 0 bis 60 dB" },

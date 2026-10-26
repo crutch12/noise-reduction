@@ -50,6 +50,7 @@ namespace NoiseReduction.Desktop
             { "Улучшения звука Windows включены", "Cải tiến âm thanh của Windows đang bật" },
             { "Запускать при &входе в Windows", "Khởi động khi đăng nhập vào &Windows" },
             { "Запускать при входе в Windows", "Khởi động khi đăng nhập vào Windows" },
+            { "Этот установщик не подходит для вашего компьютера. Скачайте версию для {0}", "Trình cài đặt này không dành cho PC của bạn. Hãy tải phiên bản {0}" },
             { "Крестик оставляет программу в трее, Выход в меню трея отключает обработку", "Nút đóng giữ ứng dụng trong khay hệ thống, chọn Thoát trong menu khay sẽ tắt xử lý" },
             { "Общий выключатель сохраняет настройки каждого микрофона", "Công tắc chung giữ nguyên cài đặt của từng micrô" },
             { "Максимальное ослабление фонового шума от 0 до 60 дБ", "Mức giảm tiếng ồn nền tối đa từ 0 đến 60 dB" },

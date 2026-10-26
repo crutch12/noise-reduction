@@ -50,6 +50,7 @@ namespace NoiseReduction.Desktop
             { "Улучшения звука Windows включены", "Peningkatan audio Windows aktif" },
             { "Запускать при &входе в Windows", "Jalankan saat saya masuk ke &Windows" },
             { "Запускать при входе в Windows", "Jalankan saat saya masuk ke Windows" },
+            { "Этот установщик не подходит для вашего компьютера. Скачайте версию для {0}", "Penginstal ini tidak cocok untuk PC Anda. Unduh versi {0}" },
             { "Крестик оставляет программу в трее, Выход в меню трея отключает обработку", "Tombol tutup membiarkan program tetap di baki, Keluar di menu baki mematikan pemrosesan" },
             { "Общий выключатель сохраняет настройки каждого микрофона", "Sakelar utama menyimpan pengaturan tiap mikrofon" },
             { "Максимальное ослабление фонового шума от 0 до 60 дБ", "Peredaman maksimum bising latar dari 0 sampai 60 dB" },

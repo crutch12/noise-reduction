@@ -1,10 +1,15 @@
 @echo off
 setlocal
 rem Visual Studio ищем через vswhere: у разработчика Build Tools, на машинах GitHub Enterprise
+rem собираем под архитектуру машины, на Windows для ARM получается arm64
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
-for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSPATH=%%i"
+set "VSCOMPONENT=Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
+set "VSARCH=x64"
+if /i "%PROCESSOR_ARCHITECTURE%"=="ARM64" set "VSCOMPONENT=Microsoft.VisualStudio.Component.VC.Tools.ARM64"
+if /i "%PROCESSOR_ARCHITECTURE%"=="ARM64" set "VSARCH=arm64"
+for /f "usebackq delims=" %%i in (`"%VSWHERE%" -latest -products * -requires %VSCOMPONENT% -property installationPath`) do set "VSPATH=%%i"
 if not defined VSPATH exit /b 1
-call "%VSPATH%\VC\Auxiliary\Build\vcvars64.bat" >nul
+call "%VSPATH%\VC\Auxiliary\Build\vcvarsall.bat" %VSARCH% >nul
 if errorlevel 1 exit /b 1
 cd /d "%~dp0.."
 if not exist build mkdir build

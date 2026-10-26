@@ -347,11 +347,24 @@ class Setup {
   string target=Path.Combine(InstallRoot,"NoiseReduction.exe");
   if(File.Exists(target)) try { using(Process.Start(new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),"explorer.exe"),"\""+target+"\""))) { } } catch(Exception) { }
  }
+ [DllImport("kernel32.dll")] static extern bool IsWow64Process2(IntPtr process,out ushort processMachine,out ushort nativeMachine);
+ // в установщике эффект одной архитектуры, а audiodg загружает только родную
+ static void RequireMachine() {
+#if ARM64
+  const ushort expected=0xAA64;
+#else
+  const ushort expected=0x8664;
+#endif
+  ushort process,native;
+  if(!IsWow64Process2(Process.GetCurrentProcess().Handle,out process,out native) || native==expected) return;
+  throw new InvalidOperationException(String.Format(T("Этот установщик не подходит для вашего компьютера. Скачайте версию для {0}"),native==0xAA64?"ARM64":"x64"));
+ }
  [STAThread] static int Main(string[] args) {
   silent=args.Contains("--silent");
   try {
    if(args.Length>0 && args[0]=="--extract") { if(args.Length!=2) throw new ArgumentException("Usage: --extract <empty-directory>"); Extract(Path.GetFullPath(args[1])); return 0; }
    if(args.Contains("--self-test")) return SelfTest();
+   if(!args.Contains("--uninstall") && !args.Contains("--uninstall-worker")) RequireMachine();
    if(!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator)) { var elevated=Process.Start(new ProcessStartInfo(Assembly.GetExecutingAssembly().Location,String.Join(" ",args.Select(a=>"\""+a+"\""))) { UseShellExecute=true,Verb="runas" }); elevated.WaitForExit(); return elevated.ExitCode; }
    RequireAdmin();
    if(args.Contains("--uninstall-worker")) { int index=Array.IndexOf(args,"--uninstall-worker"); int pid=Int32.Parse(args[index+1]); try { using(var parent=Process.GetProcessById(pid)) if(!parent.WaitForExit(30000)) throw new IOException("Original setup process did not exit"); } catch(ArgumentException) { } }
