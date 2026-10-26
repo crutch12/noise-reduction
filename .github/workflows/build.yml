@@ -195,3 +195,7 @@ jobs:
         with:
           files: NoiseReduction.Setup.exe
           draft: true
+          body: |
+            Windows installer: NoiseReduction.Setup.exe
+
+            Free code signing provided by SignPath.io, certificate by SignPath Foundation

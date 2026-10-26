@@ -108,6 +108,10 @@ RAW/exclusive/ASIO и частоты кроме 48 кГц не подтверж�
 
 Лицензии компонентов включены в установщик
 
+## Download
+
+Download the latest installer from [GitHub Releases](https://github.com/crutch12/noise-reduction/releases). Releases are code signed with a certificate by [SignPath Foundation](https://signpath.org), see the policy below
+
 ## Code signing policy
 
 Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org)
