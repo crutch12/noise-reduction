@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -67,7 +68,7 @@ class Setup {
  }
  static void Extract(string directory) {
   Directory.CreateDirectory(directory);
-  foreach(var name in PayloadNames()) using(var input=Assembly.GetExecutingAssembly().GetManifestResourceStream("payload."+name)) using(var output=new FileStream(PrepareFile(directory,name),FileMode.CreateNew,FileAccess.Write)) input.CopyTo(output);
+  foreach(var name in PayloadNames()) using(var input=Assembly.GetExecutingAssembly().GetManifestResourceStream("payload."+name)) using(var unpacked=new GZipStream(input,CompressionMode.Decompress)) using(var output=new FileStream(PrepareFile(directory,name),FileMode.CreateNew,FileAccess.Write)) unpacked.CopyTo(output);
  }
  static string Hash(string file) { using(var sha=SHA256.Create()) using(var input=File.OpenRead(file)) return BitConverter.ToString(sha.ComputeHash(input)).Replace("-","").ToLowerInvariant(); }
  static void ValidateManifest(string directory) {

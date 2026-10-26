@@ -8,6 +8,8 @@
             <RowDefinition Height="44" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
+        <!-- при открытии фокус уходит сюда, иначе первый переключатель сразу в рамке -->
+        <ContentControl x:Name="FocusSink" Width="0" Height="0" IsTabStop="True" AutomationProperties.AccessibilityView="Raw" />
         <Grid x:Name="TitleBar" Padding="16,0,140,0" Background="Transparent" FlowDirection="LeftToRight">
             <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
                 <Image x:Name="AppImage" Width="16" Height="16" />
@@ -115,6 +117,21 @@
                             <TextBlock x:Name="NewMicrophonesHelp" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
                         </StackPanel>
                         <ToggleSwitch x:Name="NewMicrophonesSwitch" Grid.Column="2" MinWidth="0" Toggled="NewMicrophonesToggled" />
+                    </Grid>
+                </Border>
+                <Border x:Name="UninstallCard" Style="{StaticResource SettingsCardStyle}">
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon Glyph="&#xE74D;" FontSize="20" VerticalAlignment="Center" />
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock x:Name="UninstallLabel" TextTrimming="CharacterEllipsis" />
+                            <TextBlock x:Name="UninstallHelp" Style="{ThemeResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <Button x:Name="UninstallButton" Grid.Column="2" MinWidth="96" Click="UninstallClicked" />
                     </Grid>
                 </Border>
             </StackPanel>

@@ -58,9 +58,19 @@ namespace NoiseReduction.WinUI
             AppWindow.Show();
             Activate();
             SetForegroundWindow(Handle);
+            // фокус без рамки, иначе Windows сразу подсвечивает первый переключатель
+            DispatcherQueue.TryEnqueue(() => FocusSink.Focus(FocusState.Programmatic));
             controller.WatchUsage = true;
             _ = controller.ScanUsageAsync();
             Render();
+        }
+
+        private static string UninstallerPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "NoiseReduction", "NoiseReduction.Setup.exe");
+        // своё окно удаления с подтверждением, Windows попросит права администратора
+        private void UninstallClicked(object sender, RoutedEventArgs args)
+        {
+            try { using (System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(UninstallerPath, "--uninstall") { UseShellExecute = true })) { } }
+            catch (System.ComponentModel.Win32Exception) { }
         }
 
         private void ControllerChanged() => DispatcherQueue.TryEnqueue(() => { if (AppWindow.IsVisible) Render(); });
@@ -71,6 +81,11 @@ namespace NoiseReduction.WinUI
             Label(MasterSwitch); Label(StartupSwitch); Label(NewMicrophonesSwitch);
             NewMicrophonesLabel.Text = T("Включать шумоподавление для новых микрофонов");
             NewMicrophonesHelp.Text = T("При подключении нового микрофона появится уведомление");
+            UninstallLabel.Text = T("Удалить программу");
+            UninstallHelp.Text = T("Эффекты микрофонов вернутся к настройкам Windows");
+            UninstallButton.Content = T("Удалить");
+            // кнопка только у установленной копии, переносной версии удалять нечего
+            UninstallCard.Visibility = File.Exists(UninstallerPath) ? Visibility.Visible : Visibility.Collapsed;
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(NewMicrophonesSwitch, T("Включать шумоподавление для новых микрофонов"));
             GlobalTitle.Text = T("Шумоподавление");
             GlobalHelp.Text = T("Общий выключатель, настройки микрофонов сохраняются");

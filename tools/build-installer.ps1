@@ -45,7 +45,19 @@ $setupPath = Join-Path $distPath 'NoiseReduction.Setup.exe'
 try { if (Test-Path -LiteralPath $setupPath) { [IO.File]::Open($setupPath, 'Open', 'ReadWrite', 'None').Dispose() } }
 catch { $setupPath = Join-Path $distPath ('NoiseReduction.Setup.' + (Get-Date -Format 'HHmmss') + '.exe'); Write-Warning "NoiseReduction.Setup.exe is in use, building $setupPath" }
 $arguments = @('/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/warnaserror+', '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll', '/r:System.ServiceProcess.dll', '/r:Microsoft.CSharp.dll', "/win32icon:$(Join-Path $repoPath 'app/assets/NoiseReduction.ico')", "/win32manifest:$(Join-Path $repoPath 'installer/Setup.manifest')", "/out:$setupPath")
-foreach ($name in ($payload.Keys | Sort-Object)) { $arguments += "/resource:$($payload[$name]),payload.$name" }
+# файлы лежат в установщике сжатыми, распаковка проверяет их по payload-sha256.txt
+$packedPath = Join-Path $buildPath 'payload-gz'
+Remove-Item -LiteralPath $packedPath -Recurse -Force -ErrorAction SilentlyContinue
+foreach ($name in ($payload.Keys | Sort-Object)) {
+    $packed = Join-Path $packedPath ($name + '.gz')
+    New-Item -ItemType Directory -Force (Split-Path -Parent $packed) | Out-Null
+    $source = [IO.File]::OpenRead($payload[$name])
+    try {
+        $target = [IO.File]::Create($packed)
+        try { $zip = [IO.Compression.GZipStream]::new($target, [IO.Compression.CompressionLevel]::SmallestSize); try { $source.CopyTo($zip) } finally { $zip.Dispose() } } finally { $target.Dispose() }
+    } finally { $source.Dispose() }
+    $arguments += "/resource:$packed,payload.$name"
+}
 $arguments += Join-Path $repoPath 'platform/Integration.cs'
 $arguments += Join-Path $repoPath 'installer/Setup.cs'
 $arguments += Join-Path $repoPath 'installer/SetupWindow.cs'

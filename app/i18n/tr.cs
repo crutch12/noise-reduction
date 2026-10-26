@@ -205,6 +205,7 @@ namespace NoiseReduction.Desktop
             { "Подтвердите запрос Windows, звук прервётся на пару секунд", "Windows isteğini onaylayın, ses birkaç saniyeliğine kesilecek" },
             { "Включите переключатель, Windows попросит подтверждение", "Anahtarı açın, Windows onay isteyecek" },
             { "Крестик оставляет программу в трее", "Kapat düğmesi uygulamayı sistem tepsisinde tutar" },
+            { "Удалить программу", "Uygulamayı kaldır" }
         };
     }
 }

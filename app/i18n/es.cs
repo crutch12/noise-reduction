@@ -205,6 +205,7 @@ namespace NoiseReduction.Desktop
             { "Подтвердите запрос Windows, звук прервётся на пару секунд", "Confirma el aviso de Windows, el audio se detendrá un par de segundos" },
             { "Включите переключатель, Windows попросит подтверждение", "Activa el interruptor y Windows pedirá confirmación" },
             { "Крестик оставляет программу в трее", "Al cerrar la ventana, la aplicación sigue en la bandeja" },
+            { "Удалить программу", "Desinstalar la aplicación" }
         };
     }
 }

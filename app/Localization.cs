@@ -228,6 +228,7 @@ namespace NoiseReduction.Desktop
             { "Перезапуск звука Windows", "Restarting Windows audio" },
             { "Удаление пакета эффекта", "Removing the effect package" },
             { "Удаление файлов", "Removing files" },
+            { "Удалить программу", "Uninstall the app" },
             { "Модель", "Model" },
             { "Быстрая", "Fast" },
             { "Точная", "Precise" },
