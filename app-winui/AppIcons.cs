@@ -52,14 +52,6 @@ namespace NoiseReduction.WinUI
             {
                 using var icon = System.Drawing.Icon.ExtractAssociatedIcon(path);
                 using var bitmap = icon.ToBitmap();
-                // монохром как у значков в трее, яркость сохраняет рисунок программы
-                for (int y = 0; y < bitmap.Height; y++)
-                    for (int x = 0; x < bitmap.Width; x++)
-                    {
-                        var pixel = bitmap.GetPixel(x, y);
-                        int gray = (pixel.R * 299 + pixel.G * 587 + pixel.B * 114) / 1000;
-                        bitmap.SetPixel(x, y, System.Drawing.Color.FromArgb(pixel.A, gray, gray, gray));
-                    }
                 // поток не закрываем, картинка читает его уже после возврата
                 var stream = new MemoryStream();
                 bitmap.Save(stream, ImageFormat.Png);
