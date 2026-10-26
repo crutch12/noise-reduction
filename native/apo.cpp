@@ -1,4 +1,5 @@
 #include "rnnoise_backend.h"
+#include "deepfilter_backend.h"
 #include "apo_id.h"
 #include "control.h"
 #include <audioenginebaseapo.h>
@@ -50,13 +51,30 @@ const APO_REG_PROPERTIES properties{CLSID_NoiseReduction,
     static_cast<APO_FLAG>(APO_FLAG_DEFAULT | APO_FLAG_INPLACE), L"Noise Reduction", L"",
     0, 1, 1, 1, 1, 1, ULONG_MAX, 1, {__uuidof(IAudioProcessingObject)}};
 
-std::wstring model_path() {
+std::wstring module_file(const wchar_t* name) {
     std::wstring path(32768, L'\0');
     DWORD length = GetModuleFileNameW(own_module, path.data(), static_cast<DWORD>(path.size()));
     if (!length || length >= path.size()) throw std::runtime_error("Cannot resolve module path");
     path.resize(length);
     path.resize(path.find_last_of(L"\\/") + 1);
-    return path + L"rnnoise.dll";
+    return path + name;
+}
+std::wstring model_path() { return module_file(L"rnnoise.dll"); }
+constexpr uint32_t deepfilter_bit = 8u;
+
+// набор обработчиков на все каналы, у DeepFilterNet модель только в первом
+struct ProcessorSet {
+    std::vector<std::unique_ptr<nr::Processor>> processors;
+    bool deepfilter = false;
+    // звуковой поток складывает отработавшие наборы в список, освобождает их фоновый поток
+    ProcessorSet* next_retired = nullptr;
+};
+void free_retired(std::atomic<ProcessorSet*>& retired) noexcept {
+    for (ProcessorSet* set = retired.exchange(nullptr, std::memory_order_acq_rel); set;) {
+        ProcessorSet* next = set->next_retired;
+        delete set;
+        set = next;
+    }
 }
 
 class NoiseApo final : public IAudioProcessingObject, public IAudioProcessingObjectRT,
@@ -72,7 +90,15 @@ class NoiseApo final : public IAudioProcessingObject, public IAudioProcessingObj
     };
 public:
     explicit NoiseApo(IUnknown* outer = nullptr, const GUID& clsid = CLSID_NoiseReduction) : outer_(outer), inner_(this), clsid_(clsid) { ++objects; }
-    ~NoiseApo() { controls_.stop_watching(); if (effects_event_) CloseHandle(effects_event_); --objects; }
+    ~NoiseApo() {
+        controls_.stop_watching();
+        // новых запросов больше нет, дожидаемся уже запущенной сборки модели
+        if (work_) { WaitForThreadpoolWorkCallbacks(work_, FALSE); CloseThreadpoolWork(work_); }
+        delete pending_.exchange(nullptr);
+        free_retired(retired_);
+        if (effects_event_) CloseHandle(effects_event_);
+        --objects;
+    }
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID id, void** result) override {
         return outer_ ? outer_->QueryInterface(id, result) : inner_query(id, result);
     }
@@ -125,7 +151,8 @@ public:
                 PropVariantClear(&value);
             }
             discovery_ = discovery;
-            controls_.watch([](void* context) noexcept { static_cast<NoiseApo*>(context)->notify_effects(); }, this);
+            if (!standalone_) work_ = CreateThreadpoolWork([](PTP_CALLBACK_INSTANCE, void* self, PTP_WORK) noexcept { static_cast<NoiseApo*>(self)->switch_model(); }, this, nullptr);
+            controls_.watch([](void* context) noexcept { auto self = static_cast<NoiseApo*>(context); self->notify_effects(); self->request_switch(); }, this);
             if (!discovery) {
                 try { backend_ = std::make_unique<nr::RnnoiseBackend>(model_path().c_str()); model_usable_.store(true); }
                 catch (...) { controls_.error(); }
@@ -173,7 +200,7 @@ public:
     }
     HRESULT STDMETHODCALLTYPE GetLatency(HNSTIME* value) override {
         if (!value) return E_POINTER;
-        *value = nr::Processor::latency * 10000000LL / 48000;
+        *value = static_cast<HNSTIME>(latency_.load(std::memory_order_relaxed)) * 10000000LL / 48000;
         return S_OK;
     }
     UINT32 STDMETHODCALLTYPE CalcInputFrames(UINT32 value) override { return value; }
@@ -203,12 +230,10 @@ public:
         // Reset is called with processing stopped, while connections stay locked
         if (m_bIsLocked) {
             try {
-                std::vector<std::unique_ptr<nr::Processor>> fresh;
-                for (UINT32 i = 0; i < channels_; ++i) fresh.push_back(std::make_unique<nr::Processor>(backend_ ? backend_->api() : nr::Backend{}, effective_enabled()));
-                processors_ = std::move(fresh);
+                std::lock_guard<std::mutex> lock(switch_mutex_);
+                install(build_set(wants_deepfilter(), channels_));
                 highpass_.assign(channels_, nr::HighPass{});
                 energy_.assign(channels_, 0.0f);
-                update_model_status();
                 previous_settings_ = UINT32_MAX;
             }
             catch (...) { return E_OUTOFMEMORY; }
@@ -233,15 +258,14 @@ public:
         out[0]->pFormat->GetUncompressedAudioFormat(&output_format);
         if (input_format.dwSamplesPerFrame != output_format.dwSamplesPerFrame) return APOERR_FORMAT_NOT_SUPPORTED;
         try {
-            std::vector<std::unique_ptr<nr::Processor>> fresh;
-            for (UINT32 i = 0; i < input_format.dwSamplesPerFrame; ++i) fresh.push_back(std::make_unique<nr::Processor>(backend_ ? backend_->api() : nr::Backend{}, effective_enabled()));
+            std::lock_guard<std::mutex> lock(switch_mutex_);
             scratch_in_.resize(in[0]->u32MaxFrameCount);
             scratch_out_.resize(in[0]->u32MaxFrameCount);
-            processors_ = std::move(fresh);
+            install(build_set(wants_deepfilter(), input_format.dwSamplesPerFrame));
             highpass_.assign(input_format.dwSamplesPerFrame, nr::HighPass{});
             energy_.assign(input_format.dwSamplesPerFrame, 0.0f);
-            update_model_status();
             previous_settings_ = UINT32_MAX;
+            switch_channels_ = input_format.dwSamplesPerFrame;
         }
         catch (...) { return E_OUTOFMEMORY; }
         channels_ = input_format.dwSamplesPerFrame;
@@ -253,7 +277,10 @@ public:
     HRESULT STDMETHODCALLTYPE UnlockForProcess() override {
         if (!m_bIsLocked) return APOERR_ALREADY_UNLOCKED;
         m_bIsLocked = false;
-        processors_.clear(); max_frames_ = 0;
+        std::lock_guard<std::mutex> lock(switch_mutex_);
+        switch_channels_ = 0;
+        install(nullptr);
+        max_frames_ = 0;
         return S_OK;
     }
     void STDMETHODCALLTYPE APOProcess(UINT32 inputs, APO_CONNECTION_PROPERTY** in,
@@ -263,7 +290,18 @@ public:
         auto& dest = *out[0];
         dest.u32BufferFlags = BUFFER_INVALID;
         dest.u32ValidFrameCount = 0;
-        if (!m_bIsLocked || processors_.empty() || inputs != 1 || !in || !in[0]) return;
+        // готовый набор с другой моделью собран в фоне, здесь только подхватываем его
+        if (ProcessorSet* next = pending_.exchange(nullptr, std::memory_order_acq_rel)) {
+            if (ProcessorSet* old = active_.release()) {
+                old->next_retired = retired_.load(std::memory_order_acquire);
+                while (!retired_.compare_exchange_weak(old->next_retired, old, std::memory_order_acq_rel, std::memory_order_acquire)) {}
+            }
+            active_.reset(next);
+            controls_.model(active_->deepfilter);
+            previous_settings_ = UINT32_MAX;
+        }
+        if (!m_bIsLocked || !active_ || active_->processors.empty() || inputs != 1 || !in || !in[0]) return;
+        auto& processors = active_->processors;
         if (source.u32Signature != APO_CONNECTION_PROPERTY_SIGNATURE || dest.u32Signature != APO_CONNECTION_PROPERTY_SIGNATURE) return;
         if (source.u32BufferFlags != BUFFER_VALID && source.u32BufferFlags != BUFFER_SILENT) return;
         if (source.u32ValidFrameCount > max_frames_ || !dest.pBuffer) return;
@@ -275,16 +313,16 @@ public:
         const bool low_cut = enabled && (settings & 2u);
         uint64_t inferred = 0;
         bool silent = true;
-        if (enabled && (settings & 4u) && channels_ > 1 && input) {
-            // одна модель на все каналы, результат одинаково во все каналы
+        if (enabled && ((settings & 4u) || active_->deepfilter) && channels_ > 1 && input) {
+            // одна модель на все каналы, результат одинаково во все каналы, DeepFilterNet всегда так
             nr::mix_active(input, source.u32ValidFrameCount, channels_, energy_.data(), scratch_in_.data());
             if (low_cut) for (UINT32 i = 0; i < source.u32ValidFrameCount; ++i) scratch_in_[i] = highpass_[0].process(scratch_in_[i]);
             else if (previous_settings_ & 2u) highpass_[0].reset();
-            processors_[0]->set_enabled(true);
-            if (settings != previous_settings_) processors_[0]->set_attenuation(static_cast<float>(std::min(60u, (settings >> 8) & 255u)));
-            const uint64_t before = processors_[0]->processed_frames();
-            processors_[0]->process(scratch_in_.data(), scratch_out_.data(), source.u32ValidFrameCount);
-            inferred = processors_[0]->processed_frames() - before;
+            processors[0]->set_enabled(true);
+            if (settings != previous_settings_) processors[0]->set_attenuation(static_cast<float>(std::min(60u, (settings >> 8) & 255u)));
+            const uint64_t before = processors[0]->processed_frames();
+            processors[0]->process(scratch_in_.data(), scratch_out_.data(), source.u32ValidFrameCount);
+            inferred = processors[0]->processed_frames() - before;
             for (UINT32 i = 0; i < source.u32ValidFrameCount; ++i) {
                 for (UINT32 channel = 0; channel < channels_; ++channel) output[static_cast<size_t>(i) * channels_ + channel] = scratch_out_[i];
                 silent = silent && scratch_out_[i] == 0;
@@ -297,15 +335,15 @@ public:
         }
         for (UINT32 channel = 0; channel < channels_; ++channel) {
             if (!low_cut && ((previous_settings_ & 2u) || previous_settings_ == UINT32_MAX)) highpass_[channel].reset();
-            processors_[channel]->set_enabled(enabled);
-            if (settings != previous_settings_) processors_[channel]->set_attenuation(static_cast<float>(std::min(60u, (settings >> 8) & 255u)));
-            const uint64_t before = processors_[channel]->processed_frames();
+            processors[channel]->set_enabled(enabled);
+            if (settings != previous_settings_) processors[channel]->set_attenuation(static_cast<float>(std::min(60u, (settings >> 8) & 255u)));
+            const uint64_t before = processors[channel]->processed_frames();
             if (input) for (UINT32 i = 0; i < source.u32ValidFrameCount; ++i) {
                 const float sample = input[static_cast<size_t>(i) * channels_ + channel];
                 scratch_in_[i] = low_cut && std::isfinite(sample) ? highpass_[channel].process(sample) : sample;
             }
-            processors_[channel]->process(input ? scratch_in_.data() : nullptr, scratch_out_.data(), source.u32ValidFrameCount);
-            inferred += processors_[channel]->processed_frames() - before;
+            processors[channel]->process(input ? scratch_in_.data() : nullptr, scratch_out_.data(), source.u32ValidFrameCount);
+            inferred += processors[channel]->processed_frames() - before;
             for (UINT32 i = 0; i < source.u32ValidFrameCount; ++i) {
                 output[static_cast<size_t>(i) * channels_ + channel] = scratch_out_[i];
                 silent = silent && scratch_out_[i] == 0;
@@ -332,11 +370,55 @@ private:
         std::lock_guard<std::mutex> lock(effects_mutex_);
         if (effects_event_) SetEvent(effects_event_);
     }
-    void update_model_status() noexcept {
-        bool usable = !processors_.empty();
-        for (const auto& processor : processors_) usable = usable && processor->has_model();
+    bool wants_deepfilter() const noexcept { return !standalone_ && (controls_.config() & deepfilter_bit) && !deepfilter_failed_; }
+    // вызывается под switch_mutex_, DeepFilterNet грузится при первом выборе
+    std::unique_ptr<ProcessorSet> build_set(bool deepfilter, UINT32 channels) {
+        auto set = std::make_unique<ProcessorSet>();
+        nr::Backend model = backend_ ? backend_->api() : nr::Backend{};
+        if (deepfilter && !deepfilter_ && !deepfilter_failed_) {
+            try { deepfilter_ = std::make_unique<nr::DeepFilterBackend>(module_file(L"nr_deepfilter.dll").c_str()); }
+            catch (...) { deepfilter_failed_ = true; controls_.error(); }
+        }
+        if (deepfilter && deepfilter_) { model = deepfilter_->api(); set->deepfilter = true; }
+        const bool enabled = effective_enabled();
+        for (UINT32 i = 0; i < channels; ++i) {
+            // остальным каналам модель не нужна, только та же задержка исходного звука
+            nr::Backend backend = set->deepfilter && i > 0 ? nr::Backend{nullptr, nullptr, nullptr, model.latency} : model;
+            set->processors.push_back(std::make_unique<nr::Processor>(backend, enabled));
+        }
+        return set;
+    }
+    // звук остановлен или ещё не запущен, набор можно заменить напрямую
+    void install(std::unique_ptr<ProcessorSet> set) noexcept {
+        delete pending_.exchange(nullptr);
+        free_retired(retired_);
+        active_ = std::move(set);
+        published_deepfilter_ = active_ && active_->deepfilter;
+        if (active_) { update_model_status(*active_); controls_.model(active_->deepfilter); }
+    }
+    void update_model_status(const ProcessorSet& set) noexcept {
+        bool usable = !set.processors.empty();
+        if (set.deepfilter && usable) usable = set.processors[0]->has_model();
+        else for (const auto& processor : set.processors) usable = usable && processor->has_model();
+        if (usable) latency_.store(set.processors[0]->delay(), std::memory_order_relaxed);
         model_usable_.store(usable, std::memory_order_relaxed);
         if (!usable) controls_.error();
+    }
+    // каждое изменение настроек ставит сборку в очередь, деструктор её дожидается
+    void request_switch() noexcept { if (work_) SubmitThreadpoolWork(work_); }
+    // сборка новой модели идёт здесь, звуковой поток её только подхватывает
+    void switch_model() noexcept {
+        try {
+            std::lock_guard<std::mutex> lock(switch_mutex_);
+            free_retired(retired_);
+            const bool want = wants_deepfilter();
+            if (!switch_channels_ || want == published_deepfilter_) return;
+            auto set = build_set(want, switch_channels_);
+            update_model_status(*set);
+            published_deepfilter_ = set->deepfilter;
+            delete pending_.exchange(set.release(), std::memory_order_acq_rel);
+        }
+        catch (...) { controls_.error(); }
     }
     static bool valid_format(IAudioMediaType* media) {
         UNCOMPRESSEDAUDIOFORMAT format{};
@@ -381,7 +463,15 @@ private:
     IUnknown* outer_;
     InnerUnknown inner_;
     std::unique_ptr<nr::RnnoiseBackend> backend_;
-    std::vector<std::unique_ptr<nr::Processor>> processors_;
+    std::unique_ptr<nr::DeepFilterBackend> deepfilter_;
+    std::atomic<bool> deepfilter_failed_{false};
+    std::unique_ptr<ProcessorSet> active_;
+    std::atomic<ProcessorSet*> pending_{nullptr}, retired_{nullptr};
+    std::mutex switch_mutex_;
+    PTP_WORK work_ = nullptr;
+    std::atomic<UINT32> switch_channels_{0};
+    std::atomic<bool> published_deepfilter_{false};
+    std::atomic<size_t> latency_{nr::Processor::latency};
     std::vector<float> scratch_in_, scratch_out_;
     std::vector<nr::HighPass> highpass_;
     std::vector<float> energy_;
@@ -425,11 +515,18 @@ private:
     GUID clsid_;
 };
 
+// проверка на своём голосе, та же модель, что выбрана для микрофона
 struct OfflineEngine {
-    nr::RnnoiseBackend backend{model_path().c_str()};
-    nr::Processor processor{backend.api()};
-    OfflineEngine() { if (!processor.has_model()) throw std::bad_alloc(); ++objects; }
-    ~OfflineEngine() { --objects; }
+    std::unique_ptr<nr::RnnoiseBackend> rnnoise;
+    std::unique_ptr<nr::DeepFilterBackend> deepfilter;
+    std::unique_ptr<nr::Processor> processor;
+    explicit OfflineEngine(bool use_deepfilter) {
+        if (use_deepfilter) { deepfilter = std::make_unique<nr::DeepFilterBackend>(module_file(L"nr_deepfilter.dll").c_str()); processor = std::make_unique<nr::Processor>(deepfilter->api()); }
+        else { rnnoise = std::make_unique<nr::RnnoiseBackend>(model_path().c_str()); processor = std::make_unique<nr::Processor>(rnnoise->api()); }
+        if (!processor->has_model()) throw std::bad_alloc();
+        ++objects;
+    }
+    ~OfflineEngine() { processor.reset(); --objects; }
 };
 }
 
@@ -454,16 +551,22 @@ STDAPI DllGetClassObject(REFCLSID id, REFIID interface_id, void** result) {
     } catch (...) { return E_OUTOFMEMORY; }
 }
 extern "C" __declspec(dllexport) void* __cdecl nr_create() noexcept {
-    try { return new OfflineEngine(); } catch (...) { return nullptr; }
+    try { return new OfflineEngine(false); } catch (...) { return nullptr; }
+}
+extern "C" __declspec(dllexport) void* __cdecl nr_create_model(int deepfilter) noexcept {
+    try { return new OfflineEngine(deepfilter != 0); } catch (...) { return nullptr; }
+}
+extern "C" __declspec(dllexport) uint32_t __cdecl nr_get_engine_latency(void* handle) noexcept {
+    return handle ? static_cast<uint32_t>(static_cast<OfflineEngine*>(handle)->processor->delay()) : 0;
 }
 extern "C" __declspec(dllexport) void __cdecl nr_destroy(void* handle) noexcept { delete static_cast<OfflineEngine*>(handle); }
 extern "C" __declspec(dllexport) void __cdecl nr_process(void* handle, const float* input, float* output, uint32_t count) noexcept {
-    if (handle && output) static_cast<OfflineEngine*>(handle)->processor.process(input, output, count);
+    if (handle && output) static_cast<OfflineEngine*>(handle)->processor->process(input, output, count);
 }
 extern "C" __declspec(dllexport) void __cdecl nr_set_enabled(void* handle, int enabled) noexcept {
-    if (handle) static_cast<OfflineEngine*>(handle)->processor.set_enabled(enabled != 0);
+    if (handle) static_cast<OfflineEngine*>(handle)->processor->set_enabled(enabled != 0);
 }
 extern "C" __declspec(dllexport) void __cdecl nr_set_attenuation(void* handle, float db) noexcept {
-    if (handle) static_cast<OfflineEngine*>(handle)->processor.set_attenuation(db);
+    if (handle) static_cast<OfflineEngine*>(handle)->processor->set_attenuation(db);
 }
 extern "C" __declspec(dllexport) uint32_t __cdecl nr_get_latency() noexcept { return nr::Processor::latency; }

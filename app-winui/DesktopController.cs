@@ -147,7 +147,9 @@ namespace NoiseReduction.WinUI
         public void SetLowCut(string id, bool enabled) { Change(() => Settings.For(id).LowCut = enabled); }
         public bool Economy(string id) => Settings.For(id).Economy;
         public void SetEconomy(string id, bool enabled) { Change(() => Settings.For(id).Economy = enabled); }
-        public void ResetProfile(string id) { Change(() => { var profile = Settings.For(id); profile.Attenuation = 24; profile.LowCut = false; profile.Economy = false; }); }
+        public bool DeepFilter(string id) => Settings.For(id).DeepFilter;
+        public void SetDeepFilter(string id, bool enabled) { Change(() => Settings.For(id).DeepFilter = enabled); }
+        public void ResetProfile(string id) { Change(() => { var profile = Settings.For(id); profile.Attenuation = 24; profile.LowCut = false; profile.Economy = false; profile.DeepFilter = false; }); }
         public string WindowTheme => Settings.WindowTheme ?? "system";
         public string TrayTheme => Settings.TrayTheme ?? "system";
         public void SetThemes(string window, string tray) { Change(() => { Settings.WindowTheme = window; Settings.TrayTheme = tray; }); }
@@ -274,7 +276,7 @@ namespace NoiseReduction.WinUI
             foreach (var pair in controls)
             {
                 var profile = Settings.For(pair.Key);
-                try { pair.Value.Set(state.Enabled(pair.Key, Settings.Enabled && !bypass, profile.Enabled), profile.Attenuation, profile.LowCut, profile.Economy); }
+                try { pair.Value.Set(state.Enabled(pair.Key, Settings.Enabled && !bypass, profile.Enabled), profile.Attenuation, profile.LowCut, profile.Economy, profile.DeepFilter); }
                 catch (Exception error) { if (!bypass) throw; failure ??= error; }
             }
             if (failure != null) throw failure;
@@ -319,6 +321,7 @@ namespace NoiseReduction.WinUI
             var device = devices.Find(value => value.Id == id);
             if (Busy || disposed || device == null) return;
             int attenuation = Attenuation(id);
+            bool deepFilter = DeepFilter(id);
             StopPlayback(); state.CaptureEndpoint = id; comparisonId = null; Error = null;
             stopRequested = false; RecordingStarted = DateTime.UtcNow;
             lock (livePeaks) livePeaks.Clear();
@@ -328,7 +331,7 @@ namespace NoiseReduction.WinUI
             try
             {
                 Directory.CreateDirectory(directory); ApplyControls(false);
-                var result = await Task.Run(() => Comparison.Create(id, directory, attenuation, () => stopRequested, Collect));
+                var result = await Task.Run(() => Comparison.Create(id, directory, attenuation, () => stopRequested, Collect, deepFilter));
                 if (disposed) { DeleteRecording(directory); return; }
                 OriginalPeaks = Peaks(result[0], 240); ProcessedPeaks = Peaks(result[1], 240);
                 DeleteRecording(recordingDirectory); recordingDirectory = directory; comparisonId = id;
@@ -404,7 +407,7 @@ namespace NoiseReduction.WinUI
         {
             var device = devices.Find(value => value.Id == id);
             if (device == null) return UiText.Get("Микрофон не выбран");
-            return UiText.Get("Диагностика") + "\n" + device.Name + "\n" + device.Id + "\nRNNoise\n" + UiText.Get("Формат движка: 48 kHz") + "\n" + UiText.Get("Задержка движка: 30 ms") + "\n" + StateOf(id) + (device.Attached ? ", attached" : ", detached") + (device.EnhancementsEnabled ? "" : ", enhancements off");
+            return UiText.Get("Диагностика") + "\n" + device.Name + "\n" + device.Id + "\n" + (controls.TryGetValue(id, out var control) && control.DeepFilterActive ? "DeepFilterNet" : "RNNoise") + (DeepFilter(id) ? " (DeepFilterNet selected)" : "") + "\n" + UiText.Get("Формат движка: 48 kHz") + "\n" + UiText.Get("Задержка движка: 30 ms") + "\n" + StateOf(id) + (device.Attached ? ", attached" : ", detached") + (device.EnhancementsEnabled ? "" : ", enhancements off");
         }
         private static void DeleteRecording(string directory)
         {

@@ -19,6 +19,7 @@ Windows-приложение для шумоподавления реальны�
 
 - Глобальный выключатель и настройки отдельно для каждого реального микрофона
 - Сила подавления от 0 до 60 дБ, исходно 24 дБ
+- Модель для каждого микрофона: Быстрая (RNNoise, по умолчанию) или Точная (DeepFilterNet 3), переключение без перерыва звука
 - Автозапуск включается и отключается в настройках
 - Крестик сворачивает в трей, Выход отключает вычисление модели
 - Сравнение записывает выбранный микрофон с bypass нашего эффекта и обрабатывает запись локально
@@ -64,11 +65,13 @@ Python нужен только для лабораторного сравнен�
 ## Нативная сборка
 
 Требуются VS2022 Build Tools с C++ x64, Windows SDK 26100 и компонентом C++ ATL для тестового media-type host
+Для DeepFilterNet нужен Rust в `.local`: `rustup-init.exe -y --profile minimal --no-modify-path` с `RUSTUP_HOME=.local/rustup` и `CARGO_HOME=.local/cargo`, сборка `./tools/build-deepfilter.ps1`
 Сборка использует стандартную папку Build Tools в Program Files (x86)
 
 ```powershell
 cmd /c native\build.cmd
 Copy-Item .local/venv/Lib/site-packages/pyrnnoise/rnnoise.dll build/rnnoise.dll
+./tools/build-deepfilter.ps1
 ./build/processor_test.exe (Resolve-Path build/rnnoise.dll).Path
 ./build/apo_test.exe (Resolve-Path build/NoiseReduction.Apo.dll).Path
 ```

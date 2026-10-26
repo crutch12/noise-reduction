@@ -38,6 +38,7 @@ bool ControlView::open_path(const std::wstring& path) {
     return true;
 }
 void ControlView::error() noexcept { if (block_) InterlockedIncrement64(&block_->errors); }
+void ControlView::model(bool deepfilter) noexcept { if (block_) InterlockedExchange(&block_->active_model, deepfilter ? 1 : 0); }
 void ControlView::stop_watching() noexcept {
     if (wait_) { UnregisterWaitEx(wait_, INVALID_HANDLE_VALUE); wait_ = nullptr; }
     if (changed_) { CloseHandle(changed_); changed_ = nullptr; }

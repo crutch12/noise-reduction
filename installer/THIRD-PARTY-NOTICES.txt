@@ -9,6 +9,12 @@ RNNoise is BSD-3-Clause, see RNNoise-COPYING.txt
 No Python runtime or Python package is required by the installed application
 The model is embedded in rnnoise.dll, there is no separately downloaded model
 
+nr_deepfilter.dll contains the DeepFilterNet3 model and the libDF engine from DeepFilterNet 0.5.6
+Source: https://github.com/Rikorose/DeepFilterNet/tree/v0.5.6
+DeepFilterNet is dual licensed MIT or Apache-2.0, see DeepFilterNet-LICENSE-MIT.txt and DeepFilterNet-LICENSE-APACHE.txt
+The Rust crates linked into it, including tract and ndarray, are MIT or Apache-2.0 licensed
+The model is embedded in nr_deepfilter.dll, there is no separately downloaded model
+
 MSVC runtime DLLs are unmodified Microsoft Visual C++ redistributable components
 They are bundled from Visual Studio 2022 VC/Redist/MSVC/x64/Microsoft.VC143.CRT
 Redistribution list: https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution

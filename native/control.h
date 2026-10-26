@@ -10,7 +10,8 @@ struct alignas(8) ControlBlock {
     uint32_t magic;
     uint32_t size;
     volatile LONG config;
-    uint32_t reserved;
+    // модель, которая сейчас обрабатывает звук: 0 RNNoise, 1 DeepFilterNet
+    volatile LONG active_model;
     volatile LONG64 audio_frames;
     volatile LONG64 model_frames;
     volatile LONG64 errors;
@@ -31,6 +32,7 @@ public:
     uint32_t config() const noexcept;
     void account(uint32_t frames, uint64_t model_frames) noexcept;
     void error() noexcept;
+    void model(bool deepfilter) noexcept;
     using ChangeCallback = void (*)(void*) noexcept;
     void watch(ChangeCallback callback, void* context);
     void stop_watching() noexcept;

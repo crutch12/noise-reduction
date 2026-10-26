@@ -20,6 +20,7 @@ AddReg    = Apo_AddReg
 [Apo_CopyFiles]
 NoiseReduction.Apo.dll
 rnnoise.dll
+nr_deepfilter.dll
 msvcp140.dll
 vcruntime140.dll
 vcruntime140_1.dll
@@ -64,6 +65,7 @@ AddService = ,2
 [SourceDisksFiles]
 NoiseReduction.Apo.dll = 1
 rnnoise.dll = 1
+nr_deepfilter.dll = 1
 msvcp140.dll = 1
 vcruntime140.dll = 1
 vcruntime140_1.dll = 1

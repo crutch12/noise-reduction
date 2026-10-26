@@ -14,6 +14,8 @@ namespace NoiseReduction.Desktop
         [DllImport("NoiseReduction.Apo.dll", CallingConvention = CallingConvention.Cdecl)] private static extern void nr_set_attenuation(IntPtr state, float db);
         [DllImport("NoiseReduction.Apo.dll", CallingConvention = CallingConvention.Cdecl)] private static extern void nr_set_enabled(IntPtr state, int enabled);
         [DllImport("NoiseReduction.Apo.dll", CallingConvention = CallingConvention.Cdecl)] private static extern uint nr_get_latency();
+        [DllImport("NoiseReduction.Apo.dll", CallingConvention = CallingConvention.Cdecl)] private static extern IntPtr nr_create_model(int deepFilter);
+        [DllImport("NoiseReduction.Apo.dll", CallingConvention = CallingConvention.Cdecl)] private static extern uint nr_get_engine_latency(IntPtr state);
 
         internal static void Create(string endpoint, string directory, int attenuation)
         { Create(endpoint, directory, attenuation, null); }
@@ -24,25 +26,31 @@ namespace NoiseReduction.Desktop
 
         // возвращает исходный и обработанный звук, onPacket получает куски записи для живой волны
         internal static float[][] Create(string endpoint, string directory, int attenuation, Func<bool> stop, Action<float[]> onPacket)
+        { return Create(endpoint, directory, attenuation, stop, onPacket, false); }
+
+        internal static float[][] Create(string endpoint, string directory, int attenuation, Func<bool> stop, Action<float[]> onPacket, bool deepFilter)
         {
             string engine = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "NoiseReduction.Apo.dll");
             if (!File.Exists(engine) || !File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "rnnoise.dll")))
                 throw new FileNotFoundException("Для сравнения нужны NoiseReduction.Apo.dll и rnnoise.dll рядом с программой");
             float[] original = Capture(endpoint, false, null, stop, onPacket);
-            float[] processed = ProcessCaptured(original, attenuation);
+            float[] processed = ProcessCaptured(original, attenuation, deepFilter);
             WriteWave(Path.Combine(directory, "original.wav"), original);
             WriteWave(Path.Combine(directory, "processed.wav"), processed);
             return new[] { original, processed };
         }
 
         internal static float[] ProcessCaptured(float[] original, int attenuation)
+        { return ProcessCaptured(original, attenuation, false); }
+
+        internal static float[] ProcessCaptured(float[] original, int attenuation, bool deepFilter)
         {
-            IntPtr state = nr_create();
-            if (state == IntPtr.Zero) throw new InvalidOperationException("Не удалось запустить RNNoise");
+            IntPtr state = deepFilter ? nr_create_model(1) : nr_create();
+            if (state == IntPtr.Zero) throw new InvalidOperationException(deepFilter ? "Не удалось запустить DeepFilterNet" : "Не удалось запустить RNNoise");
             try
             {
                 nr_set_attenuation(state, attenuation); nr_set_enabled(state, 1);
-                int latency = checked((int)nr_get_latency());
+                int latency = checked((int)(deepFilter ? nr_get_engine_latency(state) : nr_get_latency()));
                 if (latency < 0 || latency > 48000) throw new InvalidOperationException("Некорректная задержка движка");
                 float[] padded = new float[original.Length + latency];
                 float[] output = new float[padded.Length];

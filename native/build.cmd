@@ -6,7 +6,7 @@ cd /d "%~dp0.."
 if not exist build mkdir build
 cl /nologo /std:c++17 /EHsc /W4 /WX /O2 /MD /I native native\tests\processor_test.cpp native\processor.cpp native\rnnoise_backend.cpp /Fo:build\ /Fe:build\processor_test.exe /link /INCREMENTAL:NO
 if errorlevel 1 exit /b 1
-cl /nologo /std:c++17 /EHsc /W4 /WX /O2 /MD %NR_DIAGNOSTIC_FLAGS% /LD /I native native\apo.cpp native\control.cpp native\processor.cpp native\rnnoise_backend.cpp /Fo:build\ /Fe:build\NoiseReduction.Apo.dll /link /DEF:native\apo.def /MANIFEST:NO /INCREMENTAL:NO ole32.lib uuid.lib shell32.lib advapi32.lib audiomediatypecrt.lib
+cl /nologo /std:c++17 /EHsc /W4 /WX /O2 /MD %NR_DIAGNOSTIC_FLAGS% /LD /I native native\apo.cpp native\control.cpp native\processor.cpp native\rnnoise_backend.cpp native\deepfilter_backend.cpp /Fo:build\ /Fe:build\NoiseReduction.Apo.dll /link /DEF:native\apo.def /MANIFEST:NO /INCREMENTAL:NO ole32.lib uuid.lib shell32.lib advapi32.lib audiomediatypecrt.lib
 if errorlevel 1 exit /b 1
 cl /nologo /std:c++17 /EHsc /W4 /WX /O2 /MD /I native native\tests\apo_test.cpp /Fo:build\ /Fe:build\apo_test.exe /link /INCREMENTAL:NO audiomediatypecrt.lib ole32.lib uuid.lib propsys.lib
 if errorlevel 1 exit /b 1

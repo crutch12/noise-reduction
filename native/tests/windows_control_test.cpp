@@ -85,7 +85,6 @@ int wmain(int argc, wchar_t** argv) {
             check(SUCCEEDED(effects->GetEffectsList(&list, &count, changed)) && count == 0 && list == nullptr, "Disabled effect still advertised");
             InterlockedExchange(&block->config, 1); SetEvent(signal);
             check(WaitForSingleObject(changed, 3000) == WAIT_OBJECT_0, "Windows was not notified of enabled processing");
-            CloseHandle(signal); CloseHandle(changed);
             WAVEFORMATEX wave{WAVE_FORMAT_IEEE_FLOAT,1,48000,192000,4,32,0};
             ComPtr<IAudioMediaType> media; check(SUCCEEDED(CreateAudioMediaType(&wave, sizeof(wave), &media)), "Format failed");
             std::array<float,480> input{}, output{};
@@ -113,8 +112,26 @@ int wmain(int argc, wchar_t** argv) {
             for (int frame = 0; frame < 6; ++frame) rt->APOProcess(1,&pip,1,&pop);
             check(block->model_frames == before_bypass, "Reset disabled graph performed model inference");
             check(SUCCEEDED(configuration->UnlockForProcess()), "Disabled graph unlock failed");
+            // модель меняется на ходу: звук идёт, DeepFilterNet собирается в фоне и подхватывается
+            InterlockedExchange(&block->config, 1 | 8 | (24 << 8));
+            check(SUCCEEDED(configuration->LockForProcess(1,&pin,1,&pout)), "Model switch lock failed");
+            check(block->active_model == 1, "Locked graph ignored the selected DeepFilterNet model");
+            InterlockedExchange(&block->config, 1 | (24 << 8)); SetEvent(signal);
+            bool switched = false;
+            for (int wait = 0; wait < 300 && !switched; ++wait) { Sleep(10); rt->APOProcess(1,&pip,1,&pop); switched = block->active_model == 0; }
+            check(switched, "RNNoise was not picked up while processing");
+            InterlockedExchange(&block->config, 1 | 8 | (24 << 8)); SetEvent(signal);
+            switched = false;
+            for (int wait = 0; wait < 300 && !switched; ++wait) { Sleep(10); rt->APOProcess(1,&pip,1,&pop); switched = block->active_model == 1; }
+            check(switched, "DeepFilterNet was not picked up while processing");
+            const LONG64 before_deepfilter = block->model_frames;
+            for (int frame = 0; frame < 12; ++frame) rt->APOProcess(1,&pip,1,&pop);
+            check(block->model_frames > before_deepfilter, "DeepFilterNet did not process audio");
+            for (size_t i = 0; i < 480; ++i) check(std::isfinite(output[i]) && std::abs(output[i]) <= 1.0f, "DeepFilterNet output is not finite");
+            check(SUCCEEDED(configuration->UnlockForProcess()), "Model switch unlock failed");
+            CloseHandle(signal); CloseHandle(changed);
         }
-        std::cout << "PASS: Windows endpoint initialization, control association, notifications, telemetry, strength after Reset/relock\n";
+        std::cout << "PASS: Windows endpoint initialization, control association, notifications, telemetry, strength after Reset/relock, live model switch\n";
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; code = 1; }
     if (module) FreeLibrary(module);
     if (block) UnmapViewOfFile(block);

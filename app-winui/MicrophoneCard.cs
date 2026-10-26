@@ -21,6 +21,10 @@ namespace NoiseReduction.WinUI
         private readonly ToggleSwitch toggle = new ToggleSwitch { MinWidth = 0, VerticalAlignment = VerticalAlignment.Center };
         private readonly InfoBar hookBar = new InfoBar { Severity = InfoBarSeverity.Warning, IsClosable = false, IsOpen = false };
         private readonly Button hookButton = new Button();
+        private readonly TextBlock modelLabel = new TextBlock { Style = Style("BodyStrongTextBlockStyle") };
+        private readonly ToggleButton fastModel = new ToggleButton { HorizontalAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(8, 4, 8, 5) };
+        private readonly ToggleButton preciseModel = new ToggleButton { HorizontalAlignment = HorizontalAlignment.Stretch, Padding = new Thickness(8, 4, 8, 5) };
+        private readonly TextBlock modelNote = new TextBlock { Style = Style("CaptionTextBlockStyle"), Foreground = Brush("TextFillColorSecondaryBrush"), TextWrapping = TextWrapping.Wrap };
         private readonly TextBlock strengthLabel = new TextBlock { Style = Style("BodyStrongTextBlockStyle"), VerticalAlignment = VerticalAlignment.Center };
         private readonly TextBlock strengthValue = new TextBlock { HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center, Foreground = Brush("TextFillColorSecondaryBrush") };
         private readonly StrengthPresets presets = new StrengthPresets(true);
@@ -72,9 +76,17 @@ namespace NoiseReduction.WinUI
                 advancedChevron.Glyph = open ? "" : "";
             };
 
+            var models = new Grid { ColumnSpacing = 4 };
+            models.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            models.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            Grid.SetColumn(preciseModel, 1);
+            models.Children.Add(fastModel); models.Children.Add(preciseModel);
+
             var body = new StackPanel { Spacing = 8 };
             hookBar.ActionButton = hookButton;
             body.Children.Add(hookBar);
+            body.Children.Add(modelLabel); body.Children.Add(models); body.Children.Add(modelNote);
+            body.Children.Add(Divider());
             body.Children.Add(strengthHead); body.Children.Add(presets.View); body.Children.Add(slider);
             body.Children.Add(Divider());
             body.Children.Add(compareLabel); body.Children.Add(buttons); body.Children.Add(waveform.View); body.Children.Add(note);
@@ -96,6 +108,8 @@ namespace NoiseReduction.WinUI
             slider.ValueChanged += (_, args) => { if (!updating) controller.SetAttenuation(Id, (int)Math.Round(args.NewValue)); };
             lowCut.Toggled += (_, _) => { if (!updating) controller.SetLowCut(Id, lowCut.IsOn); };
             economy.Toggled += (_, _) => { if (!updating) controller.SetEconomy(Id, economy.IsOn); };
+            fastModel.Click += (_, _) => { if (!updating) controller.SetDeepFilter(Id, false); Update(); };
+            preciseModel.Click += (_, _) => { if (!updating) controller.SetDeepFilter(Id, true); Update(); };
             record.Click += (_, _) => { if (controller.RecordingId == Id) controller.StopRecording(); else run(() => controller.RecordAsync(Id)); };
             listen.Click += (_, _) => controller.TogglePlayback(Id);
             listenSwitch.Toggled += (_, _) => { if (!updating) controller.SetListenProcessed(listenSwitch.IsOn); };
@@ -112,6 +126,10 @@ namespace NoiseReduction.WinUI
         internal void Localize()
         {
             Label(toggle); Label(lowCut); Label(economy);
+            modelLabel.Text = T("Модель");
+            fastModel.Content = T("Быстрая");
+            preciseModel.Content = T("Точная");
+            modelNote.Text = T("Точная лучше убирает клавиатуру и голоса на фоне, но чуть сильнее нагружает процессор");
             strengthLabel.Text = T("Сила подавления");
             presets.Localize();
             compareLabel.Text = T("Проверка на своём голосе");
@@ -122,6 +140,8 @@ namespace NoiseReduction.WinUI
             economy.Header = T("Экономный режим");
             reset.Content = T("Сбросить настройки");
             diagnostics.Content = T("Скопировать диагностику");
+            Tip(fastModel, "RNNoise, почти не нагружает процессор");
+            Tip(preciseModel, "DeepFilterNet, нагрузка чуть выше");
             Tip(slider, "Сила в децибелах");
             Tip(listenSwitch, "Переключение на ходу");
             Tip(lowCut, "Гул ниже 80 Гц: сеть, вентиляторы");
@@ -164,6 +184,10 @@ namespace NoiseReduction.WinUI
                 hookButton.Content = T("Включить");
                 hookButton.IsEnabled = idle;
 
+                bool precise = controller.DeepFilter(Id);
+                fastModel.IsChecked = !precise; preciseModel.IsChecked = precise;
+                fastModel.IsEnabled = preciseModel.IsEnabled = idle;
+
                 int value = controller.Attenuation(Id);
                 // значение вне пресетов сразу открывает ползунок
                 if (Array.IndexOf(StrengthPresets.Values, value) < 0) presets.CustomOpen = true;
@@ -188,7 +212,8 @@ namespace NoiseReduction.WinUI
 
                 lowCut.IsOn = controller.LowCut(Id);
                 lowCut.IsEnabled = idle;
-                economy.Visibility = device.Channels > 1 ? Visibility.Visible : Visibility.Collapsed;
+                // точная модель и так обрабатывает каналы вместе, экономному режиму там делать нечего
+                economy.Visibility = device.Channels > 1 && !precise ? Visibility.Visible : Visibility.Collapsed;
                 economy.IsOn = controller.Economy(Id);
                 economy.IsEnabled = idle;
                 reset.IsEnabled = idle;

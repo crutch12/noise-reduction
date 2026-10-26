@@ -9,6 +9,8 @@ struct Backend {
     void* (*create)(void*);
     void (*destroy)(void*);
     float (*frame)(void*, float*, const float*);
+    // задержка модели вместе с адаптером кадров, 0 значит как у RNNoise
+    size_t latency = 0;
 };
 
 // Срез гула ниже 80 Гц, Butterworth второго порядка для 48 кГц
@@ -49,6 +51,7 @@ public:
     static constexpr size_t frame_size = 480;
     // Verified for the pinned RNNoise build: 960 model + 480 adapter samples
     static constexpr size_t latency = 1440;
+    static constexpr size_t max_latency = 2880;
     explicit Processor(Backend backend, bool enabled = true);
     ~Processor();
     Processor(const Processor&) = delete;
@@ -58,6 +61,7 @@ public:
     void process(const float* input, float* output, size_t count) noexcept;
     uint64_t processed_frames() const noexcept { return processed_frames_; }
     bool has_model() const noexcept { return state_ != nullptr; }
+    size_t delay() const noexcept { return delay_; }
 
 private:
     Backend backend_;
@@ -67,7 +71,8 @@ private:
     float current_floor_ = 0.0630957344f;
     std::array<float, frame_size> input_{};
     std::array<float, frame_size> output_{};
-    std::array<float, latency> dry_{};
+    std::array<float, max_latency> dry_{};
+    size_t delay_;
     size_t position_ = 0;
     size_t dry_position_ = 0;
     float blend_;

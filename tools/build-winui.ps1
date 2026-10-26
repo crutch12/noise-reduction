@@ -24,7 +24,7 @@ $engineSources = @('app-engine/Program.cs', 'app/Core.cs', 'app/SecureControl.cs
 & $compiler /nologo /target:winexe /platform:x64 /optimize+ "/win32icon:$(Join-Path $repoPath 'app/assets/NoiseReduction.ico')" "/out:$output/NoiseReduction.Engine.exe" /r:System.Runtime.Serialization.dll /r:System.ServiceProcess.dll /r:System.Windows.Forms.dll $engineSources
 if ($LASTEXITCODE -ne 0) { throw 'Engine helper compilation failed' }
 Copy-Item -LiteralPath (Join-Path $repoPath 'app/NoiseReduction.exe.config') -Destination "$output/NoiseReduction.Engine.exe.config" -Force
-foreach ($library in @('NoiseReduction.Apo.dll', 'rnnoise.dll')) {
+foreach ($library in @('NoiseReduction.Apo.dll', 'rnnoise.dll', 'nr_deepfilter.dll')) {
     Copy-Item -LiteralPath (Join-Path $repoPath "build/$library") -Destination $output -Force
 }
 Write-Output "Built $output/NoiseReduction.exe"

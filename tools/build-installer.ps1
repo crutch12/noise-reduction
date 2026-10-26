@@ -26,6 +26,7 @@ foreach ($required in @('NoiseReduction.exe', 'NoiseReduction.dll', 'NoiseReduct
 foreach ($file in Get-ChildItem -LiteralPath (Join-Path $buildPath 'pack') -File) { $payload["Pack/$($file.Name)"] = $file.FullName }
 $payload['NoiseReduction.Apo.dll'] = Join-Path $buildPath 'NoiseReduction.Apo.dll'
 $payload['rnnoise.dll'] = Join-Path $buildPath 'rnnoise.dll'
+$payload['nr_deepfilter.dll'] = Join-Path $buildPath 'nr_deepfilter.dll'
 if ((Get-FileHash -LiteralPath $payload['rnnoise.dll'] -Algorithm SHA256).Hash.ToLowerInvariant() -ne '06770aeb8855ef942b5dcdb436f84dfdd5867b716ba4b4c8a2c66ade03197f31') { throw 'RNNoise DLL differs from the licensed pyrnnoise 0.4.5 payload; update provenance and notices before packaging' }
 $redistPath = Get-ChildItem 'C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Redist/MSVC' -Directory | Where-Object Name -Match '^14\.' | Sort-Object Name -Descending | Select-Object -First 1
 if (-not $redistPath) { throw 'MSVC x64 redistributable directory is missing' }

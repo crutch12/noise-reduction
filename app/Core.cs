@@ -19,7 +19,8 @@ namespace NoiseReduction.Desktop
         [DataMember] public int Attenuation = 24;
         [DataMember] public bool LowCut;
         [DataMember] public bool Economy;
-        [OnDeserializing] private void Defaults(StreamingContext context) { Enabled = true; Attenuation = 24; LowCut = false; Economy = false; }
+        [DataMember] public bool DeepFilter;
+        [OnDeserializing] private void Defaults(StreamingContext context) { Enabled = true; Attenuation = 24; LowCut = false; Economy = false; DeepFilter = false; }
     }
     [DataContract]
     public sealed class Settings
@@ -107,8 +108,11 @@ namespace NoiseReduction.Desktop
         { Set(enabled, attenuation, false, false); }
         // бит 1 включает срез гула ниже 80 Гц, бит 2 общую обработку всех каналов
         public void Set(bool enabled, int attenuation, bool lowCut, bool economy)
+        { Set(enabled, attenuation, lowCut, economy, false); }
+        // бит 3 выбирает DeepFilterNet вместо RNNoise
+        public void Set(bool enabled, int attenuation, bool lowCut, bool economy, bool deepFilter)
         {
-            uint configuration = (uint)((enabled ? 1 : 0) | (lowCut ? 2 : 0) | (economy ? 4 : 0) | (Math.Max(0, Math.Min(60, attenuation)) << 8));
+            uint configuration = (uint)((enabled ? 1 : 0) | (lowCut ? 2 : 0) | (economy ? 4 : 0) | (deepFilter ? 8 : 0) | (Math.Max(0, Math.Min(60, attenuation)) << 8));
             SetConfiguration(configuration);
         }
         public uint Configuration { get { return view.ReadUInt32(8); } }
@@ -142,6 +146,7 @@ namespace NoiseReduction.Desktop
         public long Frames { get { return view.ReadInt64(16); } }
         public long ModelFrames { get { return view.ReadInt64(24); } }
         public long Errors { get { return view.ReadInt64(32); } }
+        public bool DeepFilterActive { get { return view.ReadUInt32(12) == 1; } }
         public static string NotificationName(string fileName)
         {
             var match = NotificationPattern.Match(fileName);

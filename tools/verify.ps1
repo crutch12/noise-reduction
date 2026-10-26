@@ -8,6 +8,7 @@ try {
     cmd /c native\build.cmd
     if ($LASTEXITCODE -ne 0) { throw 'Native build failed' }
     Copy-Item -LiteralPath '.local/venv/Lib/site-packages/pyrnnoise/rnnoise.dll' -Destination 'build/rnnoise.dll'
+    & ./tools/build-deepfilter.ps1
     & ./build/processor_test.exe (Resolve-Path 'build/rnnoise.dll').Path
     if ($LASTEXITCODE -ne 0) { throw 'Native processing tests failed' }
     & ./build/apo_test.exe (Resolve-Path 'build/NoiseReduction.Apo.dll').Path

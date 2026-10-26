@@ -5,6 +5,7 @@
 namespace nr {
 Processor::Processor(Backend backend, bool enabled)
     : backend_(backend), state_(backend.create ? backend.create(nullptr) : nullptr), enabled_(enabled),
+      delay_(backend.latency ? std::min(backend.latency, max_latency) : latency),
       blend_(enabled ? 1.0f : 0.0f), previous_enabled_(enabled) {
 }
 
@@ -25,7 +26,7 @@ void Processor::process(const float* input, float* output, size_t count) noexcep
         sample = std::isfinite(sample) ? std::clamp(sample, -1.0f, 1.0f) : 0.0f;
         float dry = dry_[dry_position_];
         dry_[dry_position_] = sample;
-        dry_position_ = (dry_position_ + 1) % latency;
+        dry_position_ = (dry_position_ + 1) % delay_;
         float target = enabled && warmup_ == 0 ? 1.0f : 0.0f;
         blend_ += std::clamp(target - blend_, -1.0f / 960, 1.0f / 960);
         float wet = output_[position_] / 32768.0f;
