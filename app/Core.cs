@@ -15,11 +15,11 @@ namespace NoiseReduction.Desktop
     {
         [DataMember] public string Id;
         [DataMember] public bool Enabled = true;
-        [DataMember] public int Attenuation = 24;
+        [DataMember] public int Attenuation = 12;
         [DataMember] public bool LowCut;
         [DataMember] public bool Economy;
-        [DataMember] public bool DeepFilter = true;
-        [OnDeserializing] private void Defaults(StreamingContext context) { Enabled = true; Attenuation = 24; LowCut = false; Economy = false; DeepFilter = true; }
+        [DataMember] public bool DeepFilter;
+        [OnDeserializing] private void Defaults(StreamingContext context) { Enabled = true; Attenuation = 12; LowCut = false; Economy = false; DeepFilter = false; }
     }
     [DataContract]
     public sealed class Settings

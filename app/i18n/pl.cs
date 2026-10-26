@@ -138,7 +138,7 @@ namespace NoiseReduction.Desktop
             { "Переключение на ходу", "Przełączanie w trakcie odtwarzania" },
             { "Гул ниже 80 Гц: сеть, вентиляторы", "Buczenie poniżej 80 Hz: sieć elektryczna, wentylatory" },
             { "Каналы обрабатываются вместе, нагрузка ниже", "Kanały są przetwarzane razem, obciążenie jest mniejsze" },
-            { "Точная модель и обычная сила, остальное выключено", "Dokładny model i normalna siła, reszta wyłączona" },
+            { "Быстрая модель и обычная сила, остальное выключено", "Szybki model i normalna siła, wszystko inne wyłączone" },
             { "Запишите фразу, затем слушайте и переключайте Оригинал и Обработано", "Nagraj zdanie, potem odtwórz je i przełączaj między opcjami Oryginał i Przetworzone" },
             { "Нажмите, чтобы включить шумоподавление", "Kliknij, aby włączyć redukcję szumów" },
             { "Шумоподавление", "Redukcja szumów" },

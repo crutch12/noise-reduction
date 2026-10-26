@@ -138,7 +138,7 @@ namespace NoiseReduction.Desktop
             { "Переключение на ходу", "Beralih saat memutar" },
             { "Гул ниже 80 Гц: сеть, вентиляторы", "Dengung di bawah 80 Hz: listrik, kipas" },
             { "Каналы обрабатываются вместе, нагрузка ниже", "Kanal diproses bersama, beban lebih rendah" },
-            { "Точная модель и обычная сила, остальное выключено", "Model akurat dan kekuatan normal, sisanya nonaktif" },
+            { "Быстрая модель и обычная сила, остальное выключено", "Model cepat dan kekuatan normal, lainnya nonaktif" },
             { "Запишите фразу, затем слушайте и переключайте Оригинал и Обработано", "Rekam satu kalimat, lalu putar dan beralih antara Asli dan Diproses" },
             { "Нажмите, чтобы включить шумоподавление", "Klik untuk mengaktifkan peredam bising" },
             { "Шумоподавление", "Peredam bising" },

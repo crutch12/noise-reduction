@@ -57,7 +57,7 @@ class CoreTests
             Check(Settings.Load(path).Language == "ru", "Russian language selection persists");
             settings.Language = "system"; settings.Save(path);
             Check(Settings.Load(path).Language == "system", "system language choice persists without becoming a fixed locale");
-            Check(settings.Enabled && settings.For("mic-a").Attenuation == 24, "new profile defaults");
+            Check(settings.Enabled && settings.For("mic-a").Attenuation == 12, "new profile defaults");
             settings.For("mic-a").Attenuation = 37;
             settings.For("mic-a").Enabled = false;
             settings.For("mic-b").Attenuation = 12;
@@ -67,10 +67,10 @@ class CoreTests
             settings = Settings.Load(path);
             Check(!settings.Enabled && !settings.For("mic-a").Enabled && settings.For("mic-a").Attenuation == 37 && settings.For("mic-b").Attenuation == 12, "atomic persistence and endpoint identity");
             File.WriteAllText(path, "broken");
-            Check(Settings.Load(path).For("mic-a").Attenuation == 24, "corrupt settings fallback");
+            Check(Settings.Load(path).For("mic-a").Attenuation == 12, "corrupt settings fallback");
             File.WriteAllText(path, "{\"Profiles\":[{\"Id\":\"mic-a\"}]}");
             settings = Settings.Load(path);
-            Check(settings.Enabled && settings.For("mic-a").Enabled && settings.For("mic-a").Attenuation == 24 && settings.Language == "system" && settings.EnableNewMicrophones, "missing persisted fields use safe defaults");
+            Check(settings.Enabled && settings.For("mic-a").Enabled && settings.For("mic-a").Attenuation == 12 && settings.Language == "system" && settings.EnableNewMicrophones, "missing persisted fields use safe defaults");
             settings.EnableNewMicrophones = false;
             Check(settings.Has("mic-a") && !settings.Has("mic-c") && !settings.For("mic-c").Enabled && settings.For("mic-a").Enabled, "new microphones follow the default without touching saved ones");
             Check(!settings.For("mic-a").LowCut, "low cut is off by default");

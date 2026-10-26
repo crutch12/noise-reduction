@@ -160,7 +160,7 @@ namespace NoiseReduction.WinUI
         public void SetEconomy(string id, bool enabled) { Change(() => Settings.For(id).Economy = enabled); }
         public bool DeepFilter(string id) => Settings.For(id).DeepFilter;
         public void SetDeepFilter(string id, bool enabled) { Change(() => Settings.For(id).DeepFilter = enabled); Reprocess(id); }
-        public void ResetProfile(string id) { Change(() => { var profile = Settings.For(id); profile.Attenuation = 24; profile.LowCut = false; profile.Economy = false; profile.DeepFilter = true; }); }
+        public void ResetProfile(string id) { Change(() => { var profile = Settings.For(id); profile.Attenuation = 12; profile.LowCut = false; profile.Economy = false; profile.DeepFilter = false; }); }
         public string WindowTheme => Settings.WindowTheme ?? "system";
         public string TrayTheme => Settings.TrayTheme ?? "system";
         public void SetThemes(string window, string tray) { Change(() => { Settings.WindowTheme = window; Settings.TrayTheme = tray; }); }

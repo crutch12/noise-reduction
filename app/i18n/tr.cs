@@ -138,7 +138,7 @@ namespace NoiseReduction.Desktop
             { "Переключение на ходу", "Oynatırken geçiş" },
             { "Гул ниже 80 Гц: сеть, вентиляторы", "80 Hz altı uğultu: şebeke, fanlar" },
             { "Каналы обрабатываются вместе, нагрузка ниже", "Kanallar birlikte işlenir, yük daha düşük" },
-            { "Точная модель и обычная сила, остальное выключено", "Hassas model ve normal güç, geri kalan her şey kapalı" },
+            { "Быстрая модель и обычная сила, остальное выключено", "Hızlı model ve normal güç, diğer her şey kapalı" },
             { "Запишите фразу, затем слушайте и переключайте Оригинал и Обработано", "Bir cümle kaydedin, sonra dinleyin ve Özgün ile İşlenmiş arasında geçiş yapın" },
             { "Нажмите, чтобы включить шумоподавление", "Gürültü azaltmayı açmak için tıklayın" },
             { "Шумоподавление", "Gürültü azaltma" },

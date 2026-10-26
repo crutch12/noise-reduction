@@ -138,7 +138,7 @@ namespace NoiseReduction.Desktop
             { "Переключение на ходу", "Wisselen tijdens het afspelen" },
             { "Гул ниже 80 Гц: сеть, вентиляторы", "Brom onder 80 Hz: stroomnet, ventilatoren" },
             { "Каналы обрабатываются вместе, нагрузка ниже", "Kanalen worden samen verwerkt, lagere cpu-belasting" },
-            { "Точная модель и обычная сила, остальное выключено", "Nauwkeurig model en normale sterkte, de rest uit" },
+            { "Быстрая модель и обычная сила, остальное выключено", "Snel model en normale sterkte, al het andere uit" },
             { "Запишите фразу, затем слушайте и переключайте Оригинал и Обработано", "Neem een zin op, speel hem af en wissel tussen Origineel en Verwerkt" },
             { "Нажмите, чтобы включить шумоподавление", "Klik om ruisonderdrukking in te schakelen" },
             { "Шумоподавление", "Ruisonderdrukking" },
