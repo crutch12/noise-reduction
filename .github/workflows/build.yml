@@ -239,3 +239,15 @@ jobs:
             Or install with `winget install crutch12.NoiseReduction`
 
             The installers are not code signed yet. Check a download with `gh attestation verify <file> --repo crutch12/noise-reduction`
+
+  winget:
+    needs: release
+    runs-on: windows-latest
+    # пока пакет не принят в winget-pkgs, обновлять там нечего, релиз от этого не ломаем
+    continue-on-error: true
+    steps:
+      - uses: vedantmgoyal9/winget-releaser@b7370d4d152efdce803a26cc6ca9eee58cb2ad54 # v2
+        with:
+          identifier: crutch12.NoiseReduction
+          installers-regex: '-setup\.exe$'
+          token: ${{ secrets.WINGET_TOKEN }}
