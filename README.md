@@ -28,7 +28,29 @@ On Windows 11 24H2 and newer, microphones that Windows manages through audio eff
 
 ## Download
 
-Download the latest installer from [GitHub Releases](https://github.com/crutch12/noise-reduction/releases): `x64-setup.exe` for Intel and AMD processors, `arm64-setup.exe` for ARM. Releases are code signed with a certificate by [SignPath Foundation](https://signpath.org), see the policy below
+### winget
+
+```
+winget install crutch12.NoiseReduction
+```
+
+winget picks the right installer for your processor. To update later run `winget upgrade crutch12.NoiseReduction`, to remove `winget uninstall crutch12.NoiseReduction`
+
+### Installer
+
+Download the latest installer from [GitHub Releases](https://github.com/crutch12/noise-reduction/releases): `x64-setup.exe` for Intel and AMD processors, `arm64-setup.exe` for ARM
+
+The installer is not code signed yet, so Windows may show a SmartScreen warning when you run a file downloaded in the browser. Click More info, then Run anyway. winget installs without this warning
+
+### Verifying a download
+
+Installers are built by GitHub Actions from this repository ([build.yml](.github/workflows/build.yml)). Starting with the release after 1.1.2 each one also has a build attestation. To check that a file you downloaded is exactly what the build produced, run with [GitHub CLI](https://cli.github.com):
+
+```
+gh attestation verify NoiseReduction-<version>-x64-setup.exe --repo crutch12/noise-reduction
+```
+
+The release also lists SHA256 checksums in `SHA256SUMS.txt`
 
 ## How to use
 
@@ -99,17 +121,7 @@ Interface strings live in `app/Localization.cs` (Russian source and English) and
 - [DeepFilterNet](https://github.com/Rikorose/DeepFilterNet), MIT or Apache 2.0
 - [Windows audio processing objects](https://learn.microsoft.com/windows-hardware/drivers/audio/windows-audio-processing-objects)
 
-## Code signing policy
-
-Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org)
-
-- Releases are built from this repository by GitHub Actions ([build.yml](.github/workflows/build.yml)) and signed only after manual approval
-- Signed are our own binaries (NoiseReduction.exe, NoiseReduction.dll, NoiseReduction.Engine.exe, NoiseReduction.Apo.dll, nr_deepfilter.dll), the effect pack driver catalog and the installer. Third party files (.NET, Windows App SDK, MSVC runtime, rnnoise.dll) are shipped as published by their authors
-- Artifact configurations: [docs/signing](docs/signing)
-- Committers and reviewers: [crutch12](https://github.com/crutch12)
-- Approvers: [crutch12](https://github.com/crutch12)
-
-### Privacy
+## Privacy
 
 This program will not transfer any information to other networked systems. Microphone audio is processed locally and test recordings stay in a temporary folder until the app closes
 

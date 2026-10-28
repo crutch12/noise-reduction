@@ -208,6 +208,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -219,6 +221,10 @@ jobs:
             mv "NoiseReduction.Setup-$arch/NoiseReduction.Setup.exe" "NoiseReduction-$version-$arch-setup.exe"
           done
           sha256sum NoiseReduction-*.exe > SHA256SUMS.txt
+      # без сертификата хотя бы можно проверить, что установщик собран здесь из этого репозитория
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: NoiseReduction-*-setup.exe
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: |
@@ -229,3 +235,7 @@ jobs:
             Installers:
             - `x64-setup.exe` for PCs with Intel or AMD processors, Windows 10 2004 or newer
             - `arm64-setup.exe` for PCs with Snapdragon and other ARM processors, Windows 11
+
+            Or install with `winget install crutch12.NoiseReduction`
+
+            The installers are not code signed yet. Check a download with `gh attestation verify <file> --repo crutch12/noise-reduction`
