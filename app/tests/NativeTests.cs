@@ -8,7 +8,7 @@ internal static class NativeTests
     private static void Check(bool condition, string message) { if (!condition) throw new Exception(message); }
     private static float[] Process(float[] samples, int attenuation = 24)
     {
-        var method = typeof(Comparison).GetMethod("ProcessCaptured", BindingFlags.Static | BindingFlags.NonPublic);
+        var method = typeof(Comparison).GetMethod("ProcessCaptured", BindingFlags.Static | BindingFlags.NonPublic, null, new[] { typeof(float[]), typeof(int) }, null);
         Check(method != null, "Offline comparison must support captured sample processing");
         return (float[])method.Invoke(null, new object[] { samples, attenuation });
     }

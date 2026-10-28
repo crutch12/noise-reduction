@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.UI.Dispatching;
+using System.Runtime.InteropServices;
 using Microsoft.Win32;
 using Windows.Media.Core;
 using Windows.Media.Playback;
@@ -83,7 +84,10 @@ namespace NoiseReduction.WinUI
                 return total > 0 ? session.Position.TotalSeconds / total : 0;
             }
         }
-        public bool WatchUsage { get; set; }
+        private bool watchUsage, flyoutOpen, onBattery;
+        public bool WatchUsage { get => watchUsage; set { watchUsage = value; Pace(); } }
+        public bool FlyoutOpen { get => flyoutOpen; set { flyoutOpen = value; Pace(); } }
+        public bool FastOnBattery => Settings.FastOnBattery;
         public bool GlobalEnabled => Settings.Enabled;
         public bool Busy => !state.CanRefresh;
         public bool StartupEnabled { get; private set; }
@@ -102,11 +106,12 @@ namespace NoiseReduction.WinUI
                     StartupEnabled = key != null && key.GetValue("NoiseReduction") != null;
             }
             catch (Exception error) { Error = error.Message; }
+            onBattery = OnBattery();
             Refresh();
             var dispatcher = DispatcherQueue.GetForCurrentThread();
             if (dispatcher == null) throw new InvalidOperationException("A UI dispatcher is required");
             timer = dispatcher.CreateTimer();
-            timer.Interval = TimeSpan.FromSeconds(1);
+            timer.Interval = Quiet ? QuietTick : TimeSpan.FromSeconds(1);
             timer.Tick += Tick;
             timer.Start();
             // без подписки остаётся обычный опрос раз в несколько секунд
@@ -126,6 +131,34 @@ namespace NoiseReduction.WinUI
                 Notify();
             }
         }
+
+        // когда ни окна, ни панели не видно, смотреть часто некому: микрофоны и так приходят событиями
+        private static readonly TimeSpan QuietTick = TimeSpan.FromSeconds(10);
+        private bool Quiet => !watchUsage && !flyoutOpen && RecordingId == null && !Playing;
+        private void Pace()
+        {
+            if (timer == null || disposed) return;
+            var interval = Quiet ? QuietTick : TimeSpan.FromSeconds(1);
+            if (timer.Interval == interval) return;
+            timer.Stop(); timer.Interval = interval; timer.Start();
+            if (!Quiet) refreshAt = DateTime.UtcNow;
+        }
+        [StructLayout(LayoutKind.Sequential)]
+        private struct PowerStatus { public byte AcLine, Battery, Percent, SaverStatus; public int LifeTime, FullLifeTime; }
+        [DllImport("kernel32.dll")] private static extern bool GetSystemPowerStatus(out PowerStatus status);
+        // 0 значит от батареи, на компьютере без батареи всегда 1
+        private static bool OnBattery() => GetSystemPowerStatus(out var status) && status.AcLine == 0;
+        internal void PowerChanged()
+        {
+            if (disposed) return;
+            bool battery = OnBattery();
+            if (battery == onBattery) return;
+            onBattery = battery;
+            if (!Settings.FastOnBattery || Busy) return;
+            try { ApplyControls(false); } catch (Exception error) { Error = error.Message; }
+            Notify();
+        }
+        public void SetFastOnBattery(bool enabled) { Change(() => Settings.FastOnBattery = enabled); }
 
         public bool IsEnabled(string id) => Settings.Enabled && Settings.For(id).Enabled;
         public bool ProfileEnabled(string id) => Settings.For(id).Enabled;
@@ -210,7 +243,7 @@ namespace NoiseReduction.WinUI
         public void Refresh()
         {
             if (Busy || disposed) return;
-            refreshAt = DateTime.UtcNow.AddSeconds(3);
+            refreshAt = DateTime.UtcNow.AddSeconds(Quiet ? 30 : 3);
             var announce = new List<DeviceInfo>();
             try
             {
@@ -292,7 +325,8 @@ namespace NoiseReduction.WinUI
             foreach (var pair in controls)
             {
                 var profile = Settings.For(pair.Key);
-                try { pair.Value.Set(state.Enabled(pair.Key, Settings.Enabled && !bypass, profile.Enabled), profile.Attenuation, profile.LowCut, profile.Economy, profile.DeepFilter); }
+                bool deepFilter = profile.DeepFilter && !(Settings.FastOnBattery && onBattery);
+                try { pair.Value.Set(state.Enabled(pair.Key, Settings.Enabled && !bypass, profile.Enabled), profile.Attenuation, profile.LowCut, profile.Economy, deepFilter); }
                 catch (Exception error) { if (!bypass) throw; failure ??= error; }
             }
             if (failure != null) throw failure;

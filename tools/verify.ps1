@@ -26,7 +26,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Capture session test compilation failed' }
     & ./build/CaptureSessionsTests.exe
     if ($LASTEXITCODE -ne 0) { throw 'Capture session tests failed' }
-    & ./tools/build-app.ps1 -Test -NativeTest -UiTest
+    & ./tools/test-app.ps1
     if ($LASTEXITCODE -ne 0) { throw 'Desktop tests failed' }
     & ./tools/build-installer.ps1
     if ($LASTEXITCODE -ne 0) { throw 'Installer verification failed' }

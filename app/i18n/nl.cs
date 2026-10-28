@@ -130,6 +130,8 @@ namespace NoiseReduction.Desktop
             { "Ctrl+Alt+N включает и выключает шумоподавление", "Met Ctrl+Alt+N schakel je ruisonderdrukking in en uit" },
             { "Включать шумоподавление для новых микрофонов", "Ruisonderdrukking inschakelen voor nieuwe microfoons" },
             { "При подключении нового микрофона появится уведомление", "Je krijgt een melding als je een nieuwe microfoon aansluit" },
+            { "На батарее использовать быструю модель", "Op accu het model Snel gebruiken" },
+            { "Пока ноутбук работает от батареи, вместо точной модели работает быстрая", "Zolang de laptop op de accu werkt, wordt Snel gebruikt in plaats van Nauwkeurig" },
             { "Проверка на своём голосе", "Testen met je eigen stem" },
             { "Обработано", "Verwerkt" },
             { "Оригинал", "Origineel" },

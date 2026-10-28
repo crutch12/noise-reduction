@@ -54,9 +54,14 @@ namespace NoiseReduction.Platform {
   internal static string EndpointGuid(string id) { int start = id.LastIndexOf('{'); Guid guid; if(start < 0 || !Guid.TryParse(id.Substring(start), out guid)) throw new ArgumentException("Invalid capture endpoint ID"); return guid.ToString("B"); }
   static string Fx(string id) { return Capture + "\\" + EndpointGuid(id) + "\\FxProperties"; }
   static string Properties(string id) { return Capture + "\\" + EndpointGuid(id) + "\\Properties"; }
-  // подписка на события микрофонов через тот же перечислитель, иначе .NET путает обёртки одного COM-объекта
-  public static object WatchEndpoints(IntPtr client) { var enumerator=(IMMDeviceEnumerator)new MMDeviceEnumerator(); Marshal.ThrowExceptionForHR(enumerator.RegisterEndpointNotificationCallback(client)); return enumerator; }
-  public static void StopWatchingEndpoints(object enumerator,IntPtr client) { ((IMMDeviceEnumerator)enumerator).UnregisterEndpointNotificationCallback(client); }
+  // перечислитель в процессе один, поэтому подписка держит свою обёртку вне кеша .NET, иначе другие обёртки этого объекта падают на касте
+  public static object WatchEndpoints(IntPtr client) {
+   Guid clsid=typeof(MMDeviceEnumerator).GUID, iid=new Guid("00000000-0000-0000-C000-000000000046"); IntPtr unknown;
+   Marshal.ThrowExceptionForHR(CoCreateInstance(ref clsid,IntPtr.Zero,1,ref iid,out unknown));
+   object own; try { own=Marshal.GetUniqueObjectForIUnknown(unknown); } finally { Marshal.Release(unknown); }
+   Marshal.ThrowExceptionForHR(((IMMDeviceEnumerator)own).RegisterEndpointNotificationCallback(client)); return own;
+  }
+  public static void StopWatchingEndpoints(object enumerator,IntPtr client) { ((IMMDeviceEnumerator)enumerator).UnregisterEndpointNotificationCallback(client); Marshal.ReleaseComObject(enumerator); }
   public static string GetDefaultMicrophoneId() {
    var enumerator=(IMMDeviceEnumerator)new MMDeviceEnumerator(); IMMDevice device=null;
    try {
@@ -194,6 +199,7 @@ namespace NoiseReduction.Platform {
    root.DeleteSubKey(path, false);
   }
   [DllImport("ole32.dll")] static extern int PropVariantClear(ref PropVariant variant);
+  [DllImport("ole32.dll")] static extern int CoCreateInstance(ref Guid clsid,IntPtr outer,uint context,ref Guid iid,out IntPtr instance);
  }
  // Пакет эффектов Windows 11: так Windows ставит эффекты на микрофоны, которыми управляет сама (USB и т.п.)
  public static class EffectPack {

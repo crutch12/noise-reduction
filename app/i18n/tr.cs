@@ -130,6 +130,8 @@ namespace NoiseReduction.Desktop
             { "Ctrl+Alt+N включает и выключает шумоподавление", "Ctrl+Alt+N gürültü azaltmayı açar ve kapatır" },
             { "Включать шумоподавление для новых микрофонов", "Yeni mikrofonlar için gürültü azaltmayı aç" },
             { "При подключении нового микрофона появится уведомление", "Yeni bir mikrofon bağlandığında bildirim görünür" },
+            { "На батарее использовать быструю модель", "Pilde Hızlı modeli kullan" },
+            { "Пока ноутбук работает от батареи, вместо точной модели работает быстрая", "Dizüstü bilgisayar pille çalışırken Hassas yerine Hızlı model kullanılır" },
             { "Проверка на своём голосе", "Kendi sesinizle deneyin" },
             { "Обработано", "İşlenmiş" },
             { "Оригинал", "Özgün" },

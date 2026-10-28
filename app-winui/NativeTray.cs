@@ -15,7 +15,7 @@ namespace NoiseReduction.WinUI
         private const uint TPM_RIGHTBUTTON = 2, TPM_RETURNCMD = 0x100, TPM_BOTTOMALIGN = 0x20, TPM_RIGHTALIGN = 8;
         private const int CommandGlobal = 1, CommandSettings = 2, CommandExit = 3, CommandMicrophone = 100;
         private readonly DesktopController controller;
-        private const uint WM_HOTKEY = 0x0312, WM_LBUTTONUP = 0x0202, WM_LBUTTONDBLCLK = 0x0203, WM_RBUTTONUP = 0x0205, WM_SETTINGCHANGE = 0x001A, WM_TRAY = 0x8000 + 1;
+        private const uint WM_HOTKEY = 0x0312, WM_LBUTTONUP = 0x0202, WM_LBUTTONDBLCLK = 0x0203, WM_RBUTTONUP = 0x0205, WM_SETTINGCHANGE = 0x001A, WM_POWERBROADCAST = 0x0218, PBT_APMPOWERSTATUSCHANGE = 0x000A, WM_TRAY = 0x8000 + 1;
         private const uint NIN_BALLOONHIDE = 0x403, NIN_BALLOONTIMEOUT = 0x404, NIN_BALLOONUSERCLICK = 0x405;
         private const uint NIM_ADD = 0, NIM_MODIFY = 1, NIM_DELETE = 2, NIF_MESSAGE = 1, NIF_ICON = 2, NIF_TIP = 4, NIF_INFO = 0x10;
 
@@ -147,6 +147,8 @@ namespace NoiseReduction.WinUI
                 }
                 // тема панели задач поменялась, значок перерисовываем под неё
                 else if (message == WM_SETTINGCHANGE) Update();
+                // переключились между сетью и батареей
+                else if (message == WM_POWERBROADCAST && wParam.ToInt64() == PBT_APMPOWERSTATUSCHANGE) controller.PowerChanged();
                 else if (message == taskbarCreated && taskbarCreated != 0 && !disposed) AddIcon();
             }
             catch (Exception) { }

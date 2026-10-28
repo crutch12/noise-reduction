@@ -130,6 +130,8 @@ namespace NoiseReduction.Desktop
             { "Ctrl+Alt+N включает и выключает шумоподавление", "Ctrl+Alt+N bật hoặc tắt giảm tiếng ồn" },
             { "Включать шумоподавление для новых микрофонов", "Bật giảm tiếng ồn cho micrô mới" },
             { "При подключении нового микрофона появится уведомление", "Sẽ có thông báo khi bạn kết nối micrô mới" },
+            { "На батарее использовать быструю модель", "Dùng mô hình Nhanh khi chạy pin" },
+            { "Пока ноутбук работает от батареи, вместо точной модели работает быстрая", "Khi máy tính xách tay chạy bằng pin, mô hình Nhanh được dùng thay cho Chính xác" },
             { "Проверка на своём голосе", "Thử bằng giọng của bạn" },
             { "Обработано", "Đã xử lý" },
             { "Оригинал", "Gốc" },

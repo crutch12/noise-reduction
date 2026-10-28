@@ -130,6 +130,8 @@ namespace NoiseReduction.Desktop
             { "Ctrl+Alt+N включает и выключает шумоподавление", "Ctrl+Alt+N włącza i wyłącza redukcję szumów" },
             { "Включать шумоподавление для новых микрофонов", "Włączaj redukcję szumów dla nowych mikrofonów" },
             { "При подключении нового микрофона появится уведомление", "Po podłączeniu nowego mikrofonu pojawi się powiadomienie" },
+            { "На батарее использовать быструю модель", "Na baterii używaj modelu Szybki" },
+            { "Пока ноутбук работает от батареи, вместо точной модели работает быстрая", "Gdy laptop działa na baterii, zamiast modelu Dokładny używany jest Szybki" },
             { "Проверка на своём голосе", "Test na własnym głosie" },
             { "Обработано", "Przetworzone" },
             { "Оригинал", "Oryginał" },

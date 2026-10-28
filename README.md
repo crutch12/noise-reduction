@@ -9,6 +9,7 @@ Noise Reduction removes background noise from your microphone in every program: 
 - Works in all apps at once, including Chrome and other Chromium based apps
 - Per microphone settings: on or off, model, strength, low cut filter, economy mode for multichannel arrays
 - Two local models: Fast (RNNoise, default) and Precise (DeepFilterNet 3)
+- Optional switch to the Fast model while a laptop runs on battery
 - Strength presets tuned per model, plus a custom slider
 - Test with your own voice: record a phrase, listen to the original and the processed version, change the model or strength while listening
 - Tray icon with a quick panel, Ctrl+Alt+N to pause and resume noise reduction

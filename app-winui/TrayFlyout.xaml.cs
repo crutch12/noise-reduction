@@ -78,6 +78,7 @@ namespace NoiseReduction.WinUI
             SetForegroundWindow(Handle);
             FocusSink.Focus(FocusState.Programmatic);
             DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, Fit);
+            controller.FlyoutOpen = true;
             _ = controller.ScanUsageAsync();
         }
 
@@ -86,6 +87,7 @@ namespace NoiseReduction.WinUI
             if (!AppWindow.IsVisible) return;
             hiddenAt = DateTime.UtcNow;
             AppWindow.Hide();
+            controller.FlyoutOpen = false;
         }
 
         private void Place()

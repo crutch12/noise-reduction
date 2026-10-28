@@ -130,6 +130,8 @@ namespace NoiseReduction.Desktop
             { "Ctrl+Alt+N включает и выключает шумоподавление", "Ctrl+Alt+N mengaktifkan dan menonaktifkan peredam bising" },
             { "Включать шумоподавление для новых микрофонов", "Aktifkan peredam bising untuk mikrofon baru" },
             { "При подключении нового микрофона появится уведомление", "Notifikasi muncul saat mikrofon baru tersambung" },
+            { "На батарее использовать быструю модель", "Gunakan model Cepat saat memakai baterai" },
+            { "Пока ноутбук работает от батареи, вместо точной модели работает быстрая", "Selama laptop memakai baterai, model Cepat dipakai sebagai pengganti Akurat" },
             { "Проверка на своём голосе", "Uji dengan suara Anda" },
             { "Обработано", "Diproses" },
             { "Оригинал", "Asli" },

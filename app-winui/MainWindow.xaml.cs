@@ -88,9 +88,12 @@ namespace NoiseReduction.WinUI
         private void Localize()
         {
             UiText.Language = controller.Language;
-            Label(MasterSwitch); Label(StartupSwitch); Label(NewMicrophonesSwitch);
+            Label(MasterSwitch); Label(StartupSwitch); Label(NewMicrophonesSwitch); Label(BatterySwitch);
             NewMicrophonesLabel.Text = T("Включать шумоподавление для новых микрофонов");
             NewMicrophonesHelp.Text = T("При подключении нового микрофона появится уведомление");
+            BatteryLabel.Text = T("На батарее использовать быструю модель");
+            BatteryHelp.Text = T("Пока ноутбук работает от батареи, вместо точной модели работает быстрая");
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(BatterySwitch, T("На батарее использовать быструю модель"));
             UninstallLabel.Text = T("Удалить программу");
             UninstallHelp.Text = T("Эффекты микрофонов вернутся к настройкам Windows");
             UninstallButton.Content = T("Удалить");
@@ -193,6 +196,8 @@ namespace NoiseReduction.WinUI
                 StartupSwitch.IsOn = controller.StartupEnabled;
                 NewMicrophonesSwitch.IsOn = controller.EnableNewMicrophones;
                 NewMicrophonesSwitch.IsEnabled = !controller.Busy;
+                BatterySwitch.IsOn = controller.FastOnBattery;
+                BatterySwitch.IsEnabled = !controller.Busy;
                 LanguagePicker.SelectedIndex = Array.IndexOf(Languages.Ids, controller.Language) + 1;
                 WindowThemePicker.SelectedIndex = Math.Max(0, Array.IndexOf(ThemeIds, controller.WindowTheme));
                 TrayThemePicker.SelectedIndex = Math.Max(0, Array.IndexOf(ThemeIds, controller.TrayTheme));
@@ -217,6 +222,7 @@ namespace NoiseReduction.WinUI
         }
         private void StartupToggled(object sender, RoutedEventArgs args) { if (!updating) controller.SetStartup(StartupSwitch.IsOn); }
         private void NewMicrophonesToggled(object sender, RoutedEventArgs args) { if (!updating) controller.SetEnableNewMicrophones(NewMicrophonesSwitch.IsOn); }
+        private void BatteryToggled(object sender, RoutedEventArgs args) { if (!updating) controller.SetFastOnBattery(BatterySwitch.IsOn); }
         private bool refreshing;
 
         // опрос быстрый, поэтому кольцо держим хотя бы полсекунды, иначе не видно, что что-то произошло
