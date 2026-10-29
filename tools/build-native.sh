@@ -22,6 +22,18 @@ fetch() {
     [ -f "$cache/$name" ] && [ "$(sha "$cache/$name")" = "$hash" ] && return 0
     for url in "$@"; do curl -fsSL --max-time 300 "$url" -o "$cache/$name.part" 2>/dev/null && mv "$cache/$name.part" "$cache/$name" && break || echo "$url failed"; done
 }
+# на Linux берём librnnoise.so из колеса pyrnnoise 0.4.5, как rnnoise.dll на Windows x64
+if [ "$lib" = so ] && [ ! -f "$out/librnnoise.so" ]; then
+    case "$(uname -m)" in
+        x86_64) wheel=f1/8b/6498de7ef0a4670bbeae951bec9cfd2386e57ef386f53eec28e75be39790/pyrnnoise-0.4.5-py3-none-manylinux1_x86_64.whl; digest=c095114532f9fa21f621084c879d72c93aaa0c9dbe38b662a63577bada2c214e ;;
+        aarch64) wheel=d7/69/96144ce909a371d9f0de8aceb18fb53188b8df14ef34fce909d345bafb42/pyrnnoise-0.4.5-py3-none-manylinux2014_aarch64.whl; digest=4b382d39b4963d38c8fe2f61639f634a5de0dd7dc731aca7ff1df48f9b1424cf ;;
+        *) echo "Unsupported Linux architecture $(uname -m)"; exit 1 ;;
+    esac
+    name=$(basename "$wheel")
+    fetch "$name" "$digest" "https://files.pythonhosted.org/packages/$wheel"
+    [ "$(sha "$cache/$name")" = "$digest" ] || { echo 'pyrnnoise wheel checksum does not match PyPI'; exit 1; }
+    unzip -p "$cache/$name" pyrnnoise-0.4.5.data/purelib/pyrnnoise/librnnoise.so > "$out/librnnoise.so"
+fi
 if [ ! -f "$out/librnnoise.$lib" ]; then
     fetch "rnnoise-$commit.tar.gz" f61ee0b3f4c4cd337303e003d333357c5eaf25ef5d75a742109ee59e9a0a3932 "https://codeload.github.com/xiph/rnnoise/tar.gz/$commit"
     fetch "rnnoise_data-$model.tar.gz" "$model" "https://media.xiph.org/rnnoise/models/rnnoise_data-$model.tar.gz" "https://modelscope.cn/models/pengzhendong/rnnoise/resolve/master/rnnoise_data-$model.tar.gz"
