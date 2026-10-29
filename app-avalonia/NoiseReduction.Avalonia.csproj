@@ -15,6 +15,7 @@
   <ItemGroup>
     <Compile Include="*.cs" />
     <Compile Include="../app/Core.cs" Link="Shared/Core.cs" />
+    <Compile Include="../app/SecureControl.cs" Link="Shared/SecureControl.cs" />
     <Compile Include="../app/Localization.cs" Link="Shared/Localization.cs" />
     <Compile Include="../app/i18n/*.cs" LinkBase="Shared/i18n" />
     <AvaloniaResource Include="../app/assets/NoiseReduction.ico" Link="Assets/NoiseReduction.ico" />
