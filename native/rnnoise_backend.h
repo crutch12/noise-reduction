@@ -1,19 +1,16 @@
 #pragma once
 #include "processor.h"
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
+#include "library.h"
 
 namespace nr {
 class RnnoiseBackend {
 public:
-    explicit RnnoiseBackend(const wchar_t* path);
-    ~RnnoiseBackend();
+    explicit RnnoiseBackend(const PathChar* path);
     RnnoiseBackend(const RnnoiseBackend&) = delete;
     RnnoiseBackend& operator=(const RnnoiseBackend&) = delete;
     Backend api() const noexcept { return api_; }
 private:
-    HMODULE module_ = nullptr;
+    Library module_;
     Backend api_{};
 };
 }

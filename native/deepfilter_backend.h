@@ -1,20 +1,17 @@
 #pragma once
 #include "processor.h"
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <windows.h>
+#include "library.h"
 
 namespace nr {
-// DeepFilterNet через обёртку nr_deepfilter.dll, интерфейс тот же, что у RNNoise
+// DeepFilterNet через обёртку nr_deepfilter, интерфейс тот же, что у RNNoise
 class DeepFilterBackend {
 public:
-    explicit DeepFilterBackend(const wchar_t* path);
-    ~DeepFilterBackend();
+    explicit DeepFilterBackend(const PathChar* path);
     DeepFilterBackend(const DeepFilterBackend&) = delete;
     DeepFilterBackend& operator=(const DeepFilterBackend&) = delete;
     Backend api() const noexcept { return api_; }
 private:
-    HMODULE module_ = nullptr;
+    Library module_;
     Backend api_{};
 };
 }
