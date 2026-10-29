@@ -17,6 +17,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Shared control tests failed' }
     & ./build/windows_control_test.exe (Resolve-Path 'build/NoiseReduction.Apo.dll').Path
     if ($LASTEXITCODE -ne 0) { throw 'Windows initialization tests failed' }
+    foreach ($fault in 'lock', 'process') {
+        & ./build/fault_test.exe (Resolve-Path 'build/fault/NoiseReduction.Apo.dll').Path $fault
+        if ($LASTEXITCODE -ne 0) { throw "Fault test $fault failed" }
+    }
     $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
     & $compiler /nologo /platform:x64 /warnaserror+ /r:System.ServiceProcess.dll /out:build\IntegrationTests.exe platform\Integration.cs platform\IntegrationTests.cs
     if ($LASTEXITCODE -ne 0) { throw 'Integration test compilation failed' }

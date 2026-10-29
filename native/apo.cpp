@@ -129,7 +129,18 @@ public:
         if (!remaining) delete this;
         return remaining;
     }
+    // любой сбой эффекта переводит его в пропуск звука как есть: шумодав не работает, но микрофон работает
     HRESULT STDMETHODCALLTYPE Initialize(UINT32 size, BYTE* data) override {
+        init_ready_ = false;
+        __try { return initialize(size, data); }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            fail();
+            if (!init_ready_) return E_FAIL;
+            m_bIsInitialized = true;
+            return S_OK;
+        }
+    }
+    HRESULT initialize(UINT32 size, BYTE* data) {
         trace(L"Initialize entered");
         if (m_bIsInitialized) return APOERR_ALREADY_INITIALIZED;
         IPropertyStore* endpoint = nullptr;
@@ -149,6 +160,7 @@ public:
             else return E_INVALIDARG;
             if (!endpoint) return E_INVALIDARG;
         }
+        init_ready_ = true;
         try {
             if (endpoint) {
                 PROPVARIANT value{};
@@ -157,14 +169,14 @@ public:
                 PropVariantClear(&value);
             }
             discovery_ = discovery;
-            if (!standalone_) work_ = CreateThreadpoolWork([](PTP_CALLBACK_INSTANCE, void* self, PTP_WORK) noexcept { static_cast<NoiseApo*>(self)->switch_model(); }, this, nullptr);
+            if (!standalone_) work_ = CreateThreadpoolWork([](PTP_CALLBACK_INSTANCE, void* self, PTP_WORK) noexcept { static_cast<NoiseApo*>(self)->guarded_switch(); }, this, nullptr);
             controls_.watch([](void* context) noexcept { auto self = static_cast<NoiseApo*>(context); self->notify_effects(); self->request_switch(); }, this);
             if (!discovery) {
                 try { backend_ = std::make_unique<nr::RnnoiseBackend>(model_path().c_str()); model_usable_.store(true); }
                 catch (...) { controls_.error(); }
             }
         }
-        catch (...) { return E_FAIL; }
+        catch (...) { fail(); }
         m_bIsInitialized = true;
         trace(controls_.available() ? L"Initialize: mapped control available" : L"Initialize: mapped control unavailable");
         trace(backend_ ? L"Initialize: model loaded" : L"Initialize: no model or discovery only");
@@ -232,9 +244,13 @@ public:
         return negotiate(opposite, requested, supported);
     }
     HRESULT STDMETHODCALLTYPE Reset() override {
+        __try { return reset(); }
+        __except (EXCEPTION_EXECUTE_HANDLER) { fail(); return S_OK; }
+    }
+    HRESULT reset() {
         if (!m_bIsInitialized) return APOERR_NOT_INITIALIZED;
         // Reset is called with processing stopped, while connections stay locked
-        if (m_bIsLocked) {
+        if (m_bIsLocked && !broken_.load()) {
             try {
                 std::lock_guard<std::mutex> lock(switch_mutex_);
                 install(build_set(wants_deepfilter(), channels_));
@@ -243,12 +259,22 @@ public:
                 energy_.assign(channels_, 0.0f);
                 previous_settings_ = UINT32_MAX;
             }
-            catch (...) { return E_OUTOFMEMORY; }
+            catch (...) { fail(); }
         }
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE LockForProcess(UINT32 inputs, APO_CONNECTION_DESCRIPTOR** in,
             UINT32 outputs, APO_CONNECTION_DESCRIPTOR** out) override {
+        lock_ready_ = false;
+        __try { return lock(inputs, in, outputs, out); }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            fail();
+            if (!lock_ready_) return E_FAIL;
+            m_bIsLocked = true;
+            return S_OK;
+        }
+    }
+    HRESULT lock(UINT32 inputs, APO_CONNECTION_DESCRIPTOR** in, UINT32 outputs, APO_CONNECTION_DESCRIPTOR** out) {
         trace(L"LockForProcess entered");
         if (m_bIsLocked) return APOERR_APO_LOCKED;
         if (!m_bIsInitialized || discovery_) return APOERR_NOT_INITIALIZED;
@@ -264,7 +290,14 @@ public:
         in[0]->pFormat->GetUncompressedAudioFormat(&input_format);
         out[0]->pFormat->GetUncompressedAudioFormat(&output_format);
         if (input_format.dwSamplesPerFrame != output_format.dwSamplesPerFrame) return APOERR_FORMAT_NOT_SUPPORTED;
+        // формат согласован, дальше любой сбой означает только пропуск звука без обработки
+        channels_ = input_format.dwSamplesPerFrame;
+        max_frames_ = in[0]->u32MaxFrameCount;
+        lock_ready_ = true;
         try {
+#ifdef NR_FAULT_TEST
+            if (fault(L"lock")) throw std::bad_alloc();
+#endif
             std::lock_guard<std::mutex> lock(switch_mutex_);
             scratch_in_.resize(in[0]->u32MaxFrameCount);
             scratch_out_.resize(in[0]->u32MaxFrameCount);
@@ -274,11 +307,9 @@ public:
             energy_.assign(input_format.dwSamplesPerFrame, 0.0f);
             previous_settings_ = UINT32_MAX;
             switch_channels_ = input_format.dwSamplesPerFrame;
+            build_stages();
         }
-        catch (...) { return E_OUTOFMEMORY; }
-        channels_ = input_format.dwSamplesPerFrame;
-        max_frames_ = in[0]->u32MaxFrameCount;
-        try { build_stages(); } catch (...) { return E_OUTOFMEMORY; }
+        catch (...) { fail(); }
         m_bIsLocked = true;
         trace(L"LockForProcess succeeded");
         return S_OK;
@@ -286,6 +317,8 @@ public:
     HRESULT STDMETHODCALLTYPE UnlockForProcess() override {
         if (!m_bIsLocked) return APOERR_ALREADY_UNLOCKED;
         m_bIsLocked = false;
+        // после падения мьютекс мог остаться захваченным, набор моделей освободит деструктор
+        if (broken_.load()) { switch_channels_ = 0; max_frames_ = 0; return S_OK; }
         std::lock_guard<std::mutex> lock(switch_mutex_);
         switch_channels_ = 0;
         install(nullptr);
@@ -295,8 +328,43 @@ public:
     void STDMETHODCALLTYPE APOProcess(UINT32 inputs, APO_CONNECTION_PROPERTY** in,
             UINT32 outputs, APO_CONNECTION_PROPERTY** out) override {
         if (outputs != 1 || !out || !out[0]) return;
+        if (!broken_.load(std::memory_order_relaxed) && guarded_process(inputs, in, *out[0])) return;
+        bypass(inputs, in, *out[0]);
+    }
+private:
+    bool guarded_process(UINT32 inputs, APO_CONNECTION_PROPERTY** in, APO_CONNECTION_PROPERTY& dest) noexcept {
+        __try { return process(inputs, in, dest); }
+        __except (EXCEPTION_EXECUTE_HANDLER) { fail(); return false; }
+    }
+    // звук как есть, без модели и фильтров
+    void bypass(UINT32 inputs, APO_CONNECTION_PROPERTY** in, APO_CONNECTION_PROPERTY& dest) noexcept {
+        dest.u32BufferFlags = BUFFER_INVALID;
+        dest.u32ValidFrameCount = 0;
+        if (!m_bIsLocked || inputs != 1 || !in || !in[0] || !dest.pBuffer || dest.u32Signature != APO_CONNECTION_PROPERTY_SIGNATURE) return;
+        const APO_CONNECTION_PROPERTY& source = *in[0];
+        if (source.u32Signature != APO_CONNECTION_PROPERTY_SIGNATURE || source.u32ValidFrameCount > max_frames_) return;
+        const size_t bytes = static_cast<size_t>(source.u32ValidFrameCount) * channels_ * sizeof(float);
+        if (source.u32BufferFlags == BUFFER_VALID && source.pBuffer) memmove(reinterpret_cast<void*>(dest.pBuffer), reinterpret_cast<const void*>(source.pBuffer), bytes);
+        else if (source.u32BufferFlags == BUFFER_SILENT) memset(reinterpret_cast<void*>(dest.pBuffer), 0, bytes);
+        else return;
+        dest.u32ValidFrameCount = source.u32ValidFrameCount;
+        dest.u32BufferFlags = source.u32BufferFlags;
+    }
+    // дальше эффект только пропускает звук, а приложение видит ошибку по счётчику
+    void fail() noexcept {
+        broken_.store(true);
+        model_usable_.store(false);
+        latency_.store(0);
+        controls_.error();
+    }
+#ifdef NR_FAULT_TEST
+    static bool fault(const wchar_t* kind) noexcept {
+        wchar_t value[16]{};
+        return GetEnvironmentVariableW(L"NR_FAULT", value, 16) && wcscmp(value, kind) == 0;
+    }
+#endif
+    bool process(UINT32 inputs, APO_CONNECTION_PROPERTY** in, APO_CONNECTION_PROPERTY& dest) {
         const APO_CONNECTION_PROPERTY source = inputs == 1 && in && in[0] ? *in[0] : APO_CONNECTION_PROPERTY{};
-        auto& dest = *out[0];
         dest.u32BufferFlags = BUFFER_INVALID;
         dest.u32ValidFrameCount = 0;
         // готовый набор с другой моделью собран в фоне, здесь только подхватываем его
@@ -309,12 +377,15 @@ public:
             controls_.model(active_->deepfilter);
             previous_settings_ = UINT32_MAX;
         }
-        if (!m_bIsLocked || !active_ || active_->processors.empty() || inputs != 1 || !in || !in[0]) return;
+        if (!m_bIsLocked || !active_ || active_->processors.empty() || inputs != 1 || !in || !in[0]) return false;
         auto& processors = active_->processors;
-        if (source.u32Signature != APO_CONNECTION_PROPERTY_SIGNATURE || dest.u32Signature != APO_CONNECTION_PROPERTY_SIGNATURE) return;
-        if (source.u32BufferFlags != BUFFER_VALID && source.u32BufferFlags != BUFFER_SILENT) return;
-        if (source.u32ValidFrameCount > max_frames_ || !dest.pBuffer) return;
-        if (source.u32BufferFlags == BUFFER_VALID && !source.pBuffer) return;
+        if (source.u32Signature != APO_CONNECTION_PROPERTY_SIGNATURE || dest.u32Signature != APO_CONNECTION_PROPERTY_SIGNATURE) return false;
+        if (source.u32BufferFlags != BUFFER_VALID && source.u32BufferFlags != BUFFER_SILENT) return false;
+        if (source.u32ValidFrameCount > max_frames_ || !dest.pBuffer) return false;
+        if (source.u32BufferFlags == BUFFER_VALID && !source.pBuffer) return false;
+#ifdef NR_FAULT_TEST
+        if (fault(L"process") && ++fault_calls_ > 5) RaiseException(EXCEPTION_ACCESS_VIOLATION, 0, 0, nullptr);
+#endif
         auto output = reinterpret_cast<float*>(dest.pBuffer);
         auto input = source.u32BufferFlags == BUFFER_SILENT ? nullptr : reinterpret_cast<const float*>(source.pBuffer);
         const uint32_t settings = standalone_ ? (1u | (24u << 8)) : controls_.config();
@@ -340,7 +411,7 @@ public:
             controls_.account(source.u32ValidFrameCount, inferred);
             dest.u32ValidFrameCount = source.u32ValidFrameCount;
             dest.u32BufferFlags = silent ? BUFFER_SILENT : BUFFER_VALID;
-            return;
+            return true;
         }
         for (UINT32 channel = 0; channel < channels_; ++channel) {
             if (!low_cut && ((previous_settings_ & 2u) || previous_settings_ == UINT32_MAX)) highpass_[channel].reset();
@@ -362,6 +433,7 @@ public:
         controls_.account(source.u32ValidFrameCount, inferred);
         dest.u32ValidFrameCount = source.u32ValidFrameCount;
         dest.u32BufferFlags = silent ? BUFFER_SILENT : BUFFER_VALID;
+        return true;
     }
 private:
     HRESULT remember_event(HANDLE event) {
@@ -427,6 +499,11 @@ private:
     // каждое изменение настроек ставит сборку в очередь, деструктор её дожидается
     void request_switch() noexcept { if (work_) SubmitThreadpoolWork(work_); }
     // сборка новой модели идёт здесь, звуковой поток её только подхватывает
+    void guarded_switch() noexcept {
+        if (broken_.load()) return;
+        __try { switch_model(); }
+        __except (EXCEPTION_EXECUTE_HANDLER) { fail(); }
+    }
     void switch_model() noexcept {
         try {
             std::lock_guard<std::mutex> lock(switch_mutex_);
@@ -505,6 +582,11 @@ private:
     uint32_t previous_settings_ = UINT32_MAX;
     std::atomic<bool> system_enabled_{true};
     std::atomic<bool> model_usable_{false};
+    std::atomic<bool> broken_{false};
+    bool init_ready_ = false, lock_ready_ = false;
+#ifdef NR_FAULT_TEST
+    int fault_calls_ = 0;
+#endif
     std::mutex effects_mutex_;
     HANDLE effects_event_ = nullptr;
 };
