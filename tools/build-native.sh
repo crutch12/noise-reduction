@@ -56,6 +56,12 @@ $cxx "$root/native/tests/resampler_test.cpp" "$root/native/resampler.cpp" -o "$o
 # shellcheck disable=SC2086
 $cxx "$root/native/tests/processor_test.cpp" "$root/native/processor.cpp" "$root/native/rnnoise_backend.cpp" -ldl -o "$out/processor_test"
 
+# DeepFilterNet той же обёрткой, что на Windows, если есть Rust
+if command -v cargo >/dev/null && [ ! -f "$out/libnr_deepfilter.$lib" ]; then
+    cargo build --release --locked --manifest-path "$root/native/deepfilter/Cargo.toml" --target-dir "$out/deepfilter-target"
+    cp "$out/deepfilter-target/release/libnr_deepfilter.$lib" "$out/"
+fi
+
 # miniaudio 0.11.25, один заголовок под MIT-0
 fetch miniaudio-0.11.25.h ac7af4de748b7e26b777f37e01cee313a308a7296a3eb080e2906b320cc55c89 "https://raw.githubusercontent.com/mackron/miniaudio/0.11.25/miniaudio.h"
 [ "$(sha "$cache/miniaudio-0.11.25.h")" = ac7af4de748b7e26b777f37e01cee313a308a7296a3eb080e2906b320cc55c89 ] || { echo 'miniaudio checksum does not match'; exit 1; }
