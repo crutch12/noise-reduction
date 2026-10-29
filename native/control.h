@@ -39,6 +39,7 @@ public:
     bool available() const noexcept { return block_ != nullptr; }
 private:
     void close() noexcept;
+    static void remove_stale(const std::wstring& folder, const std::wstring& endpoint) noexcept;
     ControlBlock* block_ = nullptr;
     std::wstring path_, notification_path_;
     HANDLE changed_ = nullptr, wait_ = nullptr;

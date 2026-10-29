@@ -48,6 +48,20 @@ void CALLBACK ControlView::on_change(void* opaque, BOOLEAN) {
     auto self = static_cast<ControlView*>(opaque);
     if (self->callback_) self->callback_(self->context_);
 }
+// если audiodg упал, файлы его эффектов остались, а события уже нет. Такие файлы никому не нужны
+void ControlView::remove_stale(const std::wstring& folder, const std::wstring& endpoint) noexcept {
+    WIN32_FIND_DATAW found{};
+    HANDLE search = FindFirstFileW((folder + endpoint + L".*.notify").c_str(), &found);
+    if (search == INVALID_HANDLE_VALUE) return;
+    do {
+        std::wstring marker(found.cFileName);
+        marker.resize(marker.size() - 7);
+        HANDLE alive = OpenEventW(SYNCHRONIZE, FALSE, (L"Global\\NoiseReduction.Changed." + marker).c_str());
+        if (alive) CloseHandle(alive);
+        else if (GetLastError() == ERROR_FILE_NOT_FOUND) DeleteFileW((folder + found.cFileName).c_str());
+    } while (FindNextFileW(search, &found));
+    FindClose(search);
+}
 void ControlView::watch(ChangeCallback callback, void* context) {
     stop_watching();
     if (!block_) return;
@@ -69,7 +83,9 @@ void ControlView::watch(ChangeCallback callback, void* context) {
     if (!changed_) return;
     callback_ = callback; context_ = context;
     if (!RegisterWaitForSingleObject(&wait_, changed_, on_change, this, INFINITE, WT_EXECUTEDEFAULT)) { stop_watching(); return; }
-    notification_path_ = path_.substr(0, path_.find_last_of(L"\\/") + 1) + key + L".notify";
+    std::wstring folder = path_.substr(0, path_.find_last_of(L"\\/") + 1);
+    remove_stale(folder, key.substr(0, key.find(L'.')));
+    notification_path_ = folder + key + L".notify";
     HANDLE file = CreateFileW(notification_path_.c_str(), GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) { stop_watching(); return; }
     CloseHandle(file);

@@ -23,9 +23,15 @@ int main() {
             view.account(480, 1);
             HANDLE notified = CreateEventW(nullptr, TRUE, FALSE, nullptr);
             check(notified != nullptr, "Cannot create callback fixture");
-            view.watch([](void* context) noexcept { SetEvent(static_cast<HANDLE>(context)); }, notified);
             std::wstring pattern(path);
             pattern.resize(pattern.size() - 4);
+            // файл от упавшего процесса: события с таким именем нет
+            std::wstring stale = pattern + L".00000000-0000-0000-0000-000000000001.notify";
+            HANDLE leftover = CreateFileW(stale.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+            check(leftover != INVALID_HANDLE_VALUE, "Cannot create stale descriptor fixture");
+            CloseHandle(leftover);
+            view.watch([](void* context) noexcept { SetEvent(static_cast<HANDLE>(context)); }, notified);
+            check(GetFileAttributesW(stale.c_str()) == INVALID_FILE_ATTRIBUTES, "Stale notification descriptor was not removed");
             pattern += L".*.notify";
             WIN32_FIND_DATAW found{};
             HANDLE search = FindFirstFileW(pattern.c_str(), &found);
