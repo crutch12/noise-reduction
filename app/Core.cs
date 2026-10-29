@@ -31,7 +31,9 @@ namespace NoiseReduction.Desktop
         [DataMember] public string WindowTheme = "system";
         [DataMember] public string TrayTheme = "system";
         [DataMember] public bool FastOnBattery;
-        [OnDeserializing] private void Defaults(StreamingContext context) { Enabled = true; Language = "system"; Profiles = new List<Profile>(); EnableNewMicrophones = true; WindowTheme = "system"; TrayTheme = "system"; FastOnBattery = false; }
+        // macOS и Linux: какой настоящий микрофон очищаем, пусто значит системный по умолчанию
+        [DataMember] public string Source;
+        [OnDeserializing] private void Defaults(StreamingContext context) { Enabled = true; Language = "system"; Profiles = new List<Profile>(); EnableNewMicrophones = true; WindowTheme = "system"; TrayTheme = "system"; FastOnBattery = false; Source = null; }
         public bool Has(string id) { return Profiles.Exists(p => p.Id == id); }
         public Profile For(string id)
         {

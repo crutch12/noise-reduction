@@ -278,3 +278,23 @@ NR_BRIDGE_API void nr_bridge_stats(void* handle, uint64_t* frames, uint64_t* mod
 }
 
 NR_BRIDGE_API void nr_bridge_stop(void* handle) { delete static_cast<Bridge*>(handle); }
+
+NR_BRIDGE_API int nr_bridge_in_use(const char* uid) {
+#ifdef __APPLE__
+    CFStringRef text = uid ? CFStringCreateWithCString(nullptr, uid, kCFStringEncodingUTF8) : nullptr;
+    if (!text) return -1;
+    AudioObjectPropertyAddress address{kAudioHardwarePropertyTranslateUIDToDevice, kAudioObjectPropertyScopeGlobal, 0};
+    AudioDeviceID device = kAudioObjectUnknown;
+    UInt32 size = sizeof(device);
+    const OSStatus found = AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, sizeof(text), &text, &size, &device);
+    CFRelease(text);
+    if (found != noErr || device == kAudioObjectUnknown) return -1;
+    address = {kAudioDevicePropertyDeviceIsRunningSomewhere, kAudioObjectPropertyScopeGlobal, 0};
+    UInt32 running = 0;
+    size = sizeof(running);
+    return AudioObjectGetPropertyData(device, &address, 0, nullptr, &size, &running) == noErr ? (running ? 1 : 0) : -1;
+#else
+    (void)uid;
+    return -1;
+#endif
+}

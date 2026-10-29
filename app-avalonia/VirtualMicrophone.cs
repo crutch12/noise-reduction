@@ -1,0 +1,87 @@
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+
+namespace NoiseReduction.Avalonia
+{
+    // микрофон Noise Reduction, который видят другие программы, и служебный выход, в который пишет мост
+    internal static class VirtualMicrophone
+    {
+        internal const string Name = "Noise Reduction";
+        private const string LinuxFeed = "noise_reduction_feed";
+        private const string LinuxFeedName = "Noise Reduction Feed";
+        private const string MacDriver = "/Library/Audio/Plug-Ins/HAL/NoiseReduction.driver";
+        private static readonly List<string> modules = new();
+
+        // куда мост пишет обработанный звук
+        internal static string Feed => OperatingSystem.IsMacOS() ? "uid:NoiseReduction_Feed" : LinuxFeedName;
+
+        internal static bool IsOwn(string device) =>
+            device.StartsWith(Name, StringComparison.Ordinal) || device.StartsWith("Monitor of ", StringComparison.Ordinal);
+
+        internal static bool NeedsInstall => OperatingSystem.IsMacOS() && !Directory.Exists(MacDriver);
+
+        // на Linux устройство живёт, пока работает звуковой сервер, поэтому создаём его при каждом запуске
+        internal static bool Prepare(out string error)
+        {
+            error = null;
+            if (OperatingSystem.IsMacOS()) return !NeedsInstall;
+            if (!Run("pactl", out var sinks, "list", "short", "sinks")) { error = sinks; return false; }
+            if (!sinks.Contains(LinuxFeed) &&
+                !Load(out error, "module-null-sink", $"sink_name={LinuxFeed}", "channels=1", "rate=48000", $"sink_properties=device.description='{LinuxFeedName}'")) return false;
+            Run("pactl", out var sources, "list", "short", "sources");
+            if (!sources.Split('\n').Any(line => line.Contains("\tnoise_reduction\t")) &&
+                !Load(out error, "module-remap-source", $"master={LinuxFeed}.monitor", "source_name=noise_reduction", "channels=1", $"source_properties=device.description='{Name}'")) return false;
+            return true;
+        }
+
+        internal static void Release()
+        {
+            foreach (var module in modules.AsEnumerable().Reverse()) Run("pactl", out _, "unload-module", module);
+            modules.Clear();
+        }
+
+        // драйвер ставится в системную папку, macOS спросит пароль администратора
+        internal static bool InstallDriver(out string error)
+        {
+            string source = new[] { Path.Combine(AppContext.BaseDirectory, "..", "Resources", "NoiseReduction.driver"), Path.Combine(AppContext.BaseDirectory, "NoiseReduction.driver") }
+                .Select(Path.GetFullPath).FirstOrDefault(Directory.Exists);
+            if (source == null) { error = "NoiseReduction.driver not found"; return false; }
+            string script = $"mkdir -p /Library/Audio/Plug-Ins/HAL && rm -rf {Quote(MacDriver)} && cp -R {Quote(source)} {Quote(MacDriver)} && xattr -dr com.apple.quarantine {Quote(MacDriver)}; killall coreaudiod";
+            return Admin(script, out error) && !NeedsInstall;
+        }
+
+        internal static bool RemoveDriver(out string error) => Admin($"rm -rf {Quote(MacDriver)}; killall coreaudiod", out error);
+
+        private static bool Admin(string script, out string error) =>
+            Run("osascript", out error, "-e", $"do shell script \"{script.Replace("\\", "\\\\").Replace("\"", "\\\"")}\" with administrator privileges");
+
+        private static bool Load(out string error, params string[] arguments)
+        {
+            if (!Run("pactl", out var output, new[] { "load-module" }.Concat(arguments).ToArray())) { error = output; return false; }
+            modules.Add(output.Trim());
+            error = null;
+            return true;
+        }
+
+        private static string Quote(string value) => "'" + value.Replace("'", "'\\''") + "'";
+
+        private static bool Run(string file, out string output, params string[] arguments)
+        {
+            try
+            {
+                var start = new ProcessStartInfo(file) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+                foreach (var argument in arguments) start.ArgumentList.Add(argument);
+                using var process = Process.Start(start);
+                output = process.StandardOutput.ReadToEnd();
+                string error = process.StandardError.ReadToEnd();
+                process.WaitForExit();
+                if (process.ExitCode != 0 && error.Length > 0) output = error.Trim();
+                return process.ExitCode == 0;
+            }
+            catch (Exception exception) { output = exception.Message; return false; }
+        }
+    }
+}

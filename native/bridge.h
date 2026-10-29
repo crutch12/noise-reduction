@@ -19,3 +19,5 @@ NR_BRIDGE_API void* nr_bridge_start(const char* input, const char* output, const
 NR_BRIDGE_API void nr_bridge_configure(void* bridge, uint32_t config);
 NR_BRIDGE_API void nr_bridge_stats(void* bridge, uint64_t* frames, uint64_t* model_frames, uint64_t* errors);
 NR_BRIDGE_API void nr_bridge_stop(void* bridge);
+// macOS: 1 если устройство с таким UID сейчас пишет какая-то программа, 0 если нет, -1 если не узнать
+NR_BRIDGE_API int nr_bridge_in_use(const char* uid);
