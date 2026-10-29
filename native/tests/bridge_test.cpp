@@ -1,5 +1,6 @@
 #include "bridge.h"
 #include <chrono>
+#include <cstdio>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -29,6 +30,19 @@ int main(int argc, char** argv) {
         nr_bridge_configure(bridge, 1u | 2u | (40u << 8));
         Stats second = run(bridge, 400);
         check(second.frames > first.frames && second.model > first.model, "Audio stopped after settings change");
+        // точную модель проверяем, где её библиотека собрана
+#ifdef __APPLE__
+        const std::string deepfilter = std::string(argv[1]) + "/libnr_deepfilter.dylib";
+#else
+        const std::string deepfilter = std::string(argv[1]) + "/libnr_deepfilter.so";
+#endif
+        if (FILE* file = std::fopen(deepfilter.c_str(), "rb")) {
+            std::fclose(file);
+            nr_bridge_configure(bridge, 1u | 8u | (24u << 8));
+            Stats precise = run(bridge, 800);
+            check(precise.model > second.model && precise.errors == 0, "DeepFilterNet did not take over");
+            std::cout << "DeepFilterNet checked\n";
+        }
         nr_bridge_stop(bridge);
 
         bridge = nr_bridge_start(nullptr, nullptr, "/nonexistent", 1);
