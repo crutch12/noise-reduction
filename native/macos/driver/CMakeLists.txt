@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
+set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
+set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
 project(NoiseReduction CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "")
-set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
 set(DRIVER_VERSION "1.0.0" CACHE STRING "")
 set(LIBASPL_SHA256 428f1ed5cecea725ac4e2db3ab65889a72d133cff8d23ac21b07bf6e2f0561e4)
 
@@ -19,7 +19,7 @@ ExternalProject_Add(libASPL
 
 add_library(NoiseReduction MODULE Driver.cpp)
 add_dependencies(NoiseReduction libASPL)
-target_include_directories(NoiseReduction PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/libASPL-prefix/include)
+target_include_directories(NoiseReduction SYSTEM PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/libASPL-prefix/include)
 target_link_libraries(NoiseReduction PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/libASPL-prefix/lib/libASPL.a "-framework CoreFoundation")
 set_target_properties(NoiseReduction PROPERTIES
   OUTPUT_NAME NoiseReduction
