@@ -13,6 +13,7 @@
 // названия устройств через \n, у устройства по умолчанию в начале *, возвращает нужный размер буфера
 NR_BRIDGE_API int nr_bridge_list(int playback, char* buffer, int size);
 // пустое имя значит устройство по умолчанию; models это папка с librnnoise и libnr_deepfilter
+// на macOS выход можно задать как uid:<UID устройства>, так находится скрытый выход драйвера
 // backend 0 системный, 1 пустой для тестов
 NR_BRIDGE_API void* nr_bridge_start(const char* input, const char* output, const char* models, int backend);
 NR_BRIDGE_API void nr_bridge_configure(void* bridge, uint32_t config);

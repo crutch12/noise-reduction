@@ -10,6 +10,10 @@
 #include <mutex>
 #include <string>
 #include <vector>
+#ifdef __APPLE__
+#include <AudioToolbox/AudioToolbox.h>
+#include <CoreAudio/CoreAudio.h>
+#endif
 
 namespace {
 constexpr uint32_t rate = 48000;
@@ -42,10 +46,22 @@ struct Bridge {
     nr::HighPass highpass{static_cast<float>(rate)};
     std::vector<float> scratch = std::vector<float>(4096), processed = std::vector<float>(4096);
     std::atomic<uint64_t> frames{0}, model_frames{0}, errors{0};
+#ifdef __APPLE__
+    // скрытый выход драйвера не виден в общем списке устройств, пишем в него напрямую по UID
+    AudioComponentInstance unit = nullptr;
+    bool unit_started = false;
+#endif
 
     ~Bridge() {
         if (capture_ready) ma_device_uninit(&capture);
         if (playback_ready) ma_device_uninit(&playback);
+#ifdef __APPLE__
+        if (unit) {
+            if (unit_started) AudioOutputUnitStop(unit);
+            AudioUnitUninitialize(unit);
+            AudioComponentInstanceDispose(unit);
+        }
+#endif
         if (ring_ready) ma_pcm_rb_uninit(&ring);
         if (context_ready) ma_context_uninit(&context);
         delete pending.exchange(nullptr);
@@ -132,6 +148,35 @@ void playback_callback(ma_device* device, void* output, const void*, ma_uint32 c
     static_cast<Bridge*>(device->pUserData)->on_playback(static_cast<float*>(output), count);
 }
 
+#ifdef __APPLE__
+OSStatus unit_render(void* ref, AudioUnitRenderActionFlags*, const AudioTimeStamp*, UInt32, UInt32 count, AudioBufferList* data) {
+    static_cast<Bridge*>(ref)->on_playback(static_cast<float*>(data->mBuffers[0].mData), count);
+    return noErr;
+}
+
+bool start_unit(Bridge& bridge, const char* uid) {
+    CFStringRef text = CFStringCreateWithCString(nullptr, uid, kCFStringEncodingUTF8);
+    if (!text) return false;
+    AudioObjectPropertyAddress address{kAudioHardwarePropertyTranslateUIDToDevice, kAudioObjectPropertyScopeGlobal, 0};
+    AudioDeviceID device = kAudioObjectUnknown;
+    UInt32 size = sizeof(device);
+    const OSStatus found = AudioObjectGetPropertyData(kAudioObjectSystemObject, &address, sizeof(text), &text, &size, &device);
+    CFRelease(text);
+    if (found != noErr || device == kAudioObjectUnknown) return false;
+    AudioComponentDescription description{kAudioUnitType_Output, kAudioUnitSubType_HALOutput, kAudioUnitManufacturer_Apple, 0, 0};
+    AudioComponent component = AudioComponentFindNext(nullptr, &description);
+    if (!component || AudioComponentInstanceNew(component, &bridge.unit) != noErr) return false;
+    AudioStreamBasicDescription format{rate, kAudioFormatLinearPCM, kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked, 4, 1, 4, 1, 32, 0};
+    AURenderCallbackStruct callback{unit_render, &bridge};
+    if (AudioUnitSetProperty(bridge.unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &device, sizeof(device)) != noErr ||
+        AudioUnitSetProperty(bridge.unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input, 0, &format, sizeof(format)) != noErr ||
+        AudioUnitSetProperty(bridge.unit, kAudioUnitProperty_SetRenderCallback, kAudioUnitScope_Input, 0, &callback, sizeof(callback)) != noErr ||
+        AudioUnitInitialize(bridge.unit) != noErr || AudioOutputUnitStart(bridge.unit) != noErr) return false;
+    bridge.unit_started = true;
+    return true;
+}
+#endif
+
 bool find(ma_context& context, bool playback, const char* name, ma_device_id& id) {
     ma_device_info *playbacks = nullptr, *captures = nullptr;
     ma_uint32 playback_count = 0, capture_count = 0;
@@ -197,6 +242,13 @@ NR_BRIDGE_API void* nr_bridge_start(const char* input, const char* output, const
 
         if (ma_device_init(&bridge->context, &capture, &bridge->capture) != MA_SUCCESS) return nullptr;
         bridge->capture_ready = true;
+#ifdef __APPLE__
+        if (output && std::strncmp(output, "uid:", 4) == 0) {
+            if (!start_unit(*bridge, output + 4)) return nullptr;
+            if (ma_device_start(&bridge->capture) != MA_SUCCESS) return nullptr;
+            return bridge.release();
+        }
+#endif
         if (ma_device_init(&bridge->context, &playback, &bridge->playback) != MA_SUCCESS) return nullptr;
         bridge->playback_ready = true;
         if (ma_device_start(&bridge->playback) != MA_SUCCESS || ma_device_start(&bridge->capture) != MA_SUCCESS) return nullptr;
