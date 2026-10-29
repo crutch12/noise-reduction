@@ -58,8 +58,16 @@ $cxx "$root/native/tests/processor_test.cpp" "$root/native/processor.cpp" "$root
 
 # DeepFilterNet той же обёрткой, что на Windows, если есть Rust
 if command -v cargo >/dev/null && [ ! -f "$out/libnr_deepfilter.$lib" ]; then
-    cargo build --release --locked --manifest-path "$root/native/deepfilter/Cargo.toml" --target-dir "$out/deepfilter-target"
-    cp "$out/deepfilter-target/release/libnr_deepfilter.$lib" "$out/"
+    if [ "$lib" = dylib ]; then
+        # на Mac одна библиотека под оба процессора
+        for target in aarch64-apple-darwin x86_64-apple-darwin; do
+            cargo build --release --locked --target $target --manifest-path "$root/native/deepfilter/Cargo.toml" --target-dir "$out/deepfilter-target"
+        done
+        lipo -create "$out/deepfilter-target/aarch64-apple-darwin/release/libnr_deepfilter.dylib" "$out/deepfilter-target/x86_64-apple-darwin/release/libnr_deepfilter.dylib" -output "$out/libnr_deepfilter.dylib"
+    else
+        cargo build --release --locked --manifest-path "$root/native/deepfilter/Cargo.toml" --target-dir "$out/deepfilter-target"
+        cp "$out/deepfilter-target/release/libnr_deepfilter.so" "$out/"
+    fi
 fi
 
 # miniaudio 0.11.25, один заголовок под MIT-0
