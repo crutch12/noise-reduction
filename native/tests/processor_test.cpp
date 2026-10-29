@@ -11,7 +11,11 @@ static void require(bool value, const char* message) {
     if (!value) throw std::runtime_error(message);
 }
 
+#ifdef _WIN32
 int wmain(int argc, wchar_t** argv) {
+#else
+int main(int argc, char** argv) {
+#endif
     try {
         require(argc == 2, "RNNoise DLL path required");
         nr::RnnoiseBackend backend(argv[1]);
