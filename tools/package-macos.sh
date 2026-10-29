@@ -12,7 +12,11 @@ for arch in arm64 x64; do
     app="$out/$arch/Noise Reduction.app"
     mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
     dotnet publish "$root/app-avalonia" -c Release -r "osx-$arch" --self-contained -p:Version="$version" -o "$app/Contents/MacOS" >/dev/null
-    cp "$root/build/librnnoise.dylib" "$root/build/libnr_bridge.dylib" "$root/build/libnr_deepfilter.dylib" "$app/Contents/MacOS/"
+    # библиотеки собраны под оба процессора, в пакет кладём только нужную половину
+    case $arch in arm64) slice=arm64 ;; *) slice=x86_64 ;; esac
+    for name in librnnoise libnr_bridge libnr_deepfilter; do
+        lipo "$root/build/$name.dylib" -thin $slice -output "$app/Contents/MacOS/$name.dylib"
+    done
     cp -R "$root/build/driver/NoiseReduction.driver" "$app/Contents/Resources/"
     cat > "$app/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>

@@ -205,9 +205,87 @@ jobs:
           name: NoiseReduction.Setup-${{ matrix.arch }}
           path: dist/setup/NoiseReduction.Setup.exe
 
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Rust
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .cache
+            build/deepfilter-target
+          key: macos-${{ hashFiles('native/deepfilter/Cargo.lock', 'native/deepfilter/src/**') }}
+
+      - name: Native build and tests
+        run: sh tools/build-native.sh test
+
+      - name: App
+        run: |
+          version=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo v1.1.0)
+          sh tools/package-macos.sh "${version#v}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NoiseReduction-macos
+          path: dist/macos/*.zip
+
+  linux:
+    # Debian 11 с glibc 2.31, чтобы архив запускался и на старых дистрибутивах
+    strategy:
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    container: rust:1.98-bullseye
+    env:
+      DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends unzip
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .cache
+            build/deepfilter-target
+          key: linux-${{ matrix.runner }}-${{ hashFiles('native/deepfilter/Cargo.lock', 'native/deepfilter/src/**') }}
+
+      - name: Native build and tests
+        run: sh tools/build-native.sh test
+
+      - name: App
+        run: |
+          version=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo v1.1.0)
+          sh tools/package-linux.sh "${version#v}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NoiseReduction-linux-${{ matrix.runner }}
+          path: dist/linux/*.tar.gz
+
   # публикация отдельно: только ей нужно право записи в репозиторий
   release:
-    needs: build
+    needs: [build, macos, linux]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -217,22 +295,28 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: NoiseReduction.Setup-*
+          pattern: NoiseReduction*
       - name: Files
         run: |
           version="${GITHUB_REF_NAME#v}"
           for arch in x64 arm64; do
             mv "NoiseReduction.Setup-$arch/NoiseReduction.Setup.exe" "NoiseReduction-$version-$arch-setup.exe"
           done
-          sha256sum NoiseReduction-*.exe > SHA256SUMS.txt
+          mv NoiseReduction-macos/*.zip NoiseReduction-linux-*/*.tar.gz .
+          sha256sum NoiseReduction-*.exe NoiseReduction-*.zip NoiseReduction-*.tar.gz > SHA256SUMS.txt
       # без сертификата хотя бы можно проверить, что установщик собран здесь из этого репозитория
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: NoiseReduction-*-setup.exe
+          subject-path: |
+            NoiseReduction-*-setup.exe
+            NoiseReduction-*.zip
+            NoiseReduction-*.tar.gz
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: |
             NoiseReduction-*-setup.exe
+            NoiseReduction-*.zip
+            NoiseReduction-*.tar.gz
             SHA256SUMS.txt
           generate_release_notes: true
           body: |
@@ -242,7 +326,10 @@ jobs:
 
             Or install with `winget install crutch12.NoiseReduction`
 
-            The installers are not code signed yet. Check a download with `gh attestation verify <file> --repo crutch12/noise-reduction`
+            macOS 11 or newer: `macos-arm64.zip` for Apple Silicon, `macos-x64.zip` for Intel Macs
+            Linux with PulseAudio or PipeWire: `linux-x64.tar.gz` or `linux-arm64.tar.gz`
+
+            The files are not code signed yet. Check a download with `gh attestation verify <file> --repo crutch12/noise-reduction`
 
   winget:
     needs: release

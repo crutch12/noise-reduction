@@ -6,6 +6,8 @@ __pycache__/
 /dist/
 /app-winui/bin/
 /app-winui/obj/
+/app-avalonia/bin/
+/app-avalonia/obj/
 /tests-winui/bin/
 /tests-winui/obj/
 /native/deepfilter/target/

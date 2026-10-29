@@ -42,6 +42,35 @@ Download the latest installer from [GitHub Releases](https://github.com/crutch12
 
 The installer is not code signed yet, so Windows may show a SmartScreen warning when you run a file downloaded in the browser. Click More info, then Run anyway. winget installs without this warning
 
+### macOS (preview)
+
+macOS 11 or newer. Download `macos-arm64.zip` for Apple Silicon or `macos-x64.zip` for Intel, unzip and move Noise Reduction to Applications
+
+The app is not signed by Apple, so the first launch is blocked. Open System Settings > Privacy & Security and click Open Anyway, or run:
+
+```
+xattr -dr com.apple.quarantine "/Applications/Noise Reduction.app"
+```
+
+On the first launch click Install driver and enter your password. This adds the Noise Reduction microphone to the system. Then choose your real microphone in the app and the Noise Reduction microphone in Zoom, Discord or any other app
+
+To remove the driver:
+
+```
+sudo rm -rf /Library/Audio/Plug-Ins/HAL/NoiseReduction.driver && sudo killall coreaudiod
+```
+
+### Linux (preview)
+
+Needs PulseAudio or PipeWire with `pactl` (package `pulseaudio-utils` on Debian and Ubuntu). Download `linux-x64.tar.gz` or `linux-arm64.tar.gz` and run:
+
+```
+tar -xzf NoiseReduction-*-linux-x64.tar.gz
+./noise-reduction/NoiseReduction
+```
+
+The app adds the Noise Reduction microphone while it runs. Choose it in Zoom, Discord or any other app. On GNOME the tray icon needs the AppIndicator extension
+
 ### Verifying a download
 
 Installers are built by GitHub Actions from this repository ([build.yml](.github/workflows/build.yml)). Starting with the release after 1.1.2 each one also has a build attestation. To check that a file you downloaded is exactly what the build produced, run with [GitHub CLI](https://cli.github.com):
@@ -101,6 +130,16 @@ Tests:
 ./build/windows_control_test.exe (Resolve-Path build/NoiseReduction.Apo.dll).Path
 python tools/check-translations.py
 ```
+
+macOS and Linux need a C++ compiler, Rust, .NET 10 SDK and, on macOS, CMake:
+
+```sh
+sh tools/build-native.sh test     # bridge, models and native tests
+sh tools/package-macos.sh 1.2.0   # app with the driver, output in dist/macos
+sh tools/package-linux.sh 1.2.0   # archive, output in dist/linux
+```
+
+Linux release builds run in the `rust:1.98-bullseye` image so they work on glibc 2.31 and newer
 
 The version comes from the git tag `vX.Y.Z`. Pushing such a tag builds a signed draft release
 

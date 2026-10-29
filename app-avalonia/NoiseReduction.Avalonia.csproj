@@ -13,6 +13,9 @@
     <Version>1.0.0</Version>
     <!-- control-файл из общего Core.cs нужен только Windows, здесь он не вызывается -->
     <NoWarn>$(NoWarn);CA1416</NoWarn>
+    <!-- как в app-winui: без обрезки .NET и Avalonia занимают вдвое больше -->
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimMode>partial</TrimMode>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="*.cs" />
