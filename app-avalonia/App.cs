@@ -34,6 +34,8 @@ namespace NoiseReduction.Avalonia
                 exit.Click += (_, _) => { Exiting = true; controller.Dispose(); desktop.Shutdown(); };
                 tray = new TrayIcon
                 {
+                    // на macOS пустая подсказка роняет приложение при подключении значка
+                    ToolTipText = "Noise Reduction",
                     Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://NoiseReduction/Assets/NoiseReduction.ico"))),
                     Menu = new NativeMenu { Items = { toggle, settings, new NativeMenuItemSeparator(), exit } },
                 };
