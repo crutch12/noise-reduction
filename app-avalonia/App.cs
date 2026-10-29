@@ -26,7 +26,7 @@ namespace NoiseReduction.Avalonia
                 desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
                 controller = new Controller();
                 window = new MainWindow(controller);
-                toggle = new NativeMenuItem { ToggleType = NativeMenuItemToggleType.CheckBox };
+                toggle = new NativeMenuItem { ToggleType = MenuItemToggleType.CheckBox };
                 toggle.Click += (_, _) => controller.Change(() => controller.Settings.Enabled = !controller.Settings.Enabled);
                 settings = new NativeMenuItem();
                 settings.Click += (_, _) => ShowWindow();
