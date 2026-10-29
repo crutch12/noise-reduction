@@ -9,3 +9,4 @@ __pycache__/
 /tests-winui/bin/
 /tests-winui/obj/
 /native/deepfilter/target/
+/.cache/
