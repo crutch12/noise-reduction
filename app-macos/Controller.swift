@@ -260,7 +260,8 @@ final class Controller: ObservableObject {
                 error = t("Не удалось открыть микрофон")
                 retryAt = Date().addingTimeInterval(5)
             }
-        } else if !want && bridge.running {
+        } else if !want {
+            // программа ушла: прошлая неудача больше ничего не значит, красным висеть незачем
             bridge.stop()
             error = nil
         }

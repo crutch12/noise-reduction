@@ -238,7 +238,9 @@ NR_BRIDGE_API void* nr_bridge_start(const char* input, const char* output, const
         playback.periodSizeInMilliseconds = 10;
         playback.dataCallback = playback_callback;
         playback.pUserData = bridge.get();
-        if (output && *output) { if (!find(bridge->context, true, output, output_id)) return nullptr; playback.playback.pDeviceID = &output_id; }
+        // uid: открывается отдельно, в общем списке устройств скрытого выхода нет
+        const bool by_uid = output && std::strncmp(output, "uid:", 4) == 0;
+        if (output && *output && !by_uid) { if (!find(bridge->context, true, output, output_id)) return nullptr; playback.playback.pDeviceID = &output_id; }
 
         if (ma_device_init(&bridge->context, &capture, &bridge->capture) != MA_SUCCESS) return nullptr;
         bridge->capture_ready = true;

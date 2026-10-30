@@ -128,8 +128,8 @@ final class Bridge {
         return String(cString: buffer).split(separator: "\n").compactMap { line in
             let isDefault = line.hasPrefix("*")
             let name = String(isDefault ? line.dropFirst() : line)
-            // свой же виртуальный микрофон источником быть не может
-            return name.hasPrefix("Noise Reduction") ? nil : Device(name: name, isDefault: isDefault)
+            // свой же виртуальный микрофон источником быть не может, а CADefaultDeviceAggregate система создаёт на время записи и воспроизведения
+            return name.hasPrefix("Noise Reduction") || name.hasPrefix("CADefaultDeviceAggregate") ? nil : Device(name: name, isDefault: isDefault)
         }
     }
 
