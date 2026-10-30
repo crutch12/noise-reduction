@@ -9,6 +9,7 @@ namespace NoiseReduction.WinUI
     public sealed class DeviceEvents : IDisposable
     {
         private const int Capture = 1;
+        private static readonly Guid RawSupport = new Guid("8943b373-388c-4395-b557-bc6dbaffafdb");
         private readonly Listener listener;
         private readonly IntPtr client;
         private readonly object enumerator;
@@ -44,8 +45,8 @@ namespace NoiseReduction.WinUI
             public int OnDeviceAdded(string id) { changed(); return 0; }
             public int OnDeviceRemoved(string id) { changed(); return 0; }
             public int OnDefaultDeviceChanged(int flow, int role, string id) { if (flow == Capture) changed(); return 0; }
-            // свойства меняются постоянно, в том числе от наших же записей, их ловит обычный опрос
-            public int OnPropertyValueChanged(string id, PropertyKey key) => 0;
+            // свойства меняются постоянно, в том числе от наших же записей, их ловит обычный опрос; возврат RAW нужно заметить сразу
+            public int OnPropertyValueChanged(string id, PropertyKey key) { if (key.Format == RawSupport && key.Id == 2) changed(); return 0; }
         }
 
         [StructLayout(LayoutKind.Sequential)]

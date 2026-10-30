@@ -15,7 +15,7 @@ using Microsoft.Win32.SafeHandles;
 using System.Security.Cryptography.X509Certificates;
 
 namespace NoiseReduction.Platform {
- public class DeviceInfo { public string Id, Name, Guid; public bool Attached, EnhancementsEnabled, Active, EffectPack; public int Channels = 1; }
+ public class DeviceInfo { public string Id, Name, Guid; public bool Attached, EnhancementsEnabled, Active, EffectPack, RawSupported; public int Channels = 1; }
  public static class Integration {
   public const string Clsid = "{752DE85C-174D-42C2-A92C-631A4F77D08B}";
   public const string CompositeKey = "{D04E05A6-594B-4FB6-A80D-01AF5EED7D1D},15";
@@ -80,7 +80,12 @@ namespace NoiseReduction.Platform {
      try {
       uint state; Marshal.ThrowExceptionForHR(device.GetState(out state)); string id; Marshal.ThrowExceptionForHR(device.GetId(out id)); string guid = EndpointGuid(id); string name = id;
       IPropertyStore store; Marshal.ThrowExceptionForHR(device.OpenPropertyStore(0, out store));
-      try { var key = new PropertyKey(new Guid("a45c254e-df1c-4efd-8020-67d146a850e0"),14); PropVariant value; Marshal.ThrowExceptionForHR(store.GetValue(ref key, out value)); try { if(value.Type == 31) name = Marshal.PtrToStringUni(value.Pointer); } finally { PropVariantClear(ref value); } } finally { Marshal.ReleaseComObject(store); }
+      bool rawSupported = false;
+      try {
+       var key = new PropertyKey(new Guid("a45c254e-df1c-4efd-8020-67d146a850e0"),14); PropVariant value; Marshal.ThrowExceptionForHR(store.GetValue(ref key, out value)); try { if(value.Type == 31) name = Marshal.PtrToStringUni(value.Pointer); } finally { PropVariantClear(ref value); }
+       // Chrome смотрит на это же значение службы звука, в реестре оно может отставать
+       var rawKey = new PropertyKey(new Guid("8943b373-388c-4395-b557-bc6dbaffafdb"),2); PropVariant rawValue; if(store.GetValue(ref rawKey, out rawValue) == 0) try { rawSupported = rawValue.Type == 11 && (short)rawValue.Size != 0; } finally { PropVariantClear(ref rawValue); }
+      } finally { Marshal.ReleaseComObject(store); }
       bool attached = false, enabled = true;
       using(var fx = root.OpenSubKey(Fx(id))) if(fx != null) { attached = RegistryEngine.Contains(fx.GetValue(CompositeKey), Clsid) || RegistryEngine.Contains(fx.GetValue(LegacyKey), Clsid); object disabled = fx.GetValue(DisableSysFxKey); enabled = disabled == null || Convert.ToInt32(disabled) == 0; }
       // число каналов из формата устройства, WAVEFORMATEX начинается после 8 байт заголовка
@@ -92,7 +97,7 @@ namespace NoiseReduction.Platform {
       if(pack) using(var properties = root.OpenSubKey(Properties(id))) attached = properties != null && EffectPack.Selected(properties);
       // при выключенных в Windows улучшениях эффект не загружается, даже если выбран
       if(!enabled) attached = false;
-      result.Add(new DeviceInfo { Id = id, Guid = guid.Trim('{','}').ToLowerInvariant(), Name = name, Attached = attached, EnhancementsEnabled = enabled, Active = state == 1, Channels = channels, EffectPack = pack });
+      result.Add(new DeviceInfo { Id = id, Guid = guid.Trim('{','}').ToLowerInvariant(), Name = name, Attached = attached, EnhancementsEnabled = enabled, Active = state == 1, Channels = channels, EffectPack = pack, RawSupported = rawSupported });
      } catch(COMException) { } catch(IOException) { } catch(UnauthorizedAccessException) {
      } finally { Marshal.ReleaseComObject(device); }
     }
@@ -175,6 +180,29 @@ namespace NoiseReduction.Platform {
    } finally { if(store != null) Marshal.ReleaseComObject(store); if(device != null) Marshal.ReleaseComObject(device); Marshal.ReleaseComObject(enumerator); }
   }
   static void TryPushRaw(RegistryKey root, string endpointId) { try { PushRaw(root, endpointId); } catch(COMException) { } catch(InvalidCastException) { } }
+  // Windows может вернуть признак RAW сама, например после сна, и Chrome снова пойдёт мимо шумодава
+  public static void KeepRawOff() {
+   using(var operation = new OperationLease()) using(var root = Machine()) {
+    var e = Engine(root); e.Recover();
+    foreach(var device in EnumerateMicrophones()) if(device.Active && device.Attached && device.RawSupported) { DisableRaw(e, root, device.Id); PushRaw(root, device.Id); }
+   }
+  }
+  // запись в свойства микрофона требует прав администратора, поэтому её делает служба; запускать её можно без UAC, параметров она не принимает
+  public const string RawKeeperService = "NoiseReductionRawKeeper";
+  const string RawKeeperAccess = "D:(A;;CCLCSWRPWPDTLOCRRC;;;SY)(A;;CCDCLCSWRPWPDTLOCRSDRCWDWO;;;BA)(A;;LCRPRC;;;IU)";
+  public static void RegisterRawKeeper(string installationDirectory) {
+   string binary = "\\\"" + Path.Combine(installationDirectory, "NoiseReduction.Engine.exe") + "\\\" --keep-raw-off";
+   string verb = ServiceController.GetServices().Any(service => String.Equals(service.ServiceName, RawKeeperService, StringComparison.OrdinalIgnoreCase)) ? "config" : "create";
+   ServiceTool(verb + " " + RawKeeperService + " binPath= \"" + binary + "\" start= demand obj= LocalSystem DisplayName= \"Noise Reduction\"", true);
+   ServiceTool("sdset " + RawKeeperService + " " + RawKeeperAccess, true);
+  }
+  public static void UnregisterRawKeeper() { ServiceTool("stop " + RawKeeperService, false); ServiceTool("delete " + RawKeeperService, false); }
+  static void ServiceTool(string arguments, bool required) {
+   using(var process = Process.Start(new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "sc.exe"), arguments) { UseShellExecute = false, CreateNoWindow = true })) {
+    process.WaitForExit();
+    if(required && process.ExitCode != 0) throw new InvalidOperationException("sc.exe " + arguments + " failed with code " + process.ExitCode);
+   }
+  }
   static void TryPushSelection(RegistryKey root, string endpointId) { try { PushSelection(root, endpointId); } catch(COMException) { } catch(InvalidCastException) { } }
   static void ClearFormatCache(RegistryKey root, string properties) {
    try { using(var key = root.OpenSubKey(properties, RegistryKeyPermissionCheck.ReadWriteSubTree, System.Security.AccessControl.RegistryRights.QueryValues | System.Security.AccessControl.RegistryRights.SetValue)) if(key != null) foreach(var name in FormatCache) key.DeleteValue(name, false); }

@@ -53,7 +53,7 @@ namespace NoiseReduction.WinUI
         private int bucketCount;
         private readonly DispatcherQueueTimer timer;
         private List<DeviceInfo> devices = new List<DeviceInfo>();
-        private DateTime refreshAt;
+        private DateTime refreshAt, rawKeeperAt;
         private readonly List<DeviceInfo> pendingNew = new List<DeviceInfo>();
         private string recordingDirectory, comparisonId;
         // исходная запись для пересчёта и имя файла с текущей обработкой
@@ -264,12 +264,22 @@ namespace NoiseReduction.WinUI
                 state.SetPresent(devices.Select(device => device.Id));
                 ApplyControls(false);
                 foreach (var pair in controls) samples[pair.Key].Observe(pair.Value);
+                KeepRawOff();
             }
             catch (Exception error) { state.RefreshError = "Не удалось обновить микрофоны: " + error.Message; }
             pendingNew.AddRange(announce);
             AnnounceNewMicrophones();
             if (WatchUsage) _ = ScanUsageAsync();
             Notify();
+        }
+
+        // если Windows вернула микрофону RAW, Chrome пойдёт мимо шумодава; не вышло убрать, ошибка попадёт в окно и трей
+        private void KeepRawOff()
+        {
+            if (!devices.Any(device => device.Attached && device.RawSupported) || DateTime.UtcNow < rawKeeperAt) return;
+            rawKeeperAt = DateTime.UtcNow.AddMinutes(1);
+            using var service = new System.ServiceProcess.ServiceController(Integration.RawKeeperService);
+            if (service.Status == System.ServiceProcess.ServiceControllerStatus.Stopped) service.Start();
         }
 
         // WASAPI сессии читаются только из MTA, поэтому опрос идёт в пуле потоков
