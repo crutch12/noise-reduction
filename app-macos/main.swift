@@ -88,7 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             shownGlyph = glyph
             item.button?.image = glyph.image
         }
-        item.button?.toolTip = "Noise Reduction: " + controller.statusText
+        item.button?.toolTip = "Noise Reduction: " + controller.statusText + (controller.activeDevice.map { "\n" + $0 } ?? "")
     }
 
     @objc private func statusClicked() {

@@ -136,6 +136,8 @@ final class Controller: ObservableObject {
 
     func setEnableNew(_ value: Bool) { change { $0.enableNewMicrophones = value } }
 
+    func refreshMicrophones() { devicesChanged() }
+
     func isEnabled(source: String?) -> Bool { profile(for: source).enabled }
 
     func setEnabled(source: String?, _ value: Bool) { setProfile(source) { $0.enabled = value } }

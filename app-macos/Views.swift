@@ -83,6 +83,7 @@ struct ModelPicker: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .fixedSize()
+            .help(controller.t("RNNoise, почти не нагружает процессор") + "\n" + controller.t("DeepFilterNet, нагрузка примерно вдвое выше"))
         }
     }
 }
@@ -96,9 +97,15 @@ struct StrengthPicker: View {
         controller.isCustomOpen(device) ? custom : controller.values(for: device).firstIndex(of: controller.profile(for: device).attenuation) ?? custom
     }
 
-    private var value: String {
-        let attenuation = controller.profile(for: device).attenuation
-        return attenuation >= 60 ? controller.t("Максимум") : "\(attenuation) " + controller.t("дБ")
+    private func text(_ attenuation: Int) -> String {
+        attenuation >= 60 ? controller.t("Максимум") : "\(attenuation) " + controller.t("дБ")
+    }
+
+    private var value: String { text(controller.profile(for: device).attenuation) }
+
+    // у сегментов нет своих подсказок, поэтому значения всех пресетов показываем вместе
+    private var presetsHelp: String {
+        zip(Controller.presetNames, controller.values(for: device)).map { controller.t($0) + ": " + text($1) }.joined(separator: "\n")
     }
 
     var body: some View {
@@ -124,12 +131,14 @@ struct StrengthPicker: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .frame(maxWidth: .infinity, alignment: .leading)
+            .help(presetsHelp)
             if preset == custom {
                 Slider(value: Binding(
                     get: { Double(controller.profile(for: device).attenuation) },
                     set: { new in controller.setProfile(device) { $0.attenuation = Int(new.rounded()) } }
                 ), in: 0...60, step: 1)
                 .labelsHidden()
+                .help(controller.t("Сила в децибелах"))
             }
         }
     }
@@ -144,7 +153,7 @@ struct MicrophoneList: View {
         return Button { controller.setSource(value) } label: {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark").font(.caption.weight(.semibold)).opacity(selected ? 1 : 0)
-                Text(title).lineLimit(1).truncationMode(.middle)
+                Text(title).lineLimit(1).truncationMode(.middle).help(title)
                 Spacer(minLength: 0)
             }
             .contentShape(Rectangle())
@@ -271,6 +280,31 @@ struct SectionTitle: View {
     var body: some View { Text(text).font(.headline).padding(.top, 10).padding(.leading, 12) }
 }
 
+// как на Windows: крутится хотя бы полсекунды, иначе не видно, что нажатие сработало
+struct RefreshMicrophonesButton: View {
+    @ObservedObject var controller: Controller
+    @State private var refreshing = false
+
+    var body: some View {
+        Button {
+            refreshing = true
+            controller.refreshMicrophones()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { refreshing = false }
+        } label: {
+            ZStack {
+                Image(systemName: "arrow.clockwise").opacity(refreshing ? 0 : 1)
+                if refreshing { ProgressView().controlSize(.small) }
+            }
+            .frame(width: 20, height: 20)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(refreshing)
+        .help(controller.t("Обновить список микрофонов"))
+        .accessibilityLabel(controller.t("Обновить список микрофонов"))
+    }
+}
+
 // карточка микрофона, как на Windows: строка раскрывается по клику в любом месте, выключатель работает отдельно
 struct MicrophoneCard: View {
     @ObservedObject var controller: Controller
@@ -300,7 +334,7 @@ struct MicrophoneCard: View {
                     HStack(spacing: 8) {
                         chevron(open)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(device.isDefault ? name + " (" + controller.t("основной") + ")" : name).lineLimit(1).truncationMode(.middle)
+                            Text(device.isDefault ? name + " (" + controller.t("основной") + ")" : name).lineLimit(1).truncationMode(.middle).help(name)
                             Text(controller.t(controller.activeDevice == name ? "Используется" : "Не используется")).hintStyle()
                         }
                         Spacer(minLength: 8)
@@ -339,9 +373,11 @@ struct MicrophoneCard: View {
                         set: { new in controller.setProfile(name) { $0.lowCut = new } }
                     )) { Text(controller.t("Срезать низкий гул")) }
                     .disabled(busy)
+                    .help(controller.t("Гул ниже 80 Гц: сеть, вентиляторы"))
                     HStack {
                         Button(controller.t("Сбросить настройки")) { controller.resetProfile(name) }
                             .disabled(busy)
+                            .help(controller.t("Быстрая модель и обычная сила, остальное выключено"))
                         Button(controller.t("Скопировать диагностику")) { controller.copyDiagnostics(name) }
                     }
                 }
@@ -407,7 +443,11 @@ struct SettingsView: View {
                     Divider()
                     Text(controller.t("Общий выключатель, настройки микрофонов сохраняются") + "\n" + controller.t("В Zoom, Discord и других программах выберите микрофон Noise Reduction")).hintStyle()
                 }
-                SectionTitle(text: controller.t("Микрофоны"))
+                HStack(alignment: .bottom) {
+                    SectionTitle(text: controller.t("Микрофоны"))
+                    Spacer()
+                    RefreshMicrophonesButton(controller: controller).padding(.trailing, 8)
+                }
                 Card {
                     SourcePicker(controller: controller)
                     if controller.devices.isEmpty { Text(controller.t("Доступные микрофоны не найдены")).hintStyle() }

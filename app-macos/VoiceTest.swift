@@ -347,6 +347,7 @@ struct VoiceTestSection: View {
                 .labelsHidden()
                 .fixedSize()
                 .disabled(!test.ready || !mine)
+                .help(controller.t("Переключение на ходу"))
             }
             if mine && (test.recording || !test.originalPeaks.isEmpty) { WaveformView(test: test) }
             Text(mine && test.failed ? controller.t("Не удалось открыть микрофон") : mine && test.recording ? controller.t("Говорите в микрофон и нажмите Остановить") : controller.t("Запишите фразу, затем слушайте и переключайте Оригинал и Обработано"))
