@@ -154,6 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let created = NSWindow(contentViewController: host)
             created.title = "Noise Reduction"
             created.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+            created.titlebarAppearsTransparent = true
             created.isReleasedWhenClosed = false
             created.contentMinSize = NSSize(width: 520, height: 480)
             created.setContentSize(NSSize(width: 560, height: 680))

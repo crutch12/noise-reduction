@@ -55,7 +55,7 @@ struct SourcePicker: View {
     @ObservedObject var controller: Controller
 
     var body: some View {
-        Picker(controller.t("Исходный микрофон"), selection: Binding(
+        PickerRow(title: controller.t("Исходный микрофон"), selection: Binding(
             get: { controller.devices.contains { $0.name == controller.settings.source } ? controller.settings.source ?? "" : "" },
             set: { controller.setSource($0.isEmpty ? nil : $0) }
         )) {
@@ -70,14 +70,20 @@ struct ModelPicker: View {
     let device: String
 
     var body: some View {
-        Picker(controller.t("Модель"), selection: Binding(
-            get: { controller.profile(for: device).deepFilter },
-            set: { controller.setDeepFilter(device, $0) }
-        )) {
-            Text(controller.t("Быстрая")).tag(false)
-            Text(controller.t("Точная")).tag(true)
+        HStack {
+            Text(controller.t("Модель"))
+            Spacer(minLength: 12)
+            Picker(controller.t("Модель"), selection: Binding(
+                get: { controller.profile(for: device).deepFilter },
+                set: { controller.setDeepFilter(device, $0) }
+            )) {
+                Text(controller.t("Быстрая")).tag(false)
+                Text(controller.t("Точная")).tag(true)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
         }
-        .pickerStyle(.segmented)
     }
 }
 
@@ -206,6 +212,65 @@ struct PopoverView: View {
     }
 }
 
+// стекло только на фоне окна: сквозь него видно то, что за окном, а текст лежит на плотных карточках и читается
+struct WindowBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .underWindowBackground
+        view.blendingMode = .behindWindow
+        view.state = .followsWindowActiveState
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+}
+
+// плотная карточка: системная форма красит строки полупрозрачно и своей заливки не принимает
+struct Card<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) { content }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.primary.opacity(0.08)))
+    }
+}
+
+struct SwitchRow<Label: View>: View {
+    let isOn: Binding<Bool>
+    @ViewBuilder let label: Label
+
+    var body: some View {
+        HStack {
+            label
+            Spacer(minLength: 12)
+            Toggle("", isOn: isOn).toggleStyle(.switch).labelsHidden().controlSize(.small)
+        }
+    }
+}
+
+struct PickerRow<Selection: Hashable, Options: View>: View {
+    let title: String
+    let selection: Binding<Selection>
+    @ViewBuilder let options: Options
+
+    var body: some View {
+        HStack {
+            Text(title)
+            Spacer(minLength: 12)
+            Picker(title, selection: selection) { options }.labelsHidden().fixedSize()
+        }
+    }
+}
+
+struct SectionTitle: View {
+    let text: String
+
+    var body: some View { Text(text).font(.headline).padding(.top, 10).padding(.leading, 12) }
+}
+
 // карточка микрофона, как на Windows: строка раскрывается по клику в любом месте, выключатель работает отдельно
 struct MicrophoneCard: View {
     @ObservedObject var controller: Controller
@@ -229,7 +294,7 @@ struct MicrophoneCard: View {
     }
 
     var body: some View {
-        Section {
+        Card {
             HStack {
                 Button { withAnimation(.easeInOut(duration: 0.15)) { open.toggle() } } label: {
                     HStack(spacing: 8) {
@@ -246,15 +311,19 @@ struct MicrophoneCard: View {
                 Toggle(name, isOn: Binding(get: { controller.isEnabled(source: name) }, set: { controller.setEnabled(source: name, $0) }))
                     .toggleStyle(.switch)
                     .labelsHidden()
+                    .controlSize(.small)
             }
             if open {
-                VStack(alignment: .leading, spacing: 12) {
+                Divider()
+                VStack(alignment: .leading, spacing: 10) {
                     ModelPicker(controller: controller, device: name)
                     Text(controller.t("Точная лучше убирает клавиатуру и голоса на фоне, но чуть сильнее нагружает процессор")).hintStyle()
                     StrengthPicker(controller: controller, device: name)
                 }
                 .disabled(busy)
+                Divider()
                 VoiceTestSection(controller: controller, test: voice, device: name)
+                Divider()
                 Button { withAnimation(.easeInOut(duration: 0.15)) { advancedOpen.toggle() } } label: {
                     HStack {
                         Text(controller.t("Дополнительно"))
@@ -265,10 +334,10 @@ struct MicrophoneCard: View {
                 }
                 .buttonStyle(.plain)
                 if advancedOpen {
-                    Toggle(controller.t("Срезать низкий гул"), isOn: Binding(
+                    SwitchRow(isOn: Binding(
                         get: { controller.profile(for: name).lowCut },
                         set: { new in controller.setProfile(name) { $0.lowCut = new } }
-                    ))
+                    )) { Text(controller.t("Срезать низкий гул")) }
                     .disabled(busy)
                     HStack {
                         Button(controller.t("Сбросить настройки")) { controller.resetProfile(name) }
@@ -293,58 +362,65 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        Form {
-            Section {
-                Toggle(isOn: Binding(get: { controller.settings.enabled }, set: { controller.setEnabled($0) })) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(controller.t("Шумоподавление")).font(.headline)
-                        StatusRow(controller: controller)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                Card {
+                    SwitchRow(isOn: Binding(get: { controller.settings.enabled }, set: { controller.setEnabled($0) })) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(controller.t("Шумоподавление")).font(.headline)
+                            StatusRow(controller: controller)
+                        }
+                    }
+                    .help(controller.t("Для всех микрофонов, клавиша Ctrl+Alt+N"))
+                    RequiredAction(controller: controller)
+                    Divider()
+                    Text(controller.t("Общий выключатель, настройки микрофонов сохраняются") + "\n" + controller.t("В Zoom, Discord и других программах выберите микрофон Noise Reduction")).hintStyle()
+                }
+                SectionTitle(text: controller.t("Микрофоны"))
+                Card {
+                    SourcePicker(controller: controller)
+                    if controller.devices.isEmpty { Text(controller.t("Доступные микрофоны не найдены")).hintStyle() }
+                    Divider()
+                    SwitchRow(isOn: Binding(get: { controller.settings.enableNewMicrophones }, set: { controller.setEnableNew($0) })) {
+                        Text(controller.t("Включать шумоподавление для новых микрофонов"))
                     }
                 }
-                .help(controller.t("Для всех микрофонов, клавиша Ctrl+Alt+N"))
-                RequiredAction(controller: controller)
-            } footer: {
-                Text(controller.t("Общий выключатель, настройки микрофонов сохраняются") + "\n" + controller.t("В Zoom, Discord и других программах выберите микрофон Noise Reduction")).hintStyle()
-            }
-            Section {
-                SourcePicker(controller: controller)
-                if controller.devices.isEmpty { Text(controller.t("Доступные микрофоны не найдены")).foregroundStyle(.secondary) }
-                Toggle(controller.t("Включать шумоподавление для новых микрофонов"), isOn: Binding(get: { controller.settings.enableNewMicrophones }, set: { controller.setEnableNew($0) }))
-            } header: {
-                Text(controller.t("Микрофоны"))
-            }
-            ForEach(controller.devices, id: \.name) { MicrophoneCard(controller: controller, device: $0).id($0.name) }
-            Section {
-                Picker(controller.t("Язык"), selection: Binding(get: { controller.settings.language }, set: { controller.setLanguage($0) })) {
-                    Text(controller.t("Как в системе")).tag("system")
-                    ForEach(Strings.shared.languages, id: \.id) { Text($0.name).tag($0.id) }
-                }
-                Picker(controller.t("Тема окна"), selection: Binding(get: { controller.settings.windowTheme }, set: { controller.setWindowTheme($0) })) { themes }
-                Picker(controller.t("Тема панели трея"), selection: Binding(get: { controller.settings.trayTheme }, set: { controller.setTrayTheme($0) })) { themes }
-            } header: {
-                Text(controller.t("Приложение"))
-            }
-            Section {
-                Toggle(controller.t("Запускать при входе в систему"), isOn: Binding(get: { controller.startupEnabled }, set: { controller.setStartup($0) }))
-            } footer: {
-                Text(controller.t("Закрытое окно остаётся в трее") + (controller.hotkeyAvailable ? "\n" + controller.t("Ctrl+Alt+N включает и выключает шумоподавление") : "")).hintStyle()
-            }
-            Section {
-                Toggle(controller.t("На батарее использовать быструю модель"), isOn: Binding(get: { controller.settings.fastOnBattery }, set: { controller.setFastOnBattery($0) }))
-            } footer: {
-                Text(controller.t("Пока ноутбук работает от батареи, вместо точной модели работает быстрая")).hintStyle()
-            }
-            Section {
-                Button(controller.t("Удалить программу"), role: .destructive) { confirmUninstall = true }
-                    .disabled(controller.installing)
-                    .confirmationDialog(controller.t("Удалить программу"), isPresented: $confirmUninstall) {
-                        Button(controller.t("Удалить"), role: .destructive) { controller.uninstall() }
-                        Button(controller.t("Отмена"), role: .cancel) {}
+                ForEach(controller.devices, id: \.name) { MicrophoneCard(controller: controller, device: $0).id($0.name) }
+                SectionTitle(text: controller.t("Приложение"))
+                Card {
+                    PickerRow(title: controller.t("Язык"), selection: Binding(get: { controller.settings.language }, set: { controller.setLanguage($0) })) {
+                        Text(controller.t("Как в системе")).tag("system")
+                        ForEach(Strings.shared.languages, id: \.id) { Text($0.name).tag($0.id) }
                     }
-                if controller.state != .needsDriver, let error = controller.error { Text(error).font(.caption).foregroundStyle(.red) }
+                    Divider()
+                    PickerRow(title: controller.t("Тема окна"), selection: Binding(get: { controller.settings.windowTheme }, set: { controller.setWindowTheme($0) })) { themes }
+                    Divider()
+                    PickerRow(title: controller.t("Тема панели трея"), selection: Binding(get: { controller.settings.trayTheme }, set: { controller.setTrayTheme($0) })) { themes }
+                }
+                Card {
+                    SwitchRow(isOn: Binding(get: { controller.startupEnabled }, set: { controller.setStartup($0) })) {
+                        Text(controller.t("Запускать при входе в систему"))
+                    }
+                    Text(controller.t("Закрытое окно остаётся в трее") + (controller.hotkeyAvailable ? "\n" + controller.t("Ctrl+Alt+N включает и выключает шумоподавление") : "")).hintStyle()
+                    Divider()
+                    SwitchRow(isOn: Binding(get: { controller.settings.fastOnBattery }, set: { controller.setFastOnBattery($0) })) {
+                        Text(controller.t("На батарее использовать быструю модель"))
+                    }
+                    Text(controller.t("Пока ноутбук работает от батареи, вместо точной модели работает быстрая")).hintStyle()
+                }
+                Card {
+                    Button(controller.t("Удалить программу"), role: .destructive) { confirmUninstall = true }
+                        .disabled(controller.installing)
+                        .confirmationDialog(controller.t("Удалить программу"), isPresented: $confirmUninstall) {
+                            Button(controller.t("Удалить"), role: .destructive) { controller.uninstall() }
+                            Button(controller.t("Отмена"), role: .cancel) {}
+                        }
+                    if controller.state != .needsDriver, let error = controller.error { Text(error).font(.callout).foregroundStyle(.red) }
+                }
             }
+            .padding(16)
         }
-        .formStyle(.grouped)
+        .background(WindowBackground().ignoresSafeArea())
         .frame(minWidth: 520, minHeight: 480)
         .environment(\.layoutDirection, ["ar", "fa"].contains(controller.language) ? .rightToLeft : .leftToRight)
     }
