@@ -43,6 +43,8 @@ namespace NoiseReduction.Avalonia
                 TrayIcon.SetIcons(this, new TrayIcons { tray });
                 controller.Changed += UpdateTray;
                 UpdateTray();
+                // выход из меню Dock и выключение системы приходят сюда, не отменяем их
+                desktop.ShutdownRequested += (_, _) => { if (!Exiting) { Exiting = true; controller.Dispose(); } };
                 desktop.Exit += (_, _) => { if (!Exiting) controller.Dispose(); };
                 if (!StartHidden || VirtualMicrophone.NeedsInstall) ShowWindow();
             }

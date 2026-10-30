@@ -90,8 +90,13 @@ namespace NoiseReduction.Avalonia
                 controller.Change(() => controller.Settings.Language = language.SelectedIndex == 0 ? "system" : Languages.Ids[language.SelectedIndex - 1]);
             };
             controller.Changed += Render;
-            // закрытие только прячет окно, приложение остаётся в трее
-            Closing += (_, args) => { if (!App.Exiting) { args.Cancel = true; Hide(); } };
+            // закрытие только прячет окно, приложение остаётся в трее; выключению системы мешать нельзя
+            Closing += (_, args) =>
+            {
+                if (App.Exiting || args.CloseReason is WindowCloseReason.OSShutdown or WindowCloseReason.ApplicationShutdown) return;
+                args.Cancel = true;
+                Hide();
+            };
             Render();
         }
 
