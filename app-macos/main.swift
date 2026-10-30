@@ -151,17 +151,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             let host = NSHostingController(rootView: SettingsView(controller: controller))
             // размер окна задаёт пользователь, контент только подстраивается
             host.sizingOptions = []
-            if #available(macOS 14, *) { host.sceneBridgingOptions = .all }
             let created = NSWindow(contentViewController: host)
             created.title = "Noise Reduction"
             created.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-            // панель инструментов нужна, чтобы боковая панель шла до верха окна, как в системных приложениях
-            created.toolbar = NSToolbar()
-            created.toolbarStyle = .unified
+            created.titlebarAppearsTransparent = true
             created.isReleasedWhenClosed = false
-            created.setContentSize(NSSize(width: 720, height: 560))
-            created.contentMinSize = NSSize(width: 640, height: 420)
-            created.setFrameAutosaveName("NoiseReductionSettings")
+            created.setContentSize(NSSize(width: 560, height: 680))
+            created.contentMinSize = NSSize(width: 460, height: 420)
+            created.setFrameAutosaveName("NoiseReductionWindow")
             created.delegate = self
             created.appearance = appearance(controller.settings.windowTheme)
             created.center()

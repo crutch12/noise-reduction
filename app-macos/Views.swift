@@ -201,109 +201,98 @@ struct PopoverView: View {
     }
 }
 
-// как в Системных настройках: стеклянная боковая панель и сплошной контент, стекло система рисует сама
-enum SettingsPage: Hashable {
-    case overview, microphone(String), app
+// фон окна из системных материалов, сквозь него слегка видно то, что за окном
+struct WindowBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .underWindowBackground
+        view.blendingMode = .behindWindow
+        view.state = .followsWindowActiveState
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
 
-// настройки одного микрофона, как карточка на Windows
-struct MicrophonePage: View {
+// карточка микрофона, как на Windows: строка раскрывается по клику в любом месте, выключатель работает отдельно
+struct MicrophoneCard: View {
     @ObservedObject var controller: Controller
     @ObservedObject var voice: VoiceTest
-    let device: String
+    let device: Bridge.Device
+    @State private var open: Bool
     @State private var advancedOpen = false
 
-    private var busy: Bool { voice.recording && voice.owner == device }
+    init(controller: Controller, device: Bridge.Device) {
+        self.controller = controller
+        voice = controller.voice
+        self.device = device
+        _open = State(initialValue: controller.activeDevice == device.name)
+    }
+
+    private var name: String { device.name }
+    private var busy: Bool { voice.recording && voice.owner == name }
+
+    private func chevron(_ expanded: Bool) -> some View {
+        Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary).rotationEffect(.degrees(expanded ? 90 : 0))
+    }
 
     var body: some View {
         Section {
-            Toggle(isOn: Binding(get: { controller.isEnabled(source: device) }, set: { controller.setEnabled(source: device, $0) })) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(controller.t("Шумоподавление"))
-                    Text(controller.t(controller.activeDevice == device ? "Используется" : "Не используется")).font(.caption).foregroundStyle(.secondary)
+            HStack {
+                Button { withAnimation(.easeInOut(duration: 0.15)) { open.toggle() } } label: {
+                    HStack(spacing: 8) {
+                        chevron(open)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(device.isDefault ? name + " (" + controller.t("основной") + ")" : name).lineLimit(1).truncationMode(.middle)
+                            Text(controller.t(controller.activeDevice == name ? "Используется" : "Не используется")).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 8)
+                    }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                Toggle(name, isOn: Binding(get: { controller.isEnabled(source: name) }, set: { controller.setEnabled(source: name, $0) }))
+                    .toggleStyle(.switch)
+                    .labelsHidden()
             }
-        }
-        Section {
-            ModelPicker(controller: controller, device: device)
-            StrengthPicker(controller: controller, device: device)
-        } footer: {
-            Text(controller.t("Точная лучше убирает клавиатуру и голоса на фоне, но чуть сильнее нагружает процессор")).font(.caption).foregroundStyle(.secondary)
-        }
-        .disabled(busy)
-        VoiceTestSection(controller: controller, test: voice, device: device)
-        Section {
-            // у системной выпадашки нажимается только стрелка, здесь вся строка
-            Button { withAnimation(.easeInOut(duration: 0.15)) { advancedOpen.toggle() } } label: {
-                HStack {
-                    Text(controller.t("Дополнительно"))
-                    Spacer()
-                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary).rotationEffect(.degrees(advancedOpen ? 90 : 0))
+            if open {
+                VStack(alignment: .leading, spacing: 12) {
+                    ModelPicker(controller: controller, device: name)
+                    Text(controller.t("Точная лучше убирает клавиатуру и голоса на фоне, но чуть сильнее нагружает процессор")).font(.caption).foregroundStyle(.secondary)
+                    StrengthPicker(controller: controller, device: name)
                 }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            if advancedOpen {
-                Toggle(controller.t("Срезать низкий гул"), isOn: Binding(
-                    get: { controller.profile(for: device).lowCut },
-                    set: { new in controller.setProfile(device) { $0.lowCut = new } }
-                ))
                 .disabled(busy)
-                HStack {
-                    Button(controller.t("Сбросить настройки")) { controller.resetProfile(device) }
-                        .disabled(busy)
-                    Button(controller.t("Скопировать диагностику")) { controller.copyDiagnostics(device) }
+                VoiceTestSection(controller: controller, test: voice, device: name)
+                Button { withAnimation(.easeInOut(duration: 0.15)) { advancedOpen.toggle() } } label: {
+                    HStack {
+                        Text(controller.t("Дополнительно"))
+                        Spacer()
+                        chevron(advancedOpen)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if advancedOpen {
+                    Toggle(controller.t("Срезать низкий гул"), isOn: Binding(
+                        get: { controller.profile(for: name).lowCut },
+                        set: { new in controller.setProfile(name) { $0.lowCut = new } }
+                    ))
+                    .disabled(busy)
+                    HStack {
+                        Button(controller.t("Сбросить настройки")) { controller.resetProfile(name) }
+                            .disabled(busy)
+                        Button(controller.t("Скопировать диагностику")) { controller.copyDiagnostics(name) }
+                    }
                 }
             }
         }
     }
 }
 
+// одна страница, как на Windows: общий выключатель, микрофоны, приложение
 struct SettingsView: View {
     @ObservedObject var controller: Controller
-    @ObservedObject var voice: VoiceTest
-    @State private var page: SettingsPage? = .overview
     @State private var confirmUninstall = false
-
-    init(controller: Controller) {
-        self.controller = controller
-        voice = controller.voice
-    }
-
-    // отключённый микрофон пропадает из списка, его страницу показывать нельзя
-    private var current: SettingsPage {
-        if case .microphone(let name)? = page, !controller.devices.contains(where: { $0.name == name }) { return .overview }
-        return page ?? .overview
-    }
-
-    private var title: String {
-        switch current {
-        case .overview: return controller.t("Шумоподавление")
-        case .microphone(let name): return name
-        case .app: return controller.t("Приложение")
-        }
-    }
-
-    var body: some View {
-        NavigationSplitView {
-            List(selection: $page) {
-                Label(controller.t("Шумоподавление"), systemImage: "waveform").tag(SettingsPage.overview)
-                Section(controller.t("Микрофоны")) {
-                    ForEach(controller.devices, id: \.name) { device in
-                        Label(device.name, systemImage: "mic").tag(SettingsPage.microphone(device.name))
-                    }
-                }
-                Label(controller.t("Приложение"), systemImage: "gearshape").tag(SettingsPage.app)
-            }
-            .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 280)
-        } detail: {
-            Form { content }
-                .formStyle(.grouped)
-                .navigationTitle(title)
-        }
-        .frame(minWidth: 640, minHeight: 420)
-        .environment(\.layoutDirection, ["ar", "fa"].contains(controller.language) ? .rightToLeft : .leftToRight)
-    }
 
     @ViewBuilder private var themes: some View {
         Text(controller.t("Как в системе")).tag("system")
@@ -311,9 +300,8 @@ struct SettingsView: View {
         Text(controller.t("Тёмная")).tag("dark")
     }
 
-    @ViewBuilder private var content: some View {
-        switch current {
-        case .overview:
+    var body: some View {
+        Form {
             Section {
                 Toggle(isOn: Binding(get: { controller.settings.enabled }, set: { controller.setEnabled($0) })) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -329,11 +317,13 @@ struct SettingsView: View {
             Section {
                 SourcePicker(controller: controller)
                 if controller.devices.isEmpty { Text(controller.t("Доступные микрофоны не найдены")).foregroundStyle(.secondary) }
+            } header: {
+                Text(controller.t("Микрофоны"))
+            }
+            ForEach(controller.devices, id: \.name) { MicrophoneCard(controller: controller, device: $0).id($0.name) }
+            Section {
                 Toggle(controller.t("Включать шумоподавление для новых микрофонов"), isOn: Binding(get: { controller.settings.enableNewMicrophones }, set: { controller.setEnableNew($0) }))
             }
-        case .microphone(let name):
-            MicrophonePage(controller: controller, voice: voice, device: name).id(name)
-        case .app:
             Section {
                 Picker(controller.t("Язык"), selection: Binding(get: { controller.settings.language }, set: { controller.setLanguage($0) })) {
                     Text(controller.t("Как в системе")).tag("system")
@@ -341,6 +331,8 @@ struct SettingsView: View {
                 }
                 Picker(controller.t("Тема окна"), selection: Binding(get: { controller.settings.windowTheme }, set: { controller.setWindowTheme($0) })) { themes }
                 Picker(controller.t("Тема панели трея"), selection: Binding(get: { controller.settings.trayTheme }, set: { controller.setTrayTheme($0) })) { themes }
+            } header: {
+                Text(controller.t("Приложение"))
             }
             Section {
                 Toggle(controller.t("Запускать при входе в систему"), isOn: Binding(get: { controller.startupEnabled }, set: { controller.setStartup($0) }))
@@ -362,5 +354,10 @@ struct SettingsView: View {
                 if controller.state != .needsDriver, let error = controller.error { Text(error).font(.caption).foregroundStyle(.red) }
             }
         }
+        .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(WindowBackground().ignoresSafeArea())
+        .frame(minWidth: 460, minHeight: 420)
+        .environment(\.layoutDirection, ["ar", "fa"].contains(controller.language) ? .rightToLeft : .leftToRight)
     }
 }

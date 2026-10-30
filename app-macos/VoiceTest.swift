@@ -328,7 +328,8 @@ struct VoiceTestSection: View {
     private var time: String { String(format: "%d:%02d", test.elapsed / 60, test.elapsed % 60) }
 
     var body: some View {
-        Section {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(controller.t("Проверка на своём голосе"))
             HStack {
                 Button(test.recording && mine ? controller.t("Остановить") + " " + time : controller.t("Записать")) {
                     if test.recording { test.stopRecording(config: controller.config(for: device)) } else { test.startRecording(from: device, config: controller.config(for: device)) }
@@ -348,9 +349,6 @@ struct VoiceTestSection: View {
                 .disabled(!test.ready || !mine)
             }
             if mine && (test.recording || !test.originalPeaks.isEmpty) { WaveformView(test: test) }
-        } header: {
-            Text(controller.t("Проверка на своём голосе"))
-        } footer: {
             Text(mine && test.failed ? controller.t("Не удалось открыть микрофон") : mine && test.recording ? controller.t("Говорите в микрофон и нажмите Остановить") : controller.t("Запишите фразу, затем слушайте и переключайте Оригинал и Обработано"))
                 .font(.caption)
                 .foregroundStyle(mine && test.failed ? .red : .secondary)
