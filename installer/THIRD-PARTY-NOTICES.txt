@@ -1,28 +1,53 @@
 NoiseReduction third-party notices
 
-rnnoise.dll contains the RNNoise model and engine, obtained from pyrnnoise 0.4.5
-Source: https://github.com/pengzhendong/pyrnnoise
-Distribution version: https://pypi.org/project/pyrnnoise/0.4.5/
-RNNoise upstream: https://github.com/xiph/rnnoise
-The ARM64 build compiles rnnoise.dll from the same upstream commit 70f1d256acd4b34a572f999a05c87bf00b67730d and model, as pyrnnoise has no Windows ARM64 wheel
-The pyrnnoise distribution is Apache-2.0, see pyrnnoise-LICENSE.txt
-RNNoise is BSD-3-Clause, see RNNoise-COPYING.txt
-No Python runtime or Python package is required by the installed application
-The model is embedded in rnnoise.dll, there is no separately downloaded model
+License texts are in the licenses folder on macOS and Linux and next to this file on Windows
 
-nr_deepfilter.dll contains the DeepFilterNet3 model and the libDF engine from DeepFilterNet 0.5.6
+All platforms
+
+RNNoise, the noise suppression model and engine
+Upstream: https://github.com/xiph/rnnoise
+RNNoise is BSD-3-Clause, see RNNoise-COPYING.txt
+Windows x64 and Linux use the library from pyrnnoise 0.4.5: https://pypi.org/project/pyrnnoise/0.4.5/
+The pyrnnoise distribution is Apache-2.0, see pyrnnoise-LICENSE.txt
+Windows ARM64 and macOS compile it from upstream commit 70f1d256acd4b34a572f999a05c87bf00b67730d with the same model
+No Python runtime or Python package is required by the application
+The model is embedded in the library, there is no separately downloaded model
+
+DeepFilterNet3 model and the libDF engine from DeepFilterNet 0.5.6
 Source: https://github.com/Rikorose/DeepFilterNet/tree/v0.5.6
 DeepFilterNet is dual licensed MIT or Apache-2.0, see DeepFilterNet-LICENSE-MIT.txt and DeepFilterNet-LICENSE-APACHE.txt
 The Rust crates linked into it, including tract and ndarray, are MIT or Apache-2.0 licensed
-The model is embedded in nr_deepfilter.dll, there is no separately downloaded model
+The model is embedded in the library, there is no separately downloaded model
 
+Windows
+
+.NET runtime, MIT, see dotnet-LICENSE.txt and dotnet-ThirdPartyNotices.txt
+Windows App SDK and WinUI, see WindowsAppSDK-license.txt and WindowsAppSDK-NOTICE.txt
 MSVC runtime DLLs are unmodified Microsoft Visual C++ redistributable components
 They are bundled from Visual Studio 2022 VC/Redist/MSVC/x64/Microsoft.VC143.CRT
 Redistribution list: https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution
 License terms: https://visualstudio.microsoft.com/license-terms/vs2022-cruntime/
 These DLLs remain under Microsoft's software license terms
-
-NoiseReduction requires x64 Windows 10 version 1803 or newer and .NET Framework 4.8
-The Windows and .NET Framework runtimes are provided by Windows, not this package
+The installer needs .NET Framework 4.8, which is provided by Windows, not this package
 Only files listed in payload-sha256.txt are bundled, with the generated setup itself
 No source microphone recording, comparison audio, Python environment or lab tools are included
+
+macOS and Linux
+
+miniaudio 0.11.25, public domain or MIT-0, see miniaudio-LICENSE.txt
+Source: https://github.com/mackron/miniaudio
+
+macOS
+
+libASPL 3.1.2, MIT, in the virtual microphone driver, see libASPL-LICENSE.txt
+It includes code derived from Apple samples, see libASPL-LICENSE.apple2012.txt and libASPL-LICENSE.apple2020.txt
+Source: https://github.com/gavv/libASPL
+
+Linux
+
+.NET runtime, MIT, see dotnet-LICENSE.txt and dotnet-ThirdPartyNotices.txt
+Avalonia, MIT, see Avalonia-LICENSE.txt
+SkiaSharp, MIT, see SkiaSharp-LICENSE.txt
+HarfBuzzSharp, MIT, see HarfBuzzSharp-LICENSE.txt
+MicroCom, MIT, see MicroCom-LICENSE.txt
+Tmds.DBus, MIT, see TmdsDbus-LICENSE.txt

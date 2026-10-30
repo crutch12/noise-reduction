@@ -14,6 +14,10 @@ sh "$root/tools/build-native.sh"
 rm -rf "$out" && mkdir -p "$app"
 dotnet publish "$root/app-avalonia" -c Release -r "linux-$arch" --self-contained -p:Version="$version" -o "$app" >/dev/null
 cp "$root/build/librnnoise.so" "$root/build/libnr_bridge.so" "$root/build/libnr_deepfilter.so" "$app/"
-cp "$root/LICENSE" "$app/"
+cp "$root/LICENSE" "$root/installer/THIRD-PARTY-NOTICES.txt" "$app/"
+mkdir -p "$app/licenses"
+for name in RNNoise-COPYING pyrnnoise-LICENSE DeepFilterNet-LICENSE-MIT DeepFilterNet-LICENSE-APACHE miniaudio-LICENSE dotnet-LICENSE dotnet-ThirdPartyNotices Avalonia-LICENSE SkiaSharp-LICENSE HarfBuzzSharp-LICENSE MicroCom-LICENSE TmdsDbus-LICENSE; do
+    cp "$root/installer/licenses/$name.txt" "$app/licenses/"
+done
 tar -czf "$out/NoiseReduction-$version-linux-$arch.tar.gz" -C "$out" noise-reduction
 ls -la "$out"

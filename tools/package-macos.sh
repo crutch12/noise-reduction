@@ -36,6 +36,11 @@ for arch in arm64 x64; do
         -o "$macos/NoiseReduction" "$root"/app-macos/*.swift
     cp -R "$root/build/driver/NoiseReduction.driver" "$app/Contents/Resources/"
     cp "$work/strings.json" "$work/AppIcon.icns" "$app/Contents/Resources/"
+    mkdir -p "$app/Contents/Resources/licenses"
+    cp "$root/LICENSE" "$root/installer/THIRD-PARTY-NOTICES.txt" "$app/Contents/Resources/"
+    for name in RNNoise-COPYING DeepFilterNet-LICENSE-MIT DeepFilterNet-LICENSE-APACHE miniaudio-LICENSE libASPL-LICENSE libASPL-LICENSE.apple2012 libASPL-LICENSE.apple2020; do
+        cp "$root/installer/licenses/$name.txt" "$app/Contents/Resources/licenses/"
+    done
     cat > "$app/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
