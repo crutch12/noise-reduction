@@ -45,7 +45,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationWillTerminate(_ notification: Notification) { controller.stop() }
 
     // значок в Dock и переключение по Cmd+Tab нужны только пока открыто окно
-    func windowWillClose(_ notification: Notification) { NSApp.setActivationPolicy(.accessory) }
+    func windowWillClose(_ notification: Notification) {
+        controller.voice.forget()
+        NSApp.setActivationPolicy(.accessory)
+    }
 
     private func hosting<Content: View>(_ view: Content) -> NSViewController {
         let host = NSHostingController(rootView: view)
@@ -115,11 +118,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         settings.target = self
         menu.addItem(settings)
         menu.addItem(.separator())
+        if controller.devices.isEmpty {
+            let empty = NSMenuItem(title: controller.t("Доступные микрофоны не найдены"), action: nil, keyEquivalent: "")
+            empty.isEnabled = false
+            menu.addItem(empty)
+        }
+        for device in controller.devices {
+            let title = device.isDefault ? device.name + " (" + controller.t("основной") + ")" : device.name
+            let entry = NSMenuItem(title: title, action: #selector(toggleMicrophone(_:)), keyEquivalent: "")
+            entry.state = controller.isEnabled(source: device.name) ? .on : .off
+            entry.representedObject = device.name
+            entry.target = self
+            menu.addItem(entry)
+        }
+        menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: controller.t("Выход"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: ""))
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.maxY + 4), in: button)
     }
 
     @objc private func toggleEnabled() { controller.setEnabled(!controller.settings.enabled) }
+
+    @objc private func toggleMicrophone(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String else { return }
+        controller.setEnabled(source: name, !controller.isEnabled(source: name))
+    }
 
     @objc private func openSettings() { showWindow() }
 
@@ -127,7 +149,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         popover.performClose(nil)
         if window == nil {
             let host = NSHostingController(rootView: SettingsView(controller: controller))
-            host.sizingOptions = .preferredContentSize
+            // размер окна задаёт пользователь, контент только подстраивается
+            host.sizingOptions = []
             if #available(macOS 14, *) { host.sceneBridgingOptions = .all }
             let created = NSWindow(contentViewController: host)
             created.title = "Noise Reduction"
@@ -136,6 +159,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             created.toolbar = NSToolbar()
             created.toolbarStyle = .unified
             created.isReleasedWhenClosed = false
+            created.setContentSize(NSSize(width: 720, height: 560))
+            created.contentMinSize = NSSize(width: 640, height: 420)
+            created.setFrameAutosaveName("NoiseReductionSettings")
             created.delegate = self
             created.appearance = appearance(controller.settings.windowTheme)
             created.center()

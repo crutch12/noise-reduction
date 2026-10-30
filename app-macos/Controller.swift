@@ -21,6 +21,7 @@ final class Controller: ObservableObject {
     @Published var hotkeyAvailable = false
     @Published private(set) var users: [NSRunningApplication] = []
 
+    let voice = VoiceTest()
     private let bridge = Bridge()
     private var timer: Timer?
     private var idleSince: Date?

@@ -91,7 +91,7 @@ struct StrengthPicker: View {
             HStack {
                 Text(controller.t("Сила подавления"))
                 Spacer()
-                Text(value).foregroundStyle(.secondary).monospacedDigit()
+                if preset == custom { Text(value).foregroundStyle(.secondary).monospacedDigit() }
             }
             Picker(controller.t("Сила подавления"), selection: Binding(
                 get: { preset },
@@ -218,9 +218,14 @@ enum SettingsPage: Hashable, CaseIterable {
 struct SettingsView: View {
     @ObservedObject var controller: Controller
     @State private var page: SettingsPage? = .noise
+    @ObservedObject var voice: VoiceTest
     @State private var confirmUninstall = false
+    @State private var advancedOpen = false
 
-    init(controller: Controller) { self.controller = controller }
+    init(controller: Controller) {
+        self.controller = controller
+        voice = controller.voice
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -233,7 +238,7 @@ struct SettingsView: View {
                 .formStyle(.grouped)
                 .navigationTitle(controller.t((page ?? .noise).title))
         }
-        .frame(minWidth: 680, idealWidth: 720, minHeight: 480, idealHeight: 540)
+        .frame(minWidth: 640, minHeight: 420)
         .environment(\.layoutDirection, ["ar", "fa"].contains(controller.language) ? .rightToLeft : .leftToRight)
     }
 
@@ -261,21 +266,24 @@ struct SettingsView: View {
             Section {
                 ModelPicker(controller: controller)
                 StrengthPicker(controller: controller)
-                Toggle(controller.t("Срезать низкий гул"), isOn: Binding(
-                    get: { controller.profile.lowCut },
-                    set: { new in controller.setProfile { $0.lowCut = new } }
-                ))
             } footer: {
                 Text(controller.t("Точная лучше убирает клавиатуру и голоса на фоне, но чуть сильнее нагружает процессор")).font(.caption).foregroundStyle(.secondary)
             }
-            VoiceTestSection(controller: controller)
+            .disabled(voice.recording)
+            VoiceTestSection(controller: controller, test: voice)
             Section {
-                HStack {
-                    Button(controller.t("Сбросить настройки")) { controller.resetProfile() }
-                    Button(controller.t("Скопировать диагностику")) { controller.copyDiagnostics() }
+                DisclosureGroup(controller.t("Дополнительно"), isExpanded: $advancedOpen) {
+                    Toggle(controller.t("Срезать низкий гул"), isOn: Binding(
+                        get: { controller.profile.lowCut },
+                        set: { new in controller.setProfile { $0.lowCut = new } }
+                    ))
+                    .disabled(voice.recording)
+                    HStack {
+                        Button(controller.t("Сбросить настройки")) { controller.resetProfile() }
+                            .disabled(voice.recording)
+                        Button(controller.t("Скопировать диагностику")) { controller.copyDiagnostics() }
+                    }
                 }
-            } header: {
-                Text(controller.t("Дополнительно"))
             }
         case .microphones:
             Section {

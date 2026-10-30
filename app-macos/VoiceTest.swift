@@ -8,21 +8,36 @@ final class VoiceTest: ObservableObject {
     @Published private(set) var playing = false
     @Published private(set) var elapsed = 0
     @Published private(set) var failed = false
-    @Published private(set) var peaks: [Float] = []
-    @Published var listenProcessed = true { didSet { applyVolumes(); updatePeaks() } }
+    @Published private(set) var originalPeaks: [Float] = []
+    @Published private(set) var processedPeaks: [Float] = []
+    @Published var listenProcessed = true { didSet { applyVolumes() } }
+    private(set) var started = Date()
 
     private static let rate = 48000.0
     private let lock = NSLock()
     private var engine: AVAudioEngine?
     private var captured: [Float] = []
+    private var live: [Float] = []
+    private var bucketPeak: Float = 0
+    private var bucketCount = 0
     private var original: [Float] = []
     private var processed: [Float] = []
     private var players: [AVAudioPlayer] = []
     private var timer: Timer?
     private var generation = 0
     private var lastConfig: UInt32?
+    private var pendingProcess: DispatchWorkItem?
 
-    var hasRecording: Bool { !original.isEmpty }
+    var ready: Bool { !processed.isEmpty && !recording }
+
+    // доля пройденного при прослушивании, -1 если не играет
+    var progress: Double {
+        guard let player = players.first, player.duration > 0 else { return -1 }
+        return player.currentTime / player.duration
+    }
+
+    // пик каждых 20 мс для живой волны
+    func livePeaks() -> [Float] { lock.withLock { live } }
 
     func startRecording(from input: String?, config: UInt32) {
         stopPlaying()
@@ -46,8 +61,17 @@ final class VoiceTest: ObservableObject {
             failed = true
             return
         }
-        lock.withLock { captured = [] }
-        engine.inputNode.installTap(onBus: 0, bufferSize: 4096, format: format) { [weak self] buffer, _ in
+        lock.withLock {
+            captured = []
+            live = []
+            bucketPeak = 0
+            bucketCount = 0
+        }
+        originalPeaks = []
+        processedPeaks = []
+        original = []
+        processed = []
+        engine.inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             let capacity = AVAudioFrameCount(Double(buffer.frameLength) * Self.rate / format.sampleRate) + 64
             guard let self, let output = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: capacity) else { return }
             var consumed = false
@@ -58,7 +82,7 @@ final class VoiceTest: ObservableObject {
                 return buffer
             }
             guard let samples = output.floatChannelData?[0] else { return }
-            self.lock.withLock { self.captured.append(contentsOf: UnsafeBufferPointer(start: samples, count: Int(output.frameLength))) }
+            self.collect(UnsafeBufferPointer(start: samples, count: Int(output.frameLength)))
         }
         do { try engine.start() } catch {
             engine.inputNode.removeTap(onBus: 0)
@@ -68,13 +92,29 @@ final class VoiceTest: ObservableObject {
         self.engine = engine
         recording = true
         elapsed = 0
+        started = Date()
+        lastConfig = config
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.elapsed += 1
-            // как на Windows, длинная запись не нужна и занимала бы память
+            // длинная запись только занимала бы память
             if self.elapsed >= 300 { self.stopRecording(config: self.lastConfig ?? config) }
         }
-        lastConfig = config
+    }
+
+    private func collect(_ samples: UnsafeBufferPointer<Float>) {
+        lock.withLock {
+            captured.append(contentsOf: samples)
+            for sample in samples {
+                bucketPeak = max(bucketPeak, abs(sample))
+                bucketCount += 1
+                if bucketCount >= 960 {
+                    live.append(bucketPeak)
+                    bucketPeak = 0
+                    bucketCount = 0
+                }
+            }
+        }
     }
 
     func stopRecording(config: UInt32) {
@@ -86,27 +126,31 @@ final class VoiceTest: ObservableObject {
         original = lock.withLock { captured }
         lock.withLock { captured = [] }
         failed = original.isEmpty
+        originalPeaks = Self.peaks(original)
         lastConfig = nil
         process(config: config)
     }
 
-    // настройки меняются на ходу, запись пересчитывается в фоне, а результат старого пересчёта отбрасывается
+    // новая сила или модель сразу применяются к готовой записи, ползунок шлёт много значений подряд, считаем только последнее
     func process(config: UInt32) {
-        guard hasRecording, config != lastConfig else { return }
+        guard !original.isEmpty, !recording, config != lastConfig else { return }
         lastConfig = config
         generation += 1
         let current = generation, source = original
         let models = Bundle.main.executableURL!.deletingLastPathComponent().path
-        DispatchQueue.global(qos: .userInitiated).async {
+        pendingProcess?.cancel()
+        let work = DispatchWorkItem {
             var result = [Float](repeating: 0, count: source.count)
             nr_bridge_process(models, config, source, &result, Int32(source.count))
             DispatchQueue.main.async {
                 guard current == self.generation else { return }
                 self.processed = result
-                self.updatePeaks()
+                self.processedPeaks = Self.peaks(result)
                 self.reloadPlayers()
             }
         }
+        pendingProcess = work
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.15, execute: work)
     }
 
     func togglePlaying() {
@@ -114,12 +158,36 @@ final class VoiceTest: ObservableObject {
     }
 
     func stopPlaying() {
-        timer?.invalidate()
         players.forEach { $0.stop() }
         players = []
         playing = false
     }
 
+    // закрытое окно забывает проверку: и запись, и прослушивание
+    func forget() {
+        if recording {
+            timer?.invalidate()
+            engine?.inputNode.removeTap(onBus: 0)
+            engine?.stop()
+            engine = nil
+            recording = false
+        }
+        stopPlaying()
+        generation += 1
+        pendingProcess?.cancel()
+        lock.withLock {
+            captured = []
+            live = []
+        }
+        original = []
+        processed = []
+        originalPeaks = []
+        processedPeaks = []
+        lastConfig = nil
+        failed = false
+    }
+
+    // оба варианта играют одновременно и по кругу, переключение просто меняет, какой слышно
     private func startPlaying() {
         guard let first = try? AVAudioPlayer(data: Self.wave(original)), let second = try? AVAudioPlayer(data: Self.wave(processed)) else {
             failed = true
@@ -127,7 +195,6 @@ final class VoiceTest: ObservableObject {
         }
         players = [first, second]
         applyVolumes()
-        // по кругу, как на Windows: удобно переключать и сравнивать, пока не нажмут Остановить
         players.forEach { $0.numberOfLoops = -1 }
         let start = first.deviceCurrentTime + 0.1
         players.forEach { $0.prepareToPlay(); $0.play(atTime: start) }
@@ -142,20 +209,21 @@ final class VoiceTest: ObservableObject {
         players.forEach { $0.currentTime = time }
     }
 
-    // обе записи играют одновременно, поэтому переключение не сбивает место
     private func applyVolumes() {
         guard players.count == 2 else { return }
         players[0].volume = listenProcessed ? 0 : 1
         players[1].volume = listenProcessed ? 1 : 0
     }
 
-    private func updatePeaks() {
-        let samples = listenProcessed ? processed : original
-        guard !samples.isEmpty else { peaks = []; return }
-        let bins = 160, step = max(samples.count / bins, 1)
-        peaks = stride(from: 0, to: samples.count, by: step).map { start in
-            samples[start..<min(start + step, samples.count)].reduce(0) { max($0, abs($1)) }
+    private static func peaks(_ samples: [Float]) -> [Float] {
+        let count = 240
+        var result = [Float](repeating: 0, count: count)
+        guard !samples.isEmpty else { return [] }
+        for (index, sample) in samples.enumerated() {
+            let bucket = index * count / samples.count
+            result[bucket] = max(result[bucket], abs(sample))
         }
+        return result
     }
 
     private static func wave(_ samples: [Float]) -> Data {
@@ -186,9 +254,70 @@ final class VoiceTest: ObservableObject {
     }
 }
 
+// волна как на Windows: при записи бежит справа налево, потом исходный звук серым, после шумодава цветом поверх и бегунок
+struct WaveformView: View {
+    @ObservedObject var test: VoiceTest
+    private static let bucketSeconds = 0.02, windowSeconds = 4.0, delay = 0.08
+
+    var body: some View {
+        TimelineView(.animation(paused: !test.recording && !test.playing)) { timeline in
+            Canvas { context, size in
+                if test.recording { drawLive(context, size, timeline.date) } else { drawResult(context, size) }
+            }
+        }
+        .frame(height: 48)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
+        .clipped()
+    }
+
+    // голос заметен и на тихом микрофоне, громкий не упирается в край
+    private func height(_ peak: Float) -> CGFloat { min(1, pow(CGFloat(max(0, peak)) * 4, 0.6)) }
+
+    private func shape(_ points: [(CGFloat, CGFloat)], middle: CGFloat) -> Path {
+        var path = Path()
+        guard let first = points.first else { return path }
+        path.move(to: CGPoint(x: first.0, y: middle - first.1))
+        for point in points.dropFirst() { path.addLine(to: CGPoint(x: point.0, y: middle - point.1)) }
+        for point in points.reversed() { path.addLine(to: CGPoint(x: point.0, y: middle + point.1)) }
+        path.closeSubpath()
+        return path
+    }
+
+    private func drawLive(_ context: GraphicsContext, _ size: CGSize, _ date: Date) {
+        let peaks = test.livePeaks()
+        guard size.width > 0, !peaks.isEmpty else { return }
+        // время показа идёт плавно по часам, данные отстают на delay и всегда успевают прийти
+        let now = min(date.timeIntervalSince(test.started) - Self.delay, Double(peaks.count) * Self.bucketSeconds)
+        let scale = Double(size.width) / Self.windowSeconds, middle = size.height / 2
+        let first = max(0, Int((now - Self.windowSeconds) / Self.bucketSeconds) - 1), last = min(peaks.count - 1, Int(now / Self.bucketSeconds))
+        guard first <= last else { return }
+        let points = (first...last).map { index -> (CGFloat, CGFloat) in
+            (size.width - CGFloat((now - Double(index) * Self.bucketSeconds) * scale), max(0.75, height(peaks[index]) * middle))
+        }
+        context.fill(shape(points, middle: middle), with: .color(.accentColor))
+    }
+
+    private func drawResult(_ context: GraphicsContext, _ size: CGSize) {
+        guard size.width > 0, !test.originalPeaks.isEmpty else { return }
+        let top = max(test.originalPeaks.max() ?? 0, 0.02), middle = size.height / 2
+        func points(_ peaks: [Float]) -> [(CGFloat, CGFloat)] {
+            let step = size.width / CGFloat(max(1, peaks.count - 1))
+            return peaks.enumerated().map { (CGFloat($0.offset) * step, max(0.75, CGFloat(min(1, $0.element / top)) * middle)) }
+        }
+        context.fill(shape(points(test.originalPeaks), middle: middle), with: .color(.secondary.opacity(test.listenProcessed ? 0.4 : 0.7)))
+        context.fill(shape(points(test.processedPeaks), middle: middle), with: .color(.accentColor.opacity(test.listenProcessed ? 1 : 0.45)))
+        let progress = test.progress
+        if progress >= 0 {
+            context.fill(Path(CGRect(x: min(max(progress, 0), 1) * max(0, size.width - 2), y: 0, width: 2, height: size.height)), with: .color(.primary))
+        }
+    }
+}
+
 struct VoiceTestSection: View {
     @ObservedObject var controller: Controller
-    @StateObject private var test = VoiceTest()
+    @ObservedObject var test: VoiceTest
 
     private var time: String { String(format: "%d:%02d", test.elapsed / 60, test.elapsed % 60) }
 
@@ -198,8 +327,9 @@ struct VoiceTestSection: View {
                 Button(test.recording ? controller.t("Остановить") + " " + time : controller.t("Записать")) {
                     if test.recording { test.stopRecording(config: controller.bridgeConfig) } else { test.startRecording(from: controller.input, config: controller.bridgeConfig) }
                 }
-                Button(test.playing ? controller.t("Остановить") : controller.t("Слушать")) { test.togglePlaying() }
-                    .disabled(!test.hasRecording || test.recording)
+                .buttonStyle(.borderedProminent)
+                Button(test.playing ? controller.t("Стоп") : controller.t("Слушать")) { test.togglePlaying() }
+                    .disabled(!test.ready)
                 Spacer()
                 Picker("", selection: $test.listenProcessed) {
                     Text(controller.t("Оригинал")).tag(false)
@@ -208,19 +338,9 @@ struct VoiceTestSection: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
-                .disabled(!test.hasRecording)
+                .disabled(!test.ready)
             }
-            if !test.peaks.isEmpty {
-                Canvas { context, size in
-                    let width = size.width / CGFloat(test.peaks.count)
-                    for (index, peak) in test.peaks.enumerated() {
-                        let height = max(1, CGFloat(min(peak, 1)) * size.height)
-                        let bar = CGRect(x: CGFloat(index) * width, y: (size.height - height) / 2, width: max(width - 1, 1), height: height)
-                        context.fill(Path(roundedRect: bar, cornerRadius: 1), with: .color(.accentColor))
-                    }
-                }
-                .frame(height: 44)
-            }
+            if test.recording || !test.originalPeaks.isEmpty { WaveformView(test: test) }
         } header: {
             Text(controller.t("Проверка на своём голосе"))
         } footer: {
@@ -229,6 +349,5 @@ struct VoiceTestSection: View {
                 .foregroundStyle(test.failed ? .red : .secondary)
         }
         .onChange(of: controller.bridgeConfig) { test.process(config: $0) }
-        .onDisappear { test.stopPlaying() }
     }
 }
