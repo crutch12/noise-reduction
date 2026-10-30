@@ -172,30 +172,55 @@ struct PopoverView: View {
             .padding(12)
         }
         .frame(width: 280)
-        // система делает панель слишком прозрачной, текст читается хуже
-        .background(Color(nsColor: .windowBackgroundColor).opacity(0.7).ignoresSafeArea())
         .environment(\.layoutDirection, ["ar", "fa"].contains(controller.language) ? .rightToLeft : .leftToRight)
     }
 }
 
-// фон окна как в Системных настройках: то, что за окном, лишь слегка просвечивает
-struct WindowBackground: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = .sidebar
-        view.blendingMode = .behindWindow
-        view.state = .followsWindowActiveState
-        return view
+// как в Системных настройках: стеклянная боковая панель и сплошной контент, стекло система рисует сама
+enum SettingsPage: Hashable, CaseIterable {
+    case noise, microphones, general
+
+    var title: String {
+        switch self {
+        case .noise: return "Шумоподавление"
+        case .microphones: return "Микрофоны"
+        case .general: return "Настройки"
+        }
     }
 
-    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+    var symbol: String {
+        switch self {
+        case .noise: return "waveform"
+        case .microphones: return "mic"
+        case .general: return "gearshape"
+        }
+    }
 }
 
 struct SettingsView: View {
     @ObservedObject var controller: Controller
+    @State private var page: SettingsPage? = .noise
+
+    init(controller: Controller) { self.controller = controller }
 
     var body: some View {
-        Form {
+        NavigationSplitView {
+            List(SettingsPage.allCases, id: \.self, selection: $page) { item in
+                Label(controller.t(item.title), systemImage: item.symbol)
+            }
+            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
+        } detail: {
+            Form { content }
+                .formStyle(.grouped)
+                .navigationTitle(controller.t((page ?? .noise).title))
+        }
+        .frame(minWidth: 680, idealWidth: 720, minHeight: 480, idealHeight: 540)
+        .environment(\.layoutDirection, ["ar", "fa"].contains(controller.language) ? .rightToLeft : .leftToRight)
+    }
+
+    @ViewBuilder private var content: some View {
+        switch page ?? .noise {
+        case .noise:
             Section {
                 Toggle(isOn: Binding(get: { controller.settings.enabled }, set: { controller.setEnabled($0) })) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -208,9 +233,6 @@ struct SettingsView: View {
                 Text(controller.t("В Zoom, Discord и других программах выберите микрофон Noise Reduction")).font(.caption).foregroundStyle(.secondary)
             }
             Section {
-                SourcePicker(controller: controller)
-            }
-            Section {
                 ModelPicker(controller: controller)
                 StrengthPicker(controller: controller)
                 Toggle(controller.t("Срезать низкий гул"), isOn: Binding(
@@ -220,6 +242,11 @@ struct SettingsView: View {
             } footer: {
                 Text(controller.t("Точная лучше убирает клавиатуру и голоса на фоне, но чуть сильнее нагружает процессор")).font(.caption).foregroundStyle(.secondary)
             }
+        case .microphones:
+            Section {
+                SourcePicker(controller: controller)
+            }
+        case .general:
             Section {
                 Picker(controller.t("Язык"), selection: Binding(get: { controller.settings.language }, set: { controller.setLanguage($0) })) {
                     Text(controller.t("Как в системе")).tag("system")
@@ -228,11 +255,5 @@ struct SettingsView: View {
                 Toggle(controller.t("Запускать при входе в систему"), isOn: Binding(get: { controller.startupEnabled }, set: { controller.setStartup($0) }))
             }
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
-        .background(ZStack { WindowBackground(); Color(nsColor: .windowBackgroundColor).opacity(0.82) }.ignoresSafeArea())
-        .frame(width: 480)
-        .frame(minHeight: 560)
-        .environment(\.layoutDirection, ["ar", "fa"].contains(controller.language) ? .rightToLeft : .leftToRight)
     }
 }

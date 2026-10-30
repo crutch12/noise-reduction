@@ -206,7 +206,8 @@ jobs:
           path: dist/setup/NoiseReduction.Setup.exe
 
   macos:
-    runs-on: macos-15
+    # Liquid Glass появляется только у приложений, собранных под SDK macOS 26
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
         with:

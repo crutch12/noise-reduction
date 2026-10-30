@@ -69,6 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         } else {
             NSApp.activate(ignoringOtherApps: true)
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            // без этого панель открывается неактивной, и выключатель выглядит серым
+            popover.contentViewController?.view.window?.makeKey()
         }
     }
 
@@ -94,17 +96,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func showWindow() {
         popover.performClose(nil)
         if window == nil {
-            let created = NSWindow(contentViewController: hosting(SettingsView(controller: controller)))
+            let host = NSHostingController(rootView: SettingsView(controller: controller))
+            host.sizingOptions = .preferredContentSize
+            if #available(macOS 14, *) { host.sceneBridgingOptions = .all }
+            let created = NSWindow(contentViewController: host)
             created.title = "Noise Reduction"
-            created.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            created.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+            // панель инструментов нужна, чтобы боковая панель шла до верха окна, как в системных приложениях
+            created.toolbar = NSToolbar()
+            created.toolbarStyle = .unified
             created.isReleasedWhenClosed = false
             created.delegate = self
             created.center()
             window = created
         }
         NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+        // сразу после смены режима система ещё не считает приложение обычным и не отдаёт ему фокус
+        DispatchQueue.main.async {
+            NSApp.activate(ignoringOtherApps: true)
+            self.window?.makeKeyAndOrderFront(nil)
+        }
     }
 
     // без меню приложения не работают Cmd+Q и Cmd+W

@@ -2,7 +2,7 @@ import AVFoundation
 import AppKit
 import CoreAudio
 
-enum State { case paused, idle, working, error, needsDriver, noPermission }
+enum AppState { case paused, idle, working, error, needsDriver, noPermission }
 
 // как и на Windows, микрофон занимаем только пока им пользуется какая-то программа
 final class Controller: ObservableObject {
@@ -11,7 +11,7 @@ final class Controller: ObservableObject {
     static let presetNames = ["Мягко", "Обычно", "Сильно"]
 
     @Published private(set) var settings = Settings.load()
-    @Published private(set) var state = State.idle
+    @Published private(set) var state = AppState.idle
     @Published private(set) var error: String?
     @Published private(set) var devices: [Bridge.Device] = []
     @Published private(set) var startupEnabled = Autostart.enabled
@@ -132,7 +132,7 @@ final class Controller: ObservableObject {
         bridge.configure(enabled: settings.enabled && value.enabled, attenuation: value.attenuation, lowCut: value.lowCut, deepFilter: value.deepFilter)
     }
 
-    private func set(_ next: State) {
+    private func set(_ next: AppState) {
         if next != state { state = next }
     }
 
