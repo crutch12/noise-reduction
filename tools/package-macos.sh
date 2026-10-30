@@ -54,6 +54,7 @@ for arch in arm64 x64; do
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
   <key>CFBundleVersion</key><string>$version</string>
+  <key>NRCommit</key><string>$(git -C "$root" rev-parse HEAD 2>/dev/null || true)</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>

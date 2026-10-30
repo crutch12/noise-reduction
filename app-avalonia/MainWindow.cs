@@ -23,6 +23,9 @@ namespace NoiseReduction.Avalonia
             strengthLabel = Label(), strengthValue = new() { HorizontalAlignment = HorizontalAlignment.Right }, languageLabel = Label();
         private readonly Ellipse dot = new() { Width = 10, Height = 10, VerticalAlignment = VerticalAlignment.Center };
         private readonly ComboBox source = new() { HorizontalAlignment = HorizontalAlignment.Stretch }, language = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
+        private readonly HyperlinkButton tagLink = new() { Content = BuildInfo.Tag, NavigateUri = new Uri(BuildInfo.TagUrl) },
+            commitLink = new() { Content = BuildInfo.ShortCommit, NavigateUri = new Uri(BuildInfo.CommitUrl), IsVisible = BuildInfo.Commit.Length > 0 },
+            sourceLink = new() { NavigateUri = new Uri(BuildInfo.Repository) };
         private readonly ToggleButton fast = Segment(), precise = Segment(), custom = Segment();
         private readonly ToggleButton[] presets = { Segment(), Segment(), Segment() };
         private readonly Slider slider = new() { Minimum = 0, Maximum = 60, TickFrequency = 1, IsSnapToTickEnabled = true, IsVisible = false };
@@ -54,6 +57,11 @@ namespace NoiseReduction.Avalonia
                         Card(sourceLabel, source),
                         Card(modelLabel, models, modelNote, strength, presetRow, slider, lowCut),
                         Card(languageLabel, language, startup),
+                        new StackPanel
+                        {
+                            Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center,
+                            Children = { tagLink, commitLink, sourceLink },
+                        },
                     }
                 }
             };
@@ -147,6 +155,7 @@ namespace NoiseReduction.Avalonia
             lowCut.Content = T("Срезать низкий гул");
             lowCut.IsChecked = profile.LowCut;
 
+            sourceLink.Content = T("Исходный код");
             languageLabel.Text = T("Язык");
             var languages = new[] { T("Как в системе") }.Concat(Languages.Names).ToList();
             if (!language.Items.Cast<string>().SequenceEqual(languages)) { language.Items.Clear(); foreach (var name in languages) language.Items.Add(name); }

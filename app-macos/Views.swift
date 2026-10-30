@@ -350,6 +350,24 @@ struct MicrophoneCard: View {
     }
 }
 
+// откуда собрана программа: тег, коммит и исходный код
+struct BuildLinks: View {
+    @ObservedObject var controller: Controller
+    private let repository = "https://github.com/crutch12/noise-reduction"
+    private let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+    private let commit = Bundle.main.object(forInfoDictionaryKey: "NRCommit") as? String ?? ""
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Link("v" + version, destination: URL(string: repository + "/releases/tag/v" + version)!)
+            if !commit.isEmpty { Link(String(commit.prefix(7)), destination: URL(string: repository + "/commit/" + commit)!) }
+            Link(controller.t("Исходный код"), destination: URL(string: repository)!)
+        }
+        .font(.callout)
+        .frame(maxWidth: .infinity)
+    }
+}
+
 // одна страница, как на Windows: общий выключатель, микрофоны, приложение
 struct SettingsView: View {
     @ObservedObject var controller: Controller
@@ -419,6 +437,7 @@ struct SettingsView: View {
                 }
             }
             .padding(16)
+            BuildLinks(controller: controller).padding(.bottom, 12)
         }
         .background(WindowBackground().ignoresSafeArea())
         .frame(minWidth: 520, minHeight: 480)

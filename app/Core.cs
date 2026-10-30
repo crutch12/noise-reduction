@@ -10,6 +10,25 @@ using System.Threading;
 
 namespace NoiseReduction.Desktop
 {
+    // откуда собрана программа: версия из тега и коммит вшиваются при сборке
+    public static class BuildInfo
+    {
+        public const string Repository = "https://github.com/crutch12/noise-reduction";
+        public static readonly string Version, Commit;
+        static BuildInfo()
+        {
+            var entry = System.Reflection.Assembly.GetEntryAssembly();
+            var attributes = entry == null ? new object[0] : entry.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false);
+            string value = attributes.Length > 0 ? ((System.Reflection.AssemblyInformationalVersionAttribute)attributes[0]).InformationalVersion : "";
+            int plus = value.IndexOf('+');
+            Version = plus < 0 ? value : value.Substring(0, plus);
+            Commit = plus < 0 ? "" : value.Substring(plus + 1);
+        }
+        public static string Tag { get { return "v" + Version; } }
+        public static string TagUrl { get { return Repository + "/releases/tag/" + Tag; } }
+        public static string CommitUrl { get { return Repository + "/commit/" + Commit; } }
+        public static string ShortCommit { get { return Commit.Length > 7 ? Commit.Substring(0, 7) : Commit; } }
+    }
     [DataContract]
     public sealed class Profile
     {

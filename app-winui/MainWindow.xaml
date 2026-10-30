@@ -149,6 +149,11 @@
                         <Button x:Name="UninstallButton" Grid.Column="2" MinWidth="96" Click="UninstallClicked" />
                     </Grid>
                 </Border>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="4">
+                    <HyperlinkButton x:Name="TagLink" Padding="6,2" FontSize="12" />
+                    <HyperlinkButton x:Name="CommitLink" Padding="6,2" FontSize="12" />
+                    <HyperlinkButton x:Name="SourceLink" Padding="6,2" FontSize="12" />
+                </StackPanel>
             </StackPanel>
             </Grid>
         </ScrollViewer>

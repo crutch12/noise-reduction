@@ -140,6 +140,7 @@ namespace NoiseReduction.Desktop
             { "Не удалось открыть микрофон", "Kan de microfoon niet openen" },
             { "Noise Reduction не выбран основным микрофоном", "Noise Reduction is niet de standaardmicrofoon" },
             { "Сделать основным микрофоном", "Instellen als standaardmicrofoon" },
+            { "Исходный код", "Broncode" },
             { "Пока ноутбук работает от батареи, вместо точной модели работает быстрая", "Zolang de laptop op de accu werkt, wordt Snel gebruikt in plaats van Nauwkeurig" },
             { "Проверка на своём голосе", "Testen met je eigen stem" },
             { "Обработано", "Verwerkt" },

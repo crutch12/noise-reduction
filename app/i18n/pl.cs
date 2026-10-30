@@ -140,6 +140,7 @@ namespace NoiseReduction.Desktop
             { "Не удалось открыть микрофон", "Nie udało się otworzyć mikrofonu" },
             { "Noise Reduction не выбран основным микрофоном", "Noise Reduction nie jest domyślnym mikrofonem" },
             { "Сделать основным микрофоном", "Ustaw jako domyślny mikrofon" },
+            { "Исходный код", "Kod źródłowy" },
             { "Пока ноутбук работает от батареи, вместо точной модели работает быстрая", "Gdy laptop działa na baterii, zamiast modelu Dokładny używany jest Szybki" },
             { "Проверка на своём голосе", "Test na własnym głosie" },
             { "Обработано", "Przetworzone" },

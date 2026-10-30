@@ -100,6 +100,13 @@ namespace NoiseReduction.WinUI
             // кнопка только у установленной копии, переносной версии удалять нечего
             UninstallCard.Visibility = File.Exists(UninstallerPath) ? Visibility.Visible : Visibility.Collapsed;
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(NewMicrophonesSwitch, T("Включать шумоподавление для новых микрофонов"));
+            TagLink.Content = NoiseReduction.Desktop.BuildInfo.Tag;
+            TagLink.NavigateUri = new Uri(NoiseReduction.Desktop.BuildInfo.TagUrl);
+            CommitLink.Content = NoiseReduction.Desktop.BuildInfo.ShortCommit;
+            CommitLink.NavigateUri = new Uri(NoiseReduction.Desktop.BuildInfo.CommitUrl);
+            CommitLink.Visibility = NoiseReduction.Desktop.BuildInfo.Commit.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+            SourceLink.Content = T("Исходный код");
+            SourceLink.NavigateUri = new Uri(NoiseReduction.Desktop.BuildInfo.Repository);
             GlobalTitle.Text = T("Шумоподавление");
             GlobalHelp.Text = T("Общий выключатель, настройки микрофонов сохраняются");
             Tip(MasterSwitch, "Для всех микрофонов, клавиша Ctrl+Alt+N");

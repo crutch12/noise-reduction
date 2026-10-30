@@ -12,7 +12,7 @@ out="$root/dist/linux"
 app="$out/noise-reduction"
 sh "$root/tools/build-native.sh"
 rm -rf "$out" && mkdir -p "$app"
-dotnet publish "$root/app-avalonia" -c Release -r "linux-$arch" --self-contained -p:Version="$version" -o "$app" >/dev/null
+dotnet publish "$root/app-avalonia" -c Release -r "linux-$arch" --self-contained -p:Version="$version" -p:SourceRevisionId="$(git -C "$root" rev-parse HEAD 2>/dev/null || true)" -o "$app" >/dev/null
 cp "$root/build/librnnoise.so" "$root/build/libnr_bridge.so" "$root/build/libnr_deepfilter.so" "$app/"
 cp "$root/LICENSE" "$root/installer/THIRD-PARTY-NOTICES.txt" "$app/"
 mkdir -p "$app/licenses"

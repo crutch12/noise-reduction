@@ -23,7 +23,6 @@
     <ApplicationIcon>../app/assets/NoiseReduction.ico</ApplicationIcon>
     <AssemblyName>NoiseReduction</AssemblyName>
     <Product>Noise Reduction</Product>
-    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <RootNamespace>NoiseReduction.WinUI</RootNamespace>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>disable</Nullable>

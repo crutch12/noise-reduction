@@ -18,8 +18,10 @@ if (Test-Path -LiteralPath $output) { Remove-Item -LiteralPath $output -Recurse 
 . (Join-Path $PSScriptRoot 'version.ps1')
 . (Join-Path $PSScriptRoot 'vs.ps1')
 $version = Get-BuildVersion
+# хеш коммита попадает в программу и показывается внизу окна
+$commit = (& git -C $repoPath rev-parse HEAD 2>$null)
 $arch = Get-BuildArch
-& $dotnet publish (Join-Path $repoPath 'app-winui/NoiseReduction.csproj') -c Release -p:Platform=$arch -p:Version=$version --packages (Join-Path $repoPath '.local/nuget') -o $output
+& $dotnet publish (Join-Path $repoPath 'app-winui/NoiseReduction.csproj') -c Release -p:Platform=$arch -p:Version=$version -p:SourceRevisionId=$commit --packages (Join-Path $repoPath '.local/nuget') -o $output
 if ($LASTEXITCODE -ne 0) { throw 'WinUI publish failed' }
 $compiledResources = Join-Path $repoPath "app-winui/bin/$arch/Release/net10.0-windows10.0.26100.0/win-$arch"
 foreach ($resource in @('NoiseReduction.pri', 'App.xbf', 'MainWindow.xbf', 'TrayFlyout.xbf')) {
