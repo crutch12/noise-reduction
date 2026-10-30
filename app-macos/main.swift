@@ -149,15 +149,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         popover.performClose(nil)
         if window == nil {
             let host = NSHostingController(rootView: SettingsView(controller: controller))
-            // размер окна задаёт пользователь, контент только подстраивается
-            host.sizingOptions = []
+            // размер окна задаёт пользователь, контент отвечает только за минимум
+            host.sizingOptions = .minSize
             let created = NSWindow(contentViewController: host)
             created.title = "Noise Reduction"
             created.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
             created.isReleasedWhenClosed = false
+            created.contentMinSize = NSSize(width: 520, height: 480)
             created.setContentSize(NSSize(width: 560, height: 680))
-            created.contentMinSize = NSSize(width: 460, height: 420)
             created.setFrameAutosaveName("NoiseReductionWindow")
+            // сохранённый размер мог остаться от прошлой версии и быть меньше минимума
+            let saved = created.contentRect(forFrameRect: created.frame).size
+            created.setContentSize(NSSize(width: max(saved.width, 520), height: max(saved.height, 480)))
             created.delegate = self
             created.appearance = appearance(controller.settings.windowTheme)
             created.center()
