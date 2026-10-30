@@ -26,6 +26,18 @@ class IntegrationTests {
     engine.Detach(fx);
     using (var k = root.OpenSubKey(fx)) Assert(((string[])k.GetValue(Integration.CompositeKey)).Length == 2, "preserve later OEM change");
     Assert(BitConverter.ToString(EffectPack.State()) == "41-00-00-00-01-00-00-00-0E-5C-9F-3A-21-7B-8E-4D-9F-43-6C-2B-1D-8E-0A-57-01-00-00-00-01-00-00-00-01-00-00-00", "effect pack selection matches Windows settings");
+    string rawProps = "Capture\\{77777777-7777-7777-7777-777777777777}\\Properties";
+    byte[] rawOn = { 11, 0, 0, 0, 1, 0, 0, 0, 255, 255, 0, 0 }, rawOff = { 11, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0 };
+    using (var k = root.CreateSubKey(rawProps)) k.SetValue(Integration.RawSupportKey, rawOn, RegistryValueKind.Binary);
+    engine.Set(rawProps, Integration.RawSupportKey, rawOff, RegistryValueKind.Binary);
+    // Windows вернула признак, служба выключила его снова, а отключение шумодава всё равно возвращает исходное значение
+    using (var k = root.OpenSubKey(rawProps, true)) k.SetValue(Integration.RawSupportKey, rawOn, RegistryValueKind.Binary);
+    engine.Set(rawProps, Integration.RawSupportKey, rawOff, RegistryValueKind.Binary);
+    engine.Detach(rawProps);
+    using (var k = root.OpenSubKey(rawProps)) Assert(BitConverter.ToString((byte[])k.GetValue(Integration.RawSupportKey)) == BitConverter.ToString(rawOn), "detach restores raw support after repeated repair");
+    using (var k = root.OpenSubKey(rawProps, true)) k.SetValue(Integration.RawSupportKey, rawOff, RegistryValueKind.Binary);
+    engine.Detach(rawProps);
+    using (var k = root.OpenSubKey(rawProps)) Assert(BitConverter.ToString((byte[])k.GetValue(Integration.RawSupportKey)) == BitConverter.ToString(rawOff), "second detach has nothing left to restore");
     string props = "Capture\\{88888888-8888-8888-8888-888888888888}\\Properties";
     using (var k = root.CreateSubKey(props)) k.SetValue(EffectPack.SelectedKey, "voice", RegistryValueKind.String);
     engine.Set(props, EffectPack.SelectedKey, EffectPack.Id, RegistryValueKind.String);

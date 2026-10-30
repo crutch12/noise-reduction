@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.ServiceProcess;
+using System.Threading;
 using System.Windows.Forms;
 using NoiseReduction.Platform;
 
@@ -10,6 +12,7 @@ namespace NoiseReduction.Desktop
         [STAThread]
         private static int Main(string[] args)
         {
+            if (args.Length == 1 && args[0] == "--keep-raw-off") { ServiceBase.Run(new RawKeeper()); return 0; }
             try
             {
                 UiText.Language = Settings.Load(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NoiseReduction", "settings.json")).Language;
@@ -99,6 +102,24 @@ namespace NoiseReduction.Desktop
                 Integration.Detach(id);
                 if (device != null && device.Attached) Integration.RefreshAudioGraph();
             }
+        }
+    }
+
+    // служба запускается по просьбе приложения, делает одно дело и останавливается; окон в ней показывать нельзя
+    internal sealed class RawKeeper : ServiceBase
+    {
+        public RawKeeper() { ServiceName = Integration.RawKeeperService; }
+        protected override void OnStart(string[] args)
+        {
+            new Thread(() =>
+            {
+                try { Integration.KeepRawOff(); }
+                catch (Exception error)
+                {
+                    try { File.AppendAllText(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "NoiseReduction", "engine-errors.log"), DateTime.UtcNow.ToString("o") + " --keep-raw-off" + Environment.NewLine + error + Environment.NewLine); } catch { }
+                }
+                Stop();
+            }) { IsBackground = true }.Start();
         }
     }
 
