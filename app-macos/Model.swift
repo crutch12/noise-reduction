@@ -35,9 +35,10 @@ struct Settings: Codable {
     var profiles: [Profile] = []
     var enableNewMicrophones = true
     var source: String?
+    var fastOnBattery = false
 
     enum CodingKeys: String, CodingKey {
-        case enabled = "Enabled", language = "Language", profiles = "Profiles", enableNewMicrophones = "EnableNewMicrophones", source = "Source"
+        case enabled = "Enabled", language = "Language", profiles = "Profiles", enableNewMicrophones = "EnableNewMicrophones", source = "Source", fastOnBattery = "FastOnBattery"
     }
 
     init() {}
@@ -49,6 +50,7 @@ struct Settings: Codable {
         profiles = try values.decodeIfPresent([Profile].self, forKey: .profiles) ?? []
         enableNewMicrophones = try values.decodeIfPresent(Bool.self, forKey: .enableNewMicrophones) ?? true
         source = try values.decodeIfPresent(String.self, forKey: .source)
+        fastOnBattery = try values.decodeIfPresent(Bool.self, forKey: .fastOnBattery) ?? false
     }
 
     static var file: URL {
@@ -133,10 +135,9 @@ final class Bridge {
         return running
     }
 
-    func configure(enabled: Bool, attenuation: Int, lowCut: Bool, deepFilter: Bool) {
+    func configure(_ config: UInt32) {
         guard let handle else { return }
-        let config = (enabled ? 1 : 0) | (lowCut ? 2 : 0) | (deepFilter ? 8 : 0) | (min(max(attenuation, 0), 60) << 8)
-        nr_bridge_configure(handle, UInt32(config))
+        nr_bridge_configure(handle, config)
     }
 
     func stats() -> (modelFrames: UInt64, errors: UInt64) {
@@ -190,7 +191,12 @@ enum Driver {
     static func install() -> String? {
         guard let source = bundled?.path else { return "NoiseReduction.driver not found" }
         // копию проверяем там, куда пишет только root: драйвер с плохой подписью coreaudiod молча не загрузит
-        let script = "mkdir -p /Library/Audio/Plug-Ins/HAL && T=$(mktemp -d /Library/Audio/Plug-Ins/.nr-install.XXXXXX) && trap 'rm -rf \"$T\"' EXIT && cp -RH \(quote(source)) \"$T/NoiseReduction.driver\" && codesign --verify --strict \"$T/NoiseReduction.driver\" && xattr -dr com.apple.quarantine \"$T/NoiseReduction.driver\" && rm -rf \(quote(path)) && mv \"$T/NoiseReduction.driver\" \(quote(path)) && killall coreaudiod"
+        return admin("mkdir -p /Library/Audio/Plug-Ins/HAL && T=$(mktemp -d /Library/Audio/Plug-Ins/.nr-install.XXXXXX) && trap 'rm -rf \"$T\"' EXIT && cp -RH \(quote(source)) \"$T/NoiseReduction.driver\" && codesign --verify --strict \"$T/NoiseReduction.driver\" && xattr -dr com.apple.quarantine \"$T/NoiseReduction.driver\" && rm -rf \(quote(path)) && mv \"$T/NoiseReduction.driver\" \(quote(path)) && killall coreaudiod")
+    }
+
+    static func remove() -> String? { admin("rm -rf \(quote(path)); killall coreaudiod") }
+
+    private static func admin(_ script: String) -> String? {
         let escaped = script.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
         let process = Process()
         let errors = Pipe()

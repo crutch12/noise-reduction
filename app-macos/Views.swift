@@ -200,6 +200,7 @@ enum SettingsPage: Hashable, CaseIterable {
 struct SettingsView: View {
     @ObservedObject var controller: Controller
     @State private var page: SettingsPage? = .noise
+    @State private var confirmUninstall = false
 
     init(controller: Controller) { self.controller = controller }
 
@@ -242,6 +243,10 @@ struct SettingsView: View {
             } footer: {
                 Text(controller.t("Точная лучше убирает клавиатуру и голоса на фоне, но чуть сильнее нагружает процессор")).font(.caption).foregroundStyle(.secondary)
             }
+            VoiceTestSection(controller: controller)
+            Section {
+                Button(controller.t("Сбросить настройки")) { controller.resetProfile() }
+            }
         case .microphones:
             Section {
                 SourcePicker(controller: controller)
@@ -253,6 +258,20 @@ struct SettingsView: View {
                     ForEach(Strings.shared.languages, id: \.id) { Text($0.name).tag($0.id) }
                 }
                 Toggle(controller.t("Запускать при входе в систему"), isOn: Binding(get: { controller.startupEnabled }, set: { controller.setStartup($0) }))
+            }
+            Section {
+                Toggle(controller.t("На батарее использовать быструю модель"), isOn: Binding(get: { controller.settings.fastOnBattery }, set: { controller.setFastOnBattery($0) }))
+            } footer: {
+                Text(controller.t("Пока ноутбук работает от батареи, вместо точной модели работает быстрая")).font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
+                Button(controller.t("Удалить программу"), role: .destructive) { confirmUninstall = true }
+                    .disabled(controller.installing)
+                    .confirmationDialog(controller.t("Удалить программу"), isPresented: $confirmUninstall) {
+                        Button(controller.t("Удалить"), role: .destructive) { controller.uninstall() }
+                        Button(controller.t("Отмена"), role: .cancel) {}
+                    }
+                if controller.state != .needsDriver, let error = controller.error { Text(error).font(.caption).foregroundStyle(.red) }
             }
         }
     }

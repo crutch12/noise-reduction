@@ -279,6 +279,34 @@ NR_BRIDGE_API void nr_bridge_stats(void* handle, uint64_t* frames, uint64_t* mod
 
 NR_BRIDGE_API void nr_bridge_stop(void* handle) { delete static_cast<Bridge*>(handle); }
 
+NR_BRIDGE_API int nr_bridge_process(const char* models, uint32_t config, const float* input, float* output, int count) {
+    if (!input || !output || count < 0) return 1;
+    try {
+        Bridge bridge;
+        bridge.models = models ? models : "";
+        try { bridge.rnnoise = std::make_unique<nr::RnnoiseBackend>((bridge.models + "/librnnoise" + library_suffix).c_str()); }
+        catch (...) { ++bridge.errors; }
+        auto processor = bridge.build(config & deepfilter_bit);
+        const bool enabled = config & enabled_bit;
+        processor->set_enabled(enabled);
+        processor->set_attenuation(static_cast<float>(std::min(60u, (config >> 8) & 255u)));
+        const size_t delay = processor->delay();
+        std::vector<float> padded(static_cast<size_t>(count) + delay), result(padded.size());
+        nr::HighPass highpass{static_cast<float>(rate)};
+        for (int i = 0; i < count; ++i) {
+            const bool cut = enabled && (config & low_cut_bit) && std::isfinite(input[i]);
+            padded[i] = cut ? highpass.process(input[i]) : input[i];
+        }
+        processor->process(padded.data(), result.data(), padded.size());
+        std::memcpy(output, result.data() + delay, static_cast<size_t>(count) * sizeof(float));
+        return processor->has_model() ? 0 : 1;
+    }
+    catch (...) {
+        std::memcpy(output, input, static_cast<size_t>(count) * sizeof(float));
+        return 1;
+    }
+}
+
 NR_BRIDGE_API int nr_bridge_in_use(const char* uid) {
 #ifdef __APPLE__
     CFStringRef text = uid ? CFStringCreateWithCString(nullptr, uid, kCFStringEncodingUTF8) : nullptr;

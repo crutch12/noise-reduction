@@ -6,4 +6,5 @@ void* nr_bridge_start(const char* input, const char* output, const char* models,
 void nr_bridge_configure(void* bridge, uint32_t config);
 void nr_bridge_stats(void* bridge, uint64_t* frames, uint64_t* model_frames, uint64_t* errors);
 void nr_bridge_stop(void* bridge);
+int nr_bridge_process(const char* models, uint32_t config, const float* input, float* output, int count);
 int nr_bridge_in_use(const char* uid);

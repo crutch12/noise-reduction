@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <vector>
 
 static void check(bool ok, const char* message) { if (!ok) throw std::runtime_error(message); }
 
@@ -52,7 +53,16 @@ int main(int argc, char** argv) {
         check(broken.frames > 0, "Bridge without models dropped the audio");
         check(broken.errors > 0, "Missing models were not reported");
         nr_bridge_stop(bridge);
-        std::cout << "PASS: bridge capture, model, live settings, missing models keep audio\n";
+        // запись для проверки голосом: шум заметно тише, длина та же, без модели звук не теряется
+        std::vector<float> noise(48000), cleaned(48000);
+        unsigned seed = 1;
+        for (float& sample : noise) { seed = seed * 1103515245u + 12345u; sample = (static_cast<float>(seed >> 16 & 0x7fff) / 16384.0f - 1.0f) * 0.1f; }
+        const auto energy = [](const std::vector<float>& samples) { double sum = 0; for (size_t i = 9600; i < samples.size(); ++i) sum += samples[i] * samples[i]; return sum; };
+        check(nr_bridge_process(argv[1], 1u | (60u << 8), noise.data(), cleaned.data(), 48000) == 0, "Recording was not processed");
+        check(energy(cleaned) < energy(noise) * 0.5, "Processing did not reduce noise");
+        check(nr_bridge_process("/nonexistent", 1u | (60u << 8), noise.data(), cleaned.data(), 48000) == 1, "Missing models were not reported");
+        check(energy(cleaned) > energy(noise) * 0.9, "Recording without models lost the audio");
+        std::cout << "PASS: bridge capture, model, live settings, missing models keep audio, recording\n";
         return 0;
     }
     catch (const std::exception& error) {

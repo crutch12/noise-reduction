@@ -1,6 +1,7 @@
 import AVFoundation
 import AppKit
 import CoreAudio
+import IOKit.ps
 
 enum AppState { case paused, idle, working, error, needsDriver, noPermission }
 
@@ -26,6 +27,8 @@ final class Controller: ObservableObject {
     private var bridgeInput: String?
     private var bridgeDefault: String?
     private var driverCurrent = Driver.isCurrent()
+    private var onBattery = Controller.batteryPower()
+    private var ticks = 0
 
     init() {
         if startupEnabled { Autostart.set(true) }
@@ -44,6 +47,19 @@ final class Controller: ObservableObject {
 
     var profile: Profile {
         settings.profiles.first { $0.id == key } ?? Profile(id: key, enabled: settings.enableNewMicrophones)
+    }
+
+    // основной микрофон системы может быть и нашим виртуальным: слушать самих себя нельзя, берём настоящий
+    var input: String? {
+        if devices.contains(where: { $0.name == settings.source }) { return settings.source }
+        return devices.contains { $0.isDefault } ? nil : devices.first?.name
+    }
+
+    // те же биты, что и в control-файле на Windows
+    var bridgeConfig: UInt32 {
+        let value = profile
+        let deepFilter = value.deepFilter && !(settings.fastOnBattery && onBattery)
+        return UInt32((settings.enabled && value.enabled ? 1 : 0) | (value.lowCut ? 2 : 0) | (deepFilter ? 8 : 0) | (min(max(value.attenuation, 0), 60) << 8))
     }
 
     var values: [Int] { profile.deepFilter ? Self.preciseValues : Self.fastValues }
@@ -90,6 +106,35 @@ final class Controller: ObservableObject {
         }
     }
 
+    func setFastOnBattery(_ value: Bool) { change { $0.fastOnBattery = value } }
+
+    func resetProfile() {
+        customOpen = false
+        setProfile {
+            $0.attenuation = 12
+            $0.lowCut = false
+            $0.deepFilter = false
+        }
+    }
+
+    // драйвер и автозапуск убираем сами, а приложение отправляем в корзину
+    func uninstall() {
+        guard !installing else { return }
+        installing = true
+        DispatchQueue.global(qos: .userInitiated).async {
+            let failure = Driver.remove()
+            DispatchQueue.main.async {
+                self.installing = false
+                if let failure {
+                    self.error = failure
+                    return
+                }
+                Autostart.set(false)
+                NSWorkspace.shared.recycle([Bundle.main.bundleURL]) { _, _ in NSApp.terminate(nil) }
+            }
+        }
+    }
+
     func setStartup(_ value: Bool) {
         Autostart.set(value)
         startupEnabled = Autostart.enabled
@@ -128,8 +173,13 @@ final class Controller: ObservableObject {
     }
 
     private func apply() {
-        let value = profile
-        bridge.configure(enabled: settings.enabled && value.enabled, attenuation: value.attenuation, lowCut: value.lowCut, deepFilter: value.deepFilter)
+        guard bridge.running else { return }
+        bridge.configure(bridgeConfig)
+    }
+
+    private static func batteryPower() -> Bool {
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(), let type = IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() else { return false }
+        return type as String == kIOPSBatteryPowerValue
     }
 
     private func set(_ next: AppState) {
@@ -137,6 +187,15 @@ final class Controller: ObservableObject {
     }
 
     private func tick() {
+        ticks += 1
+        if ticks % 10 == 0 {
+            let battery = Self.batteryPower()
+            if battery != onBattery {
+                onBattery = battery
+                objectWillChange.send()
+                apply()
+            }
+        }
         guard driverCurrent else {
             set(.needsDriver)
             return
@@ -158,7 +217,7 @@ final class Controller: ObservableObject {
         default: break
         }
         if want && !bridge.running && Date() >= retryAt {
-            let input = devices.contains { $0.name == settings.source } ? settings.source : nil
+            let input = self.input
             if bridge.start(input: input, output: "uid:NoiseReduction_Feed") {
                 apply()
                 error = nil
