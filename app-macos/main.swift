@@ -81,7 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let glyph: TrayGlyph
         switch controller.state {
         case .working, .idle: glyph = .on
-        case .paused: glyph = .off
+        case .paused, .notSelected: glyph = .off
         case .error, .noPermission, .needsDriver: glyph = .problem
         }
         if glyph != shownGlyph {

@@ -8,7 +8,7 @@ struct StatusRow: View {
         case .working, .idle: return .green
         case .paused: return .secondary
         case .error, .noPermission: return .red
-        case .needsDriver: return .orange
+        case .needsDriver, .notSelected: return .orange
         }
     }
 
@@ -38,6 +38,8 @@ struct RequiredAction: View {
             if let error = controller.error { Text(error).font(.caption).foregroundStyle(.red) }
         case .noPermission:
             Button(controller.t("Настройки")) { controller.openPrivacySettings() }
+        case .notSelected:
+            Button(controller.t("Сделать основным микрофоном")) { controller.selectVirtualMicrophone() }
         default:
             EmptyView()
         }
@@ -60,11 +62,12 @@ struct SourcePicker: View {
 
 struct ModelPicker: View {
     @ObservedObject var controller: Controller
+    let device: String
 
     var body: some View {
         Picker(controller.t("Модель"), selection: Binding(
-            get: { controller.profile.deepFilter },
-            set: { controller.setDeepFilter($0) }
+            get: { controller.profile(for: device).deepFilter },
+            set: { controller.setDeepFilter(device, $0) }
         )) {
             Text(controller.t("Быстрая")).tag(false)
             Text(controller.t("Точная")).tag(true)
@@ -75,14 +78,15 @@ struct ModelPicker: View {
 
 struct StrengthPicker: View {
     @ObservedObject var controller: Controller
+    let device: String
     private let custom = 3
 
     private var preset: Int {
-        controller.customOpen ? custom : controller.values.firstIndex(of: controller.profile.attenuation) ?? custom
+        controller.isCustomOpen(device) ? custom : controller.values(for: device).firstIndex(of: controller.profile(for: device).attenuation) ?? custom
     }
 
     private var value: String {
-        let attenuation = controller.profile.attenuation
+        let attenuation = controller.profile(for: device).attenuation
         return attenuation >= 60 ? controller.t("Максимум") : "\(attenuation) " + controller.t("дБ")
     }
 
@@ -96,8 +100,11 @@ struct StrengthPicker: View {
             Picker(controller.t("Сила подавления"), selection: Binding(
                 get: { preset },
                 set: { index in
-                    controller.customOpen = index == custom
-                    if index != custom { controller.setProfile { $0.attenuation = controller.values[index] } }
+                    controller.setCustomOpen(device, index == custom)
+                    if index != custom {
+                        let next = controller.values(for: device)[index]
+                        controller.setProfile(device) { $0.attenuation = next }
+                    }
                 }
             )) {
                 ForEach(Controller.presetNames.indices, id: \.self) { Text(controller.t(Controller.presetNames[$0])).tag($0) }
@@ -108,8 +115,8 @@ struct StrengthPicker: View {
             .frame(maxWidth: .infinity)
             if preset == custom {
                 Slider(value: Binding(
-                    get: { Double(controller.profile.attenuation) },
-                    set: { new in controller.setProfile { $0.attenuation = Int(new.rounded()) } }
+                    get: { Double(controller.profile(for: device).attenuation) },
+                    set: { new in controller.setProfile(device) { $0.attenuation = Int(new.rounded()) } }
                 ), in: 0...60, step: 1)
                 .labelsHidden()
             }
@@ -195,48 +202,104 @@ struct PopoverView: View {
 }
 
 // как в Системных настройках: стеклянная боковая панель и сплошной контент, стекло система рисует сама
-enum SettingsPage: Hashable, CaseIterable {
-    case noise, microphones, general
+enum SettingsPage: Hashable {
+    case overview, microphone(String), app
+}
 
-    var title: String {
-        switch self {
-        case .noise: return "Шумоподавление"
-        case .microphones: return "Микрофоны"
-        case .general: return "Приложение"
+// настройки одного микрофона, как карточка на Windows
+struct MicrophonePage: View {
+    @ObservedObject var controller: Controller
+    @ObservedObject var voice: VoiceTest
+    let device: String
+    @State private var advancedOpen = false
+
+    private var busy: Bool { voice.recording && voice.owner == device }
+
+    var body: some View {
+        Section {
+            Toggle(isOn: Binding(get: { controller.isEnabled(source: device) }, set: { controller.setEnabled(source: device, $0) })) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(controller.t("Шумоподавление"))
+                    Text(controller.t(controller.activeDevice == device ? "Используется" : "Не используется")).font(.caption).foregroundStyle(.secondary)
+                }
+            }
         }
-    }
-
-    var symbol: String {
-        switch self {
-        case .noise: return "waveform"
-        case .microphones: return "mic"
-        case .general: return "gearshape"
+        Section {
+            ModelPicker(controller: controller, device: device)
+            StrengthPicker(controller: controller, device: device)
+        } footer: {
+            Text(controller.t("Точная лучше убирает клавиатуру и голоса на фоне, но чуть сильнее нагружает процессор")).font(.caption).foregroundStyle(.secondary)
+        }
+        .disabled(busy)
+        VoiceTestSection(controller: controller, test: voice, device: device)
+        Section {
+            // у системной выпадашки нажимается только стрелка, здесь вся строка
+            Button { withAnimation(.easeInOut(duration: 0.15)) { advancedOpen.toggle() } } label: {
+                HStack {
+                    Text(controller.t("Дополнительно"))
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary).rotationEffect(.degrees(advancedOpen ? 90 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if advancedOpen {
+                Toggle(controller.t("Срезать низкий гул"), isOn: Binding(
+                    get: { controller.profile(for: device).lowCut },
+                    set: { new in controller.setProfile(device) { $0.lowCut = new } }
+                ))
+                .disabled(busy)
+                HStack {
+                    Button(controller.t("Сбросить настройки")) { controller.resetProfile(device) }
+                        .disabled(busy)
+                    Button(controller.t("Скопировать диагностику")) { controller.copyDiagnostics(device) }
+                }
+            }
         }
     }
 }
 
 struct SettingsView: View {
     @ObservedObject var controller: Controller
-    @State private var page: SettingsPage? = .noise
     @ObservedObject var voice: VoiceTest
+    @State private var page: SettingsPage? = .overview
     @State private var confirmUninstall = false
-    @State private var advancedOpen = false
 
     init(controller: Controller) {
         self.controller = controller
         voice = controller.voice
     }
 
+    // отключённый микрофон пропадает из списка, его страницу показывать нельзя
+    private var current: SettingsPage {
+        if case .microphone(let name)? = page, !controller.devices.contains(where: { $0.name == name }) { return .overview }
+        return page ?? .overview
+    }
+
+    private var title: String {
+        switch current {
+        case .overview: return controller.t("Шумоподавление")
+        case .microphone(let name): return name
+        case .app: return controller.t("Приложение")
+        }
+    }
+
     var body: some View {
         NavigationSplitView {
-            List(SettingsPage.allCases, id: \.self, selection: $page) { item in
-                Label(controller.t(item.title), systemImage: item.symbol)
+            List(selection: $page) {
+                Label(controller.t("Шумоподавление"), systemImage: "waveform").tag(SettingsPage.overview)
+                Section(controller.t("Микрофоны")) {
+                    ForEach(controller.devices, id: \.name) { device in
+                        Label(device.name, systemImage: "mic").tag(SettingsPage.microphone(device.name))
+                    }
+                }
+                Label(controller.t("Приложение"), systemImage: "gearshape").tag(SettingsPage.app)
             }
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
+            .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 280)
         } detail: {
             Form { content }
                 .formStyle(.grouped)
-                .navigationTitle(controller.t((page ?? .noise).title))
+                .navigationTitle(title)
         }
         .frame(minWidth: 640, minHeight: 420)
         .environment(\.layoutDirection, ["ar", "fa"].contains(controller.language) ? .rightToLeft : .leftToRight)
@@ -249,8 +312,8 @@ struct SettingsView: View {
     }
 
     @ViewBuilder private var content: some View {
-        switch page ?? .noise {
-        case .noise:
+        switch current {
+        case .overview:
             Section {
                 Toggle(isOn: Binding(get: { controller.settings.enabled }, set: { controller.setEnabled($0) })) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -264,45 +327,13 @@ struct SettingsView: View {
                 Text(controller.t("Общий выключатель, настройки микрофонов сохраняются") + "\n" + controller.t("В Zoom, Discord и других программах выберите микрофон Noise Reduction")).font(.caption).foregroundStyle(.secondary)
             }
             Section {
-                ModelPicker(controller: controller)
-                StrengthPicker(controller: controller)
-            } footer: {
-                Text(controller.t("Точная лучше убирает клавиатуру и голоса на фоне, но чуть сильнее нагружает процессор")).font(.caption).foregroundStyle(.secondary)
-            }
-            .disabled(voice.recording)
-            VoiceTestSection(controller: controller, test: voice)
-            Section {
-                DisclosureGroup(controller.t("Дополнительно"), isExpanded: $advancedOpen) {
-                    Toggle(controller.t("Срезать низкий гул"), isOn: Binding(
-                        get: { controller.profile.lowCut },
-                        set: { new in controller.setProfile { $0.lowCut = new } }
-                    ))
-                    .disabled(voice.recording)
-                    HStack {
-                        Button(controller.t("Сбросить настройки")) { controller.resetProfile() }
-                            .disabled(voice.recording)
-                        Button(controller.t("Скопировать диагностику")) { controller.copyDiagnostics() }
-                    }
-                }
-            }
-        case .microphones:
-            Section {
                 SourcePicker(controller: controller)
-            }
-            Section {
                 if controller.devices.isEmpty { Text(controller.t("Доступные микрофоны не найдены")).foregroundStyle(.secondary) }
-                Toggle(controller.t("Как в системе"), isOn: Binding(get: { controller.isEnabled(source: nil) }, set: { controller.setEnabled(source: nil, $0) }))
-                ForEach(controller.devices, id: \.name) { device in
-                    Toggle(device.isDefault ? device.name + " (" + controller.t("основной") + ")" : device.name, isOn: Binding(
-                        get: { controller.isEnabled(source: device.name) },
-                        set: { controller.setEnabled(source: device.name, $0) }
-                    ))
-                }
-            }
-            Section {
                 Toggle(controller.t("Включать шумоподавление для новых микрофонов"), isOn: Binding(get: { controller.settings.enableNewMicrophones }, set: { controller.setEnableNew($0) }))
             }
-        case .general:
+        case .microphone(let name):
+            MicrophonePage(controller: controller, voice: voice, device: name).id(name)
+        case .app:
             Section {
                 Picker(controller.t("Язык"), selection: Binding(get: { controller.settings.language }, set: { controller.setLanguage($0) })) {
                     Text(controller.t("Как в системе")).tag("system")

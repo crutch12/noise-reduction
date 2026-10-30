@@ -1,3 +1,4 @@
+import CoreAudio
 import Foundation
 
 // те же названия полей, что в общем Core.cs, настройки старой версии читаются как есть
@@ -177,6 +178,33 @@ enum Autostart {
         guard let data = try? PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0) else { return }
         try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? data.write(to: file, options: .atomic)
+    }
+}
+
+// основной микрофон системы: права администратора для смены не нужны
+enum DefaultInput {
+    private static let uid = "NoiseReduction_Microphone"
+    private static var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+
+    private static func virtualDevice() -> AudioDeviceID? {
+        var translate = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyTranslateUIDToDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var text = uid as CFString
+        var device = AudioDeviceID(kAudioObjectUnknown)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        let status = withUnsafePointer(to: &text) { AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &translate, UInt32(MemoryLayout<CFString>.size), $0, &size, &device) }
+        return status == noErr && device != kAudioObjectUnknown ? device : nil
+    }
+
+    static var isVirtual: Bool {
+        guard let device = virtualDevice() else { return false }
+        var current = AudioDeviceID(kAudioObjectUnknown)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        return AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &current) == noErr && current == device
+    }
+
+    static func selectVirtual() -> Bool {
+        guard var device = virtualDevice() else { return false }
+        return AudioObjectSetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, UInt32(MemoryLayout<AudioDeviceID>.size), &device) == noErr
     }
 }
 

@@ -11,6 +11,8 @@ final class VoiceTest: ObservableObject {
     @Published private(set) var originalPeaks: [Float] = []
     @Published private(set) var processedPeaks: [Float] = []
     @Published var listenProcessed = true { didSet { applyVolumes() } }
+    // запись одна на всё приложение, новая на другом микрофоне заменяет прошлую
+    @Published private(set) var owner: String?
     private(set) var started = Date()
 
     private static let rate = 48000.0
@@ -40,8 +42,8 @@ final class VoiceTest: ObservableObject {
     func livePeaks() -> [Float] { lock.withLock { live } }
 
     func startRecording(from input: String?, config: UInt32) {
-        stopPlaying()
-        failed = false
+        forget()
+        owner = input
         AVCaptureDevice.requestAccess(for: .audio) { granted in
             DispatchQueue.main.async {
                 if granted { self.beginCapture(from: input, config: config) } else { self.failed = true }
@@ -185,6 +187,7 @@ final class VoiceTest: ObservableObject {
         processedPeaks = []
         lastConfig = nil
         failed = false
+        owner = nil
     }
 
     // оба варианта играют одновременно и по кругу, переключение просто меняет, какой слышно
@@ -318,18 +321,22 @@ struct WaveformView: View {
 struct VoiceTestSection: View {
     @ObservedObject var controller: Controller
     @ObservedObject var test: VoiceTest
+    let device: String
+
+    private var mine: Bool { test.owner == device }
 
     private var time: String { String(format: "%d:%02d", test.elapsed / 60, test.elapsed % 60) }
 
     var body: some View {
         Section {
             HStack {
-                Button(test.recording ? controller.t("Остановить") + " " + time : controller.t("Записать")) {
-                    if test.recording { test.stopRecording(config: controller.bridgeConfig) } else { test.startRecording(from: controller.input, config: controller.bridgeConfig) }
+                Button(test.recording && mine ? controller.t("Остановить") + " " + time : controller.t("Записать")) {
+                    if test.recording { test.stopRecording(config: controller.config(for: device)) } else { test.startRecording(from: device, config: controller.config(for: device)) }
                 }
                 .buttonStyle(.borderedProminent)
-                Button(test.playing ? controller.t("Стоп") : controller.t("Слушать")) { test.togglePlaying() }
-                    .disabled(!test.ready)
+                .disabled(test.recording && !mine)
+                Button(test.playing && mine ? controller.t("Стоп") : controller.t("Слушать")) { test.togglePlaying() }
+                    .disabled(!test.ready || !mine)
                 Spacer()
                 Picker("", selection: $test.listenProcessed) {
                     Text(controller.t("Оригинал")).tag(false)
@@ -338,16 +345,16 @@ struct VoiceTestSection: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
-                .disabled(!test.ready)
+                .disabled(!test.ready || !mine)
             }
-            if test.recording || !test.originalPeaks.isEmpty { WaveformView(test: test) }
+            if mine && (test.recording || !test.originalPeaks.isEmpty) { WaveformView(test: test) }
         } header: {
             Text(controller.t("Проверка на своём голосе"))
         } footer: {
-            Text(test.failed ? controller.t("Не удалось открыть микрофон") : test.recording ? controller.t("Говорите в микрофон и нажмите Остановить") : controller.t("Запишите фразу, затем слушайте и переключайте Оригинал и Обработано"))
+            Text(mine && test.failed ? controller.t("Не удалось открыть микрофон") : mine && test.recording ? controller.t("Говорите в микрофон и нажмите Остановить") : controller.t("Запишите фразу, затем слушайте и переключайте Оригинал и Обработано"))
                 .font(.caption)
-                .foregroundStyle(test.failed ? .red : .secondary)
+                .foregroundStyle(mine && test.failed ? .red : .secondary)
         }
-        .onChange(of: controller.bridgeConfig) { test.process(config: $0) }
+        .onChange(of: controller.config(for: device)) { if mine { test.process(config: $0) } }
     }
 }

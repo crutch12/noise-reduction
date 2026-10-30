@@ -3,7 +3,7 @@ import AppKit
 import CoreAudio
 import IOKit.ps
 
-enum AppState { case paused, idle, working, error, needsDriver, noPermission }
+enum AppState { case paused, idle, working, error, needsDriver, noPermission, notSelected }
 
 // как и на Windows, микрофон занимаем только пока им пользуется какая-то программа
 final class Controller: ObservableObject {
@@ -17,7 +17,7 @@ final class Controller: ObservableObject {
     @Published private(set) var devices: [Bridge.Device] = []
     @Published private(set) var startupEnabled = Autostart.enabled
     @Published private(set) var installing = false
-    @Published var customOpen = false
+    @Published private(set) var customOpen = Set<String>()
     @Published var hotkeyAvailable = false
     @Published private(set) var users: [NSRunningApplication] = []
 
@@ -46,11 +46,20 @@ final class Controller: ObservableObject {
     var language: String { Strings.shared.resolve(settings.language) }
     func t(_ text: String) -> String { Strings.shared.get(text, language).replacingOccurrences(of: "Ctrl+Alt+N", with: "⌃⌥N") }
 
-    private var key: String { "source:" + (settings.source ?? "default") }
-
-    var profile: Profile {
-        settings.profiles.first { $0.id == key } ?? Profile(id: key, enabled: settings.enableNewMicrophones)
+    // настройки у каждого настоящего микрофона свои, как на Windows; записи source:default остались от прошлых версий и служат образцом
+    func profile(for device: String?) -> Profile {
+        let id = "source:" + (device ?? "default")
+        if let found = settings.profiles.first(where: { $0.id == id }) { return found }
+        var fresh = settings.profiles.first { $0.id == "source:default" } ?? Profile(id: id, enabled: settings.enableNewMicrophones)
+        fresh.id = id
+        fresh.enabled = settings.enableNewMicrophones
+        return fresh
     }
+
+    // микрофон, который сейчас обрабатывается: виртуальный один, поэтому источник тоже один
+    var activeDevice: String? { input ?? devices.first { $0.isDefault }?.name }
+
+    var profile: Profile { profile(for: activeDevice) }
 
     // основной микрофон системы может быть и нашим виртуальным: слушать самих себя нельзя, берём настоящий
     var input: String? {
@@ -59,13 +68,21 @@ final class Controller: ObservableObject {
     }
 
     // те же биты, что и в control-файле на Windows
-    var bridgeConfig: UInt32 {
-        let value = profile
+    var bridgeConfig: UInt32 { config(for: activeDevice) }
+
+    func config(for device: String?) -> UInt32 {
+        let value = profile(for: device)
         let deepFilter = value.deepFilter && !(settings.fastOnBattery && onBattery)
         return UInt32((settings.enabled && value.enabled ? 1 : 0) | (value.lowCut ? 2 : 0) | (deepFilter ? 8 : 0) | (min(max(value.attenuation, 0), 60) << 8))
     }
 
-    var values: [Int] { profile.deepFilter ? Self.preciseValues : Self.fastValues }
+    func values(for device: String?) -> [Int] { profile(for: device).deepFilter ? Self.preciseValues : Self.fastValues }
+
+    func isCustomOpen(_ device: String?) -> Bool { customOpen.contains(device ?? "") }
+
+    func setCustomOpen(_ device: String?, _ value: Bool) {
+        if value { customOpen.insert(device ?? "") } else { customOpen.remove(device ?? "") }
+    }
 
     var statusText: String {
         switch state {
@@ -75,6 +92,7 @@ final class Controller: ObservableObject {
         case .needsDriver: return t("Нужен драйвер виртуального микрофона")
         case .noPermission: return t("Не удалось открыть микрофон")
         case .idle: return t("Ждёт программ")
+        case .notSelected: return t("Noise Reduction не выбран основным микрофоном")
         }
     }
 
@@ -89,21 +107,22 @@ final class Controller: ObservableObject {
         tick()
     }
 
-    func setProfile(_ edit: (inout Profile) -> Void) {
+    func setProfile(_ device: String?, _ edit: (inout Profile) -> Void) {
+        var value = profile(for: device)
         change { settings in
-            var value = settings.profiles.first { $0.id == self.key } ?? Profile(id: self.key, enabled: settings.enableNewMicrophones)
             edit(&value)
             value.attenuation = min(max(value.attenuation, 0), 60)
             if let index = settings.profiles.firstIndex(where: { $0.id == value.id }) { settings.profiles[index] = value } else { settings.profiles.append(value) }
         }
     }
 
-    func setDeepFilter(_ value: Bool) {
-        guard profile.deepFilter != value else { return }
+    func setDeepFilter(_ device: String?, _ value: Bool) {
+        let current = profile(for: device)
+        guard current.deepFilter != value else { return }
         // пресет сохраняется при смене модели: обычно остаётся обычно
-        let index = values.firstIndex(of: profile.attenuation)
+        let index = values(for: device).firstIndex(of: current.attenuation)
         let next = value ? Self.preciseValues : Self.fastValues
-        setProfile {
+        setProfile(device) {
             $0.deepFilter = value
             if let index { $0.attenuation = next[index] }
         }
@@ -117,29 +136,21 @@ final class Controller: ObservableObject {
 
     func setEnableNew(_ value: Bool) { change { $0.enableNewMicrophones = value } }
 
-    func isEnabled(source: String?) -> Bool {
-        let id = "source:" + (source ?? "default")
-        return settings.profiles.first { $0.id == id }?.enabled ?? settings.enableNewMicrophones
-    }
+    func isEnabled(source: String?) -> Bool { profile(for: source).enabled }
 
-    func setEnabled(source: String?, _ value: Bool) {
-        change { settings in
-            let id = "source:" + (source ?? "default")
-            if let index = settings.profiles.firstIndex(where: { $0.id == id }) { settings.profiles[index].enabled = value } else { settings.profiles.append(Profile(id: id, enabled: value)) }
-        }
-    }
+    func setEnabled(source: String?, _ value: Bool) { setProfile(source) { $0.enabled = value } }
 
-    func copyDiagnostics() {
-        let model = bridgeConfig & 8 != 0 ? "DeepFilterNet" : "RNNoise"
+    func copyDiagnostics(_ device: String?) {
+        let model = config(for: device) & 8 != 0 ? "DeepFilterNet" : "RNNoise"
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
-        let lines = [t("Диагностика"), "Noise Reduction " + version, ProcessInfo.processInfo.operatingSystemVersionString, input ?? t("Как в системе"), model, t("Формат движка: 48 kHz"), statusText]
+        let lines = [t("Диагностика"), "Noise Reduction " + version, ProcessInfo.processInfo.operatingSystemVersionString, device ?? t("Как в системе"), model, t("Формат движка: 48 kHz"), statusText]
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(lines.joined(separator: "\n"), forType: .string)
     }
 
-    func resetProfile() {
-        customOpen = false
-        setProfile {
+    func resetProfile(_ device: String?) {
+        setCustomOpen(device, false)
+        setProfile(device) {
             $0.attenuation = 12
             $0.lowCut = false
             $0.deepFilter = false
@@ -181,6 +192,12 @@ final class Controller: ObservableObject {
                 self.tick()
             }
         }
+    }
+
+    // если система откажет, открываем настройки звука: там можно выбрать вручную
+    func selectVirtualMicrophone() {
+        if !DefaultInput.selectVirtual() { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Sound-Settings.extension?input")!) }
+        tick()
     }
 
     func openPrivacySettings() {
@@ -268,7 +285,9 @@ final class Controller: ObservableObject {
         let stats = bridge.stats()
         if stats.errors > lastErrors && error == nil { error = t("Ошибка обработки") }
         let paused = !settings.enabled || !profile.enabled
-        set(paused ? .paused : error != nil ? .error : bridge.running && stats.modelFrames > lastModel ? .working : .idle)
+        // программа может выбрать наш микрофон и сама, тогда основным ему быть не обязательно
+        let working = bridge.running && stats.modelFrames > lastModel
+        set(paused ? .paused : error != nil ? .error : working ? .working : inUse || DefaultInput.isVirtual ? .idle : .notSelected)
         lastModel = stats.modelFrames
         lastErrors = stats.errors
     }

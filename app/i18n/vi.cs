@@ -138,6 +138,8 @@ namespace NoiseReduction.Desktop
             { "Исходный микрофон", "Micrô nguồn" },
             { "Запускать при входе в систему", "Khởi động khi đăng nhập" },
             { "Не удалось открыть микрофон", "Không mở được micrô" },
+            { "Noise Reduction не выбран основным микрофоном", "Noise Reduction không phải là micrô mặc định" },
+            { "Сделать основным микрофоном", "Đặt làm micrô mặc định" },
             { "Пока ноутбук работает от батареи, вместо точной модели работает быстрая", "Khi máy tính xách tay chạy bằng pin, mô hình Nhanh được dùng thay cho Chính xác" },
             { "Проверка на своём голосе", "Thử bằng giọng của bạn" },
             { "Обработано", "Đã xử lý" },

@@ -172,6 +172,8 @@ namespace NoiseReduction.Desktop
             { "Исходный микрофон", "Source microphone" },
             { "Запускать при входе в систему", "Start when I sign in" },
             { "Не удалось открыть микрофон", "Could not open the microphone" },
+            { "Noise Reduction не выбран основным микрофоном", "Noise Reduction is not the default microphone" },
+            { "Сделать основным микрофоном", "Make it the default microphone" },
             { "Пока ноутбук работает от батареи, вместо точной модели работает быстрая", "While the laptop runs on battery, the Fast model is used instead of Precise" },
             { "Проверка на своём голосе", "Test with your voice" },
             { "Обработано", "Processed" },
