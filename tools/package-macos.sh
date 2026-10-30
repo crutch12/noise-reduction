@@ -57,8 +57,13 @@ for arch in arm64 x64; do
 </plist>
 EOF
     # без сертификата Apple подпись ad-hoc, иначе на Apple Silicon приложение не запустится вовсе
-    for name in librnnoise libnr_bridge libnr_deepfilter; do codesign --force --sign - "$macos/$name.dylib" 2>/dev/null; done
-    codesign --force --deep --sign - "$app"
+    # каждую часть подписываем отдельно; защищённый режим не даёт подменить библиотеки через переменные DYLD
+    # проверка библиотек выключена: без Team ID система не загрузила бы и наши собственные
+    for name in librnnoise libnr_bridge libnr_deepfilter; do codesign --force --options runtime --sign - "$macos/$name.dylib" 2>/dev/null; done
+    # подпись от сборки драйвера не привязана к Info.plist, с такой coreaudiod его не загружает
+    codesign --force --options runtime --sign - "$app/Contents/Resources/NoiseReduction.driver"
+    codesign --force --options runtime --entitlements "$root/app-macos/NoiseReduction.entitlements" --sign - "$app"
+    codesign --verify --deep --strict "$app"
     (cd "$out/$arch" && ditto -c -k --keepParent "Noise Reduction.app" "$out/NoiseReduction-$version-macos-$arch.zip")
 done
 ls -la "$out"

@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let popover = NSPopover()
     private var window: NSWindow?
     private var observers = Set<AnyCancellable>()
+    private var shownGlyph: TrayGlyph?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMainMenu()
@@ -19,9 +20,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             button.action = #selector(statusClicked)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
-        controller.objectWillChange.receive(on: RunLoop.main).sink { [weak self] in self?.updateIcon() }.store(in: &observers)
+        controller.objectWillChange.receive(on: DispatchQueue.main).sink { [weak self] in self?.updateIcon() }.store(in: &observers)
         updateIcon()
-        if !CommandLine.arguments.contains("--tray") || !Driver.installed { showWindow() }
+        if !CommandLine.arguments.contains("--tray") || controller.needsDriver { showWindow() }
     }
 
     // повторный запуск уже открытого приложения показывает настройки
@@ -44,14 +45,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func updateIcon() {
-        let symbol: String
+        let glyph: TrayGlyph
         switch controller.state {
-        case .working: symbol = "mic.fill"
-        case .idle: symbol = "mic"
-        case .paused: symbol = "mic.slash"
-        case .error, .noPermission, .needsDriver: symbol = "exclamationmark.triangle"
+        case .working, .idle: glyph = .on
+        case .paused: glyph = .off
+        case .error, .noPermission, .needsDriver: glyph = .problem
         }
-        item.button?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Noise Reduction")
+        if glyph != shownGlyph {
+            shownGlyph = glyph
+            item.button?.image = glyph.image
+        }
         item.button?.toolTip = "Noise Reduction: " + controller.statusText
     }
 

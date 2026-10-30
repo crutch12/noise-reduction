@@ -114,7 +114,33 @@ struct StrengthPicker: View {
     }
 }
 
-// всплывающая панель из строки меню: всё, что нужно менять на ходу
+// выбор исходного микрофона прямо в панели, как в меню звука macOS
+struct MicrophoneList: View {
+    @ObservedObject var controller: Controller
+
+    private func row(_ title: String, _ value: String?) -> some View {
+        let selected = value == (controller.devices.contains { $0.name == controller.settings.source } ? controller.settings.source : nil)
+        return Button { controller.setSource(value) } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark").font(.caption.weight(.semibold)).opacity(selected ? 1 : 0)
+                Text(title).lineLimit(1).truncationMode(.middle)
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(controller.t("Исходный микрофон")).font(.caption).foregroundStyle(.secondary)
+            row(controller.t("Как в системе"), nil)
+            ForEach(controller.devices, id: \.name) { row($0.name, $0.name) }
+        }
+    }
+}
+
+// всплывающая панель из строки меню: включить, выключить и выбрать микрофон, остальное в настройках
 struct PopoverView: View {
     @ObservedObject var controller: Controller
     let openSettings: () -> Void
@@ -135,12 +161,7 @@ struct PopoverView: View {
             }
             .padding(12)
             Divider()
-            VStack(alignment: .leading, spacing: 12) {
-                SourcePicker(controller: controller)
-                ModelPicker(controller: controller)
-                StrengthPicker(controller: controller)
-            }
-            .padding(12)
+            MicrophoneList(controller: controller).padding(12)
             Divider()
             HStack {
                 Button(controller.t("Настройки"), action: openSettings)
@@ -150,9 +171,22 @@ struct PopoverView: View {
             .buttonStyle(.borderless)
             .padding(12)
         }
-        .frame(width: 340)
+        .frame(width: 280)
         .environment(\.layoutDirection, ["ar", "fa"].contains(controller.language) ? .rightToLeft : .leftToRight)
     }
+}
+
+// прозрачный фон окна, как у системных настроек: сквозь него видно то, что за окном
+struct WindowBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .sidebar
+        view.blendingMode = .behindWindow
+        view.state = .followsWindowActiveState
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
 
 struct SettingsView: View {
@@ -193,6 +227,8 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
+        .background(WindowBackground().ignoresSafeArea())
         .frame(width: 480)
         .frame(minHeight: 560)
         .environment(\.layoutDirection, ["ar", "fa"].contains(controller.language) ? .rightToLeft : .leftToRight)

@@ -178,12 +178,19 @@ enum Autostart {
 // драйвер ставится в системную папку, macOS спросит пароль администратора
 enum Driver {
     private static let path = "/Library/Audio/Plug-Ins/HAL/NoiseReduction.driver"
+    private static var bundled: URL? { Bundle.main.url(forResource: "NoiseReduction", withExtension: "driver") }
 
-    static var installed: Bool { FileManager.default.fileExists(atPath: path) }
+    // другой файл значит старую или повреждённую версию, её тоже нужно заменить
+    static func isCurrent() -> Bool {
+        guard let installed = FileManager.default.contents(atPath: path + "/Contents/MacOS/NoiseReduction") else { return false }
+        guard let bundled, let own = FileManager.default.contents(atPath: bundled.path + "/Contents/MacOS/NoiseReduction") else { return true }
+        return installed == own
+    }
 
     static func install() -> String? {
-        guard let source = Bundle.main.url(forResource: "NoiseReduction", withExtension: "driver")?.path else { return "NoiseReduction.driver not found" }
-        let script = "mkdir -p /Library/Audio/Plug-Ins/HAL && rm -rf \(quote(path)) && cp -R \(quote(source)) \(quote(path)) && xattr -dr com.apple.quarantine \(quote(path)); killall coreaudiod"
+        guard let source = bundled?.path else { return "NoiseReduction.driver not found" }
+        // копию проверяем уже в папке root: драйвер с плохой подписью coreaudiod молча не загрузит
+        let script = "T=$(mktemp -d) && cp -R \(quote(source)) \"$T/NoiseReduction.driver\" && xattr -dr com.apple.quarantine \"$T/NoiseReduction.driver\" && codesign --verify --strict \"$T/NoiseReduction.driver\" && mkdir -p /Library/Audio/Plug-Ins/HAL && rm -rf \(quote(path)) && mv \"$T/NoiseReduction.driver\" \(quote(path)) && rm -rf \"$T\" && killall coreaudiod"
         let escaped = script.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
         let process = Process()
         let errors = Pipe()

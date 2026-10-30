@@ -25,6 +25,7 @@ final class Controller: ObservableObject {
     private var lastModel: UInt64 = 0, lastErrors: UInt64 = 0
     private var bridgeInput: String?
     private var bridgeDefault: String?
+    private var driverCurrent = Driver.isCurrent()
 
     init() {
         if startupEnabled { Autostart.set(true) }
@@ -102,6 +103,7 @@ final class Controller: ObservableObject {
             DispatchQueue.main.async {
                 self.installing = false
                 self.error = failure
+                self.driverCurrent = Driver.isCurrent()
                 self.tick()
             }
         }
@@ -110,6 +112,8 @@ final class Controller: ObservableObject {
     func openPrivacySettings() {
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
     }
+
+    var needsDriver: Bool { !driverCurrent }
 
     func stop() {
         timer?.invalidate()
@@ -133,7 +137,7 @@ final class Controller: ObservableObject {
     }
 
     private func tick() {
-        guard Driver.installed else {
+        guard driverCurrent else {
             set(.needsDriver)
             return
         }
