@@ -107,6 +107,9 @@ namespace NoiseReduction.WinUI
             CommitLink.Visibility = NoiseReduction.Desktop.BuildInfo.Commit.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
             SourceLink.Content = T("Исходный код");
             SourceLink.NavigateUri = new Uri(NoiseReduction.Desktop.BuildInfo.Repository);
+            ToolTipService.SetToolTip(TagLink, NoiseReduction.Desktop.BuildInfo.TagUrl);
+            ToolTipService.SetToolTip(CommitLink, NoiseReduction.Desktop.BuildInfo.CommitUrl);
+            ToolTipService.SetToolTip(SourceLink, NoiseReduction.Desktop.BuildInfo.Repository);
             GlobalTitle.Text = T("Шумоподавление");
             GlobalHelp.Text = T("Общий выключатель, настройки микрофонов сохраняются");
             Tip(MasterSwitch, "Для всех микрофонов, клавиша Ctrl+Alt+N");

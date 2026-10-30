@@ -350,6 +350,19 @@ struct MicrophoneCard: View {
     }
 }
 
+// ссылка с подчёркиванием при наведении и адресом в подсказке
+struct BuildLink: View {
+    let title: String
+    let address: String
+    @State private var hovering = false
+
+    var body: some View {
+        Link(destination: URL(string: address)!) { Text(title).underline(hovering) }
+            .help(address)
+            .onHover { hovering = $0 }
+    }
+}
+
 // откуда собрана программа: тег, коммит и исходный код
 struct BuildLinks: View {
     @ObservedObject var controller: Controller
@@ -359,9 +372,9 @@ struct BuildLinks: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Link("v" + version, destination: URL(string: repository + "/releases/tag/v" + version)!)
-            if !commit.isEmpty { Link(String(commit.prefix(7)), destination: URL(string: repository + "/commit/" + commit)!) }
-            Link(controller.t("Исходный код"), destination: URL(string: repository)!)
+            BuildLink(title: "v" + version, address: repository + "/releases/tag/v" + version)
+            if !commit.isEmpty { BuildLink(title: String(commit.prefix(7)), address: repository + "/commit/" + commit) }
+            BuildLink(title: controller.t("Исходный код"), address: repository)
         }
         .font(.callout)
         .frame(maxWidth: .infinity)
@@ -436,8 +449,8 @@ struct SettingsView: View {
                     if controller.state != .needsDriver, let error = controller.error { Text(error).font(.callout).foregroundStyle(.red) }
                 }
             }
-            .padding(16)
-            BuildLinks(controller: controller).padding(.bottom, 12)
+            .padding([.horizontal, .top], 16)
+            BuildLinks(controller: controller).padding(.top, 4).padding(.bottom, 12)
         }
         .background(WindowBackground().ignoresSafeArea())
         .frame(minWidth: 520, minHeight: 480)

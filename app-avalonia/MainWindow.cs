@@ -59,13 +59,16 @@ namespace NoiseReduction.Avalonia
                         Card(languageLabel, language, startup),
                         new StackPanel
                         {
-                            Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center,
+                            Orientation = Orientation.Horizontal, Spacing = 8, HorizontalAlignment = HorizontalAlignment.Center, Margin = new Thickness(0, 4, 0, 0),
                             Children = { tagLink, commitLink, sourceLink },
                         },
                     }
                 }
             };
 
+            ToolTip.SetTip(tagLink, BuildInfo.TagUrl);
+            ToolTip.SetTip(commitLink, BuildInfo.CommitUrl);
+            ToolTip.SetTip(sourceLink, BuildInfo.Repository);
             master.IsCheckedChanged += (_, _) => { if (!updating) controller.Change(() => controller.Settings.Enabled = master.IsChecked == true); };
             lowCut.IsCheckedChanged += (_, _) => { if (!updating) controller.Change(() => controller.Profile.LowCut = lowCut.IsChecked == true); };
             startup.IsCheckedChanged += (_, _) => { if (!updating) Autostart.Set(startup.IsChecked == true); };
