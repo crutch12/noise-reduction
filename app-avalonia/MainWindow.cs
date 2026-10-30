@@ -101,6 +101,10 @@ namespace NoiseReduction.Avalonia
                 if (App.Exiting || args.CloseReason is WindowCloseReason.OSShutdown or WindowCloseReason.ApplicationShutdown) return;
                 args.Cancel = true;
                 Hide();
+                // при открытии окно выглядит как новое: начало страницы, своя сила не раскрыта
+                customOpen = false;
+                ((ScrollViewer)Content).Offset = default;
+                Render();
             };
             Render();
         }

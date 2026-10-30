@@ -46,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     // значок в Dock и переключение по Cmd+Tab нужны только пока открыто окно
     func windowWillClose(_ notification: Notification) {
-        controller.voice.forget()
+        controller.windowClosed()
         NSApp.setActivationPolicy(.accessory)
     }
 

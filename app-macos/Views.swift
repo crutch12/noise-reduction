@@ -492,6 +492,7 @@ struct SettingsView: View {
             .padding([.horizontal, .top], 16)
             BuildLinks(controller: controller).padding(.top, 4).padding(.bottom, 12)
         }
+        .id(controller.windowSession)
         .background(WindowBackground().ignoresSafeArea())
         .frame(minWidth: 520, minHeight: 480)
         .environment(\.layoutDirection, ["ar", "fa"].contains(controller.language) ? .rightToLeft : .leftToRight)

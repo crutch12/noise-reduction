@@ -18,6 +18,7 @@ final class Controller: ObservableObject {
     @Published private(set) var startupEnabled = Autostart.enabled
     @Published private(set) var installing = false
     @Published private(set) var customOpen = Set<String>()
+    @Published private(set) var windowSession = 0
     @Published var hotkeyAvailable = false
     @Published private(set) var users: [NSRunningApplication] = []
 
@@ -137,6 +138,13 @@ final class Controller: ObservableObject {
     func setEnableNew(_ value: Bool) { change { $0.enableNewMicrophones = value } }
 
     func refreshMicrophones() { devicesChanged() }
+
+    // закрытое окно открывается как новое: начало списка, карточки в исходном виде, без старой записи
+    func windowClosed() {
+        voice.forget()
+        customOpen = []
+        windowSession += 1
+    }
 
     func isEnabled(source: String?) -> Bool { profile(for: source).enabled }
 
