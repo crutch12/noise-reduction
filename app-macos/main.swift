@@ -19,6 +19,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMainMenu()
         popover.behavior = .transient
+        // клик по значку другой программы в строке меню система панели не передаёт, ловим его сами
+        NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] _ in self?.popover.performClose(nil) }
+        NotificationCenter.default.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.popover.performClose(nil) }
         popover.contentViewController = hosting(PopoverView(controller: controller, openSettings: { [weak self] in self?.showWindow() }, quit: { NSApp.terminate(nil) }))
         if let button = item.button {
             button.target = self
