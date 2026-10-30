@@ -127,14 +127,11 @@ final class VoiceTest: ObservableObject {
         }
         players = [first, second]
         applyVolumes()
+        // по кругу, как на Windows: удобно переключать и сравнивать, пока не нажмут Остановить
+        players.forEach { $0.numberOfLoops = -1 }
         let start = first.deviceCurrentTime + 0.1
         players.forEach { $0.prepareToPlay(); $0.play(atTime: start) }
         playing = true
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
-            guard let self, self.players.first?.isPlaying != true else { return }
-            self.stopPlaying()
-        }
     }
 
     // пересчёт при игре: продолжаем с того же места, уже с новым звуком
