@@ -54,6 +54,7 @@ namespace NoiseReduction.WinUI
         private readonly DispatcherQueueTimer timer;
         private List<DeviceInfo> devices = new List<DeviceInfo>();
         private DateTime refreshAt, rawKeeperAt;
+        private int rawKeeperDelay = 1;
         private readonly List<DeviceInfo> pendingNew = new List<DeviceInfo>();
         private string recordingDirectory, comparisonId;
         // исходная запись для пересчёта и имя файла с текущей обработкой
@@ -276,8 +277,11 @@ namespace NoiseReduction.WinUI
         // если Windows вернула микрофону RAW, Chrome пойдёт мимо шумодава; не вышло убрать, ошибка попадёт в окно и трей
         private void KeepRawOff()
         {
-            if (!devices.Any(device => device.Attached && device.RawSupported) || DateTime.UtcNow < rawKeeperAt) return;
-            rawKeeperAt = DateTime.UtcNow.AddMinutes(1);
+            if (!devices.Any(device => device.Attached && device.RawSupported)) { rawKeeperDelay = 1; return; }
+            if (DateTime.UtcNow < rawKeeperAt) return;
+            // у микрофона, где признак не снимается, служба не должна запускаться постоянно
+            rawKeeperAt = DateTime.UtcNow.AddMinutes(rawKeeperDelay);
+            rawKeeperDelay = Math.Min(rawKeeperDelay * 2, 60);
             using var service = new System.ServiceProcess.ServiceController(Integration.RawKeeperService);
             if (service.Status == System.ServiceProcess.ServiceControllerStatus.Stopped) service.Start();
         }

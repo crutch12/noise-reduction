@@ -166,7 +166,9 @@ class Setup {
     if(!sandbox && state.GraphRestoreRequired) WaitForPayloadRelease(directory,names.Concat(obsolete),10000);
     foreach(var name in names) { string destination=PrepareFile(directory,name); if(File.Exists(destination)) File.Replace(SafeFile(stage,name),destination,SafeFile(directory,name+".nr-backup")); else File.Move(SafeFile(stage,name),destination); if(afterReplace!=null) afterReplace(name); }
     foreach(var name in obsolete) { string destination=SafeFile(directory,name),backup=SafeFile(directory,name+".nr-backup"); if(File.Exists(backup)) throw new IOException("An unfinished obsolete-file backup exists"); if(File.Exists(destination)) File.Move(destination,backup); if(afterReplace!=null) afterReplace(name); }
-   if(!sandbox) { Step(65,T("Регистрация в Windows")); Integration.RegisterEngine(directory); Integration.RegisterRawKeeper(directory);
+   if(!sandbox) { Step(65,T("Регистрация в Windows")); Integration.RegisterEngine(directory);
+   // без службы шумодав работает, только Chrome может снова пойти мимо него; срывать из-за этого установку незачем
+   try { Integration.RegisterRawKeeper(directory); } catch(InvalidOperationException ex) { File.AppendAllText(Path.Combine(DataRoot,"engine-errors.log"),DateTime.UtcNow.ToString("o")+" raw keeper"+Environment.NewLine+ex+Environment.NewLine); }
    using(var root=RegistryKey.OpenBaseKey(RegistryHive.LocalMachine,RegistryView.Registry64)) {
     var e=new RegistryEngine(root,Path.Combine(DataRoot,"SetupJournal")); e.Recover();
     e.Set(UninstallKey,"DisplayName","Noise Reduction",RegistryValueKind.String); e.Set(UninstallKey,"DisplayVersion",Assembly.GetExecutingAssembly().GetName().Version.ToString(3),RegistryValueKind.String);
