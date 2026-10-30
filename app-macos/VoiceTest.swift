@@ -350,8 +350,8 @@ struct VoiceTestSection: View {
             }
             if mine && (test.recording || !test.originalPeaks.isEmpty) { WaveformView(test: test) }
             Text(mine && test.failed ? controller.t("Не удалось открыть микрофон") : mine && test.recording ? controller.t("Говорите в микрофон и нажмите Остановить") : controller.t("Запишите фразу, затем слушайте и переключайте Оригинал и Обработано"))
-                .font(.caption)
-                .foregroundStyle(mine && test.failed ? .red : .secondary)
+                .font(.callout)
+                .foregroundStyle(mine && test.failed ? Color.red : Color.primary.opacity(0.72))
         }
         .onChange(of: controller.config(for: device)) { if mine { test.process(config: $0) } }
     }
