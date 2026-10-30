@@ -213,10 +213,14 @@ enum Driver {
     private static let path = "/Library/Audio/Plug-Ins/HAL/NoiseReduction.driver"
     private static var bundled: URL? { Bundle.main.url(forResource: "NoiseReduction", withExtension: "driver") }
 
-    // другой файл значит старую или повреждённую версию, её тоже нужно заменить
+    private static func version(_ driver: String) -> String? {
+        NSDictionary(contentsOfFile: driver + "/Contents/Info.plist")?["CFBundleVersion"] as? String
+    }
+
+    // у драйвера свой номер версии: обновление программы не должно просить пароль, если сам драйвер не менялся
     static func isCurrent() -> Bool {
-        guard let installed = FileManager.default.contents(atPath: path + "/Contents/MacOS/NoiseReduction") else { return false }
-        guard let bundled, let own = FileManager.default.contents(atPath: bundled.path + "/Contents/MacOS/NoiseReduction") else { return true }
+        guard let installed = version(path) else { return false }
+        guard let bundled, let own = version(bundled.path) else { return true }
         return installed == own
     }
 

@@ -3,9 +3,11 @@
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
 version=${1:-1.0.0}
+# меняется только вместе с самим драйвером, программа по нему решает, нужно ли его переустанавливать
+driver_version=2
 out="$root/dist/macos"
 sh "$root/tools/build-native.sh"
-cmake -S "$root/native/macos/driver" -B "$root/build/driver" -DCMAKE_BUILD_TYPE=Release -DDRIVER_VERSION="$version" >/dev/null
+cmake -S "$root/native/macos/driver" -B "$root/build/driver" -DCMAKE_BUILD_TYPE=Release -DDRIVER_VERSION="$driver_version" >/dev/null
 cmake --build "$root/build/driver" --config Release >/dev/null
 rm -rf "$out" && mkdir -p "$out"
 
