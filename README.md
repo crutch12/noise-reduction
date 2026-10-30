@@ -1,4 +1,4 @@
-# Noise Reduction for Windows
+# Noise Reduction
 
 System-wide AI noise suppression for real Windows microphones, without a virtual microphone
 
@@ -52,7 +52,7 @@ The app is not signed by Apple, so the first launch is blocked. Open System Sett
 xattr -dr com.apple.quarantine "/Applications/Noise Reduction.app"
 ```
 
-On the first launch click Install driver and enter your password. This adds the Noise Reduction microphone to the system. Then choose your real microphone in the app and the Noise Reduction microphone in Zoom, Discord or any other app
+On the first launch click Install driver and enter your password. This adds the Noise Reduction microphone to the system. Then click Make it the default microphone, or choose Noise Reduction in Zoom, Discord or any other app
 
 To remove the driver:
 
