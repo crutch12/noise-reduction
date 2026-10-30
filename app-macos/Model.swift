@@ -189,8 +189,8 @@ enum Driver {
 
     static func install() -> String? {
         guard let source = bundled?.path else { return "NoiseReduction.driver not found" }
-        // копию проверяем уже в папке root: драйвер с плохой подписью coreaudiod молча не загрузит
-        let script = "T=$(mktemp -d) && cp -R \(quote(source)) \"$T/NoiseReduction.driver\" && xattr -dr com.apple.quarantine \"$T/NoiseReduction.driver\" && codesign --verify --strict \"$T/NoiseReduction.driver\" && mkdir -p /Library/Audio/Plug-Ins/HAL && rm -rf \(quote(path)) && mv \"$T/NoiseReduction.driver\" \(quote(path)) && rm -rf \"$T\" && killall coreaudiod"
+        // копию проверяем там, куда пишет только root: драйвер с плохой подписью coreaudiod молча не загрузит
+        let script = "mkdir -p /Library/Audio/Plug-Ins/HAL && T=$(mktemp -d /Library/Audio/Plug-Ins/.nr-install.XXXXXX) && trap 'rm -rf \"$T\"' EXIT && cp -R \(quote(source)) \"$T/NoiseReduction.driver\" && xattr -dr com.apple.quarantine \"$T/NoiseReduction.driver\" && codesign --verify --strict \"$T/NoiseReduction.driver\" && rm -rf \(quote(path)) && mv \"$T/NoiseReduction.driver\" \(quote(path)) && killall coreaudiod"
         let escaped = script.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
         let process = Process()
         let errors = Pipe()
