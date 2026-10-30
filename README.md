@@ -44,7 +44,7 @@ The installer is not code signed yet, so Windows may show a SmartScreen warning 
 
 ### macOS (preview)
 
-macOS 11 or newer. Download `macos-arm64.zip` for Apple Silicon or `macos-x64.zip` for Intel, unzip and move Noise Reduction to Applications
+macOS 13 or newer. Download `macos-arm64.zip` for Apple Silicon or `macos-x64.zip` for Intel, unzip and move Noise Reduction to Applications
 
 The app is not signed by Apple, so the first launch is blocked. Open System Settings > Privacy & Security and click Open Anyway, or run:
 
@@ -131,7 +131,7 @@ Tests:
 python tools/check-translations.py
 ```
 
-macOS and Linux need a C++ compiler, Rust, .NET 10 SDK and, on macOS, CMake:
+macOS needs Xcode, CMake and Rust. Linux needs a C++ compiler, Rust and the .NET 10 SDK:
 
 ```sh
 sh tools/build-native.sh test     # bridge, models and native tests

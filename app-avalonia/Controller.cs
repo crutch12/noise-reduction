@@ -3,13 +3,12 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices;
 using Avalonia.Threading;
 using NoiseReduction.Desktop;
 
 namespace NoiseReduction.Avalonia
 {
-    internal enum State { Paused, Idle, Working, Error, NeedsDriver }
+    internal enum State { Paused, Idle, Working, Error }
 
     // как и на Windows, микрофон занимаем только пока им пользуется какая-то программа
     internal sealed class Controller : IDisposable
@@ -22,8 +21,6 @@ namespace NoiseReduction.Avalonia
         private DateTime idleSince = DateTime.MaxValue, retryAt;
         private ulong lastModel, lastErrors;
         private List<Bridge.Device> devices = new();
-
-        [DllImport("nr_bridge", CallingConvention = CallingConvention.Cdecl)] private static extern int nr_bridge_in_use(byte[] uid);
 
         internal Settings Settings { get; }
         internal State State { get; private set; } = State.Idle;
@@ -39,7 +36,7 @@ namespace NoiseReduction.Avalonia
             timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             timer.Tick += (_, _) => Tick();
             timer.Start();
-            if (OperatingSystem.IsLinux()) WatchLinux();
+            WatchLinux();
             Tick();
         }
 
@@ -82,13 +79,12 @@ namespace NoiseReduction.Avalonia
                 prepared = VirtualMicrophone.Prepare(out var error);
                 if (!prepared)
                 {
-                    State = VirtualMicrophone.NeedsInstall ? State.NeedsDriver : State.Error;
+                    State = State.Error;
                     Error = error;
                     Changed?.Invoke();
                     return;
                 }
             }
-            if (OperatingSystem.IsMacOS()) inUse = nr_bridge_in_use(System.Text.Encoding.UTF8.GetBytes("NoiseReduction_Microphone\0")) == 1;
             // после того как программа отпустила микрофон, ещё немного держим мост, чтобы не дёргать устройство
             if (inUse) idleSince = DateTime.MaxValue;
             else if (idleSince == DateTime.MaxValue) idleSince = DateTime.UtcNow;
@@ -146,15 +142,6 @@ namespace NoiseReduction.Avalonia
                 return output;
             }
             catch (Exception) { return ""; }
-        }
-
-        internal bool InstallDriver()
-        {
-            bool ok = VirtualMicrophone.InstallDriver(out var error);
-            Error = ok ? null : error;
-            prepared = false;
-            Tick();
-            return ok;
         }
 
         public void Dispose()

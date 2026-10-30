@@ -5,7 +5,8 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 out="$root/build"
 mkdir -p "$out"
 case "$(uname -s)" in
-    Darwin) lib=dylib; shared="-dynamiclib"; arch="-arch arm64 -arch x86_64" ;;
+    # та же минимальная версия, что у приложения, иначе библиотеки не загрузятся на старых системах
+    Darwin) lib=dylib; shared="-dynamiclib"; arch="-arch arm64 -arch x86_64"; export MACOSX_DEPLOYMENT_TARGET=13.0 ;;
     *) lib=so; shared="-shared"; arch="" ;;
 esac
 

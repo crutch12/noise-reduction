@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- приложение для macOS и Linux, на Windows работает app-winui -->
+  <!-- приложение для Linux, на Windows работает app-winui, на macOS app-macos -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0</TargetFramework>

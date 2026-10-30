@@ -20,14 +20,12 @@ namespace NoiseReduction.Avalonia
         private readonly Controller controller;
         private readonly ToggleSwitch master = new(), lowCut = new(), startup = new();
         private readonly TextBlock title = Heading(), status = new(), hint = Caption(), sourceLabel = Label(), modelLabel = Label(), modelNote = Caption(),
-            strengthLabel = Label(), strengthValue = new() { HorizontalAlignment = HorizontalAlignment.Right }, languageLabel = Label(), driverText = new() { TextWrapping = TextWrapping.Wrap };
+            strengthLabel = Label(), strengthValue = new() { HorizontalAlignment = HorizontalAlignment.Right }, languageLabel = Label();
         private readonly Ellipse dot = new() { Width = 10, Height = 10, VerticalAlignment = VerticalAlignment.Center };
         private readonly ComboBox source = new() { HorizontalAlignment = HorizontalAlignment.Stretch }, language = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
         private readonly ToggleButton fast = Segment(), precise = Segment(), custom = Segment();
         private readonly ToggleButton[] presets = { Segment(), Segment(), Segment() };
         private readonly Slider slider = new() { Minimum = 0, Maximum = 60, TickFrequency = 1, IsSnapToTickEnabled = true, IsVisible = false };
-        private readonly Button install = new();
-        private readonly Border driverCard;
         private bool updating, customOpen;
 
         internal MainWindow(Controller controller)
@@ -39,9 +37,6 @@ namespace NoiseReduction.Avalonia
             var statusRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { dot, status } };
             var header = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Children = { title } };
             Grid.SetColumn(master, 1); header.Children.Add(master);
-
-            install.Click += (_, _) => controller.InstallDriver();
-            driverCard = Card(driverText, install);
 
             var models = Row(fast, precise);
             var strength = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Children = { strengthLabel } };
@@ -56,7 +51,6 @@ namespace NoiseReduction.Avalonia
                     Children =
                     {
                         Card(header, statusRow, hint),
-                        driverCard,
                         Card(sourceLabel, source),
                         Card(modelLabel, models, modelNote, strength, presetRow, slider, lowCut),
                         Card(languageLabel, language, startup),
@@ -128,13 +122,9 @@ namespace NoiseReduction.Avalonia
                 State.Working => (T("Работает"), Brush("#0F7B0F")),
                 State.Paused => (T("Пауза"), Brush("#8A8A8A")),
                 State.Error => (T("Ошибка обработки") + (controller.Error != null ? ": " + controller.Error : ""), Brush("#C42B1C")),
-                State.NeedsDriver => (T("Нужен драйвер виртуального микрофона"), Brush("#9D5D00")),
                 _ => (T("Ждёт программ"), Brush("#0F7B0F")),
             };
             hint.Text = T("В Zoom, Discord и других программах выберите микрофон Noise Reduction");
-            driverCard.IsVisible = controller.State == State.NeedsDriver;
-            driverText.Text = T("Нужен драйвер виртуального микрофона");
-            install.Content = T("Установить драйвер");
 
             sourceLabel.Text = T("Исходный микрофон");
             var names = new[] { T("Как в системе") }.Concat(controller.Devices.Select(device => device.Name)).ToList();

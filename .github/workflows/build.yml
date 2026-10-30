@@ -212,10 +212,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-
       - name: Rust
         run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
@@ -326,7 +322,7 @@ jobs:
 
             Or install with `winget install crutch12.NoiseReduction`
 
-            macOS 11 or newer: `macos-arm64.zip` for Apple Silicon, `macos-x64.zip` for Intel Macs
+            macOS 13 or newer: `macos-arm64.zip` for Apple Silicon, `macos-x64.zip` for Intel Macs
             Linux with PulseAudio or PipeWire: `linux-x64.tar.gz` or `linux-arm64.tar.gz`
 
             The files are not code signed yet. Check a download with `gh attestation verify <file> --repo crutch12/noise-reduction`

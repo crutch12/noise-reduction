@@ -34,7 +34,6 @@ namespace NoiseReduction.Avalonia
                 exit.Click += (_, _) => { Exiting = true; controller.Dispose(); desktop.Shutdown(); };
                 tray = new TrayIcon
                 {
-                    // на macOS пустая подсказка роняет приложение при подключении значка
                     ToolTipText = "Noise Reduction",
                     Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://NoiseReduction/Assets/NoiseReduction.ico"))),
                     Menu = new NativeMenu { Items = { toggle, settings, new NativeMenuItemSeparator(), exit } },
@@ -43,10 +42,10 @@ namespace NoiseReduction.Avalonia
                 TrayIcon.SetIcons(this, new TrayIcons { tray });
                 controller.Changed += UpdateTray;
                 UpdateTray();
-                // выход из меню Dock и выключение системы приходят сюда, не отменяем их
+                // выключение системы приходит сюда, не отменяем его
                 desktop.ShutdownRequested += (_, _) => { if (!Exiting) { Exiting = true; controller.Dispose(); } };
                 desktop.Exit += (_, _) => { if (!Exiting) controller.Dispose(); };
-                if (!StartHidden || VirtualMicrophone.NeedsInstall) ShowWindow();
+                if (!StartHidden) ShowWindow();
             }
             base.OnFrameworkInitializationCompleted();
         }
