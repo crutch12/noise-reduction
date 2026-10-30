@@ -172,11 +172,13 @@ struct PopoverView: View {
             .padding(12)
         }
         .frame(width: 280)
+        // система делает панель слишком прозрачной, текст читается хуже
+        .background(Color(nsColor: .windowBackgroundColor).opacity(0.7).ignoresSafeArea())
         .environment(\.layoutDirection, ["ar", "fa"].contains(controller.language) ? .rightToLeft : .leftToRight)
     }
 }
 
-// прозрачный фон окна, как у системных настроек: сквозь него видно то, что за окном
+// фон окна как в Системных настройках: то, что за окном, лишь слегка просвечивает
 struct WindowBackground: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
@@ -228,7 +230,7 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
-        .background(WindowBackground().ignoresSafeArea())
+        .background(ZStack { WindowBackground(); Color(nsColor: .windowBackgroundColor).opacity(0.82) }.ignoresSafeArea())
         .frame(width: 480)
         .frame(minHeight: 560)
         .environment(\.layoutDirection, ["ar", "fa"].contains(controller.language) ? .rightToLeft : .leftToRight)
