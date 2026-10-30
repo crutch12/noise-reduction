@@ -16,6 +16,9 @@ struct StatusRow: View {
         HStack(spacing: 6) {
             Circle().fill(color).frame(width: 8, height: 8)
             Text(controller.statusText).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            ForEach(controller.users, id: \.processIdentifier) { app in
+                if let icon = app.icon { Image(nsImage: icon).resizable().frame(width: 14, height: 14).help(app.localizedName ?? "") }
+            }
         }
     }
 }
@@ -155,6 +158,7 @@ struct PopoverView: View {
                     Toggle(controller.t("Шумоподавление"), isOn: Binding(get: { controller.settings.enabled }, set: { controller.setEnabled($0) }))
                         .toggleStyle(.switch)
                         .labelsHidden()
+                        .help(controller.t("Для всех микрофонов, клавиша Ctrl+Alt+N"))
                 }
                 StatusRow(controller: controller)
                 RequiredAction(controller: controller)
@@ -184,7 +188,7 @@ enum SettingsPage: Hashable, CaseIterable {
         switch self {
         case .noise: return "Шумоподавление"
         case .microphones: return "Микрофоны"
-        case .general: return "Настройки"
+        case .general: return "Приложение"
         }
     }
 
@@ -219,6 +223,12 @@ struct SettingsView: View {
         .environment(\.layoutDirection, ["ar", "fa"].contains(controller.language) ? .rightToLeft : .leftToRight)
     }
 
+    @ViewBuilder private var themes: some View {
+        Text(controller.t("Как в системе")).tag("system")
+        Text(controller.t("Светлая")).tag("light")
+        Text(controller.t("Тёмная")).tag("dark")
+    }
+
     @ViewBuilder private var content: some View {
         switch page ?? .noise {
         case .noise:
@@ -229,9 +239,10 @@ struct SettingsView: View {
                         StatusRow(controller: controller)
                     }
                 }
+                .help(controller.t("Для всех микрофонов, клавиша Ctrl+Alt+N"))
                 RequiredAction(controller: controller)
             } footer: {
-                Text(controller.t("В Zoom, Discord и других программах выберите микрофон Noise Reduction")).font(.caption).foregroundStyle(.secondary)
+                Text(controller.t("Общий выключатель, настройки микрофонов сохраняются") + "\n" + controller.t("В Zoom, Discord и других программах выберите микрофон Noise Reduction")).font(.caption).foregroundStyle(.secondary)
             }
             Section {
                 ModelPicker(controller: controller)
@@ -245,11 +256,29 @@ struct SettingsView: View {
             }
             VoiceTestSection(controller: controller)
             Section {
-                Button(controller.t("Сбросить настройки")) { controller.resetProfile() }
+                HStack {
+                    Button(controller.t("Сбросить настройки")) { controller.resetProfile() }
+                    Button(controller.t("Скопировать диагностику")) { controller.copyDiagnostics() }
+                }
+            } header: {
+                Text(controller.t("Дополнительно"))
             }
         case .microphones:
             Section {
                 SourcePicker(controller: controller)
+            }
+            Section {
+                if controller.devices.isEmpty { Text(controller.t("Доступные микрофоны не найдены")).foregroundStyle(.secondary) }
+                Toggle(controller.t("Как в системе"), isOn: Binding(get: { controller.isEnabled(source: nil) }, set: { controller.setEnabled(source: nil, $0) }))
+                ForEach(controller.devices, id: \.name) { device in
+                    Toggle(device.isDefault ? device.name + " (" + controller.t("основной") + ")" : device.name, isOn: Binding(
+                        get: { controller.isEnabled(source: device.name) },
+                        set: { controller.setEnabled(source: device.name, $0) }
+                    ))
+                }
+            }
+            Section {
+                Toggle(controller.t("Включать шумоподавление для новых микрофонов"), isOn: Binding(get: { controller.settings.enableNewMicrophones }, set: { controller.setEnableNew($0) }))
             }
         case .general:
             Section {
@@ -257,7 +286,13 @@ struct SettingsView: View {
                     Text(controller.t("Как в системе")).tag("system")
                     ForEach(Strings.shared.languages, id: \.id) { Text($0.name).tag($0.id) }
                 }
+                Picker(controller.t("Тема окна"), selection: Binding(get: { controller.settings.windowTheme }, set: { controller.setWindowTheme($0) })) { themes }
+                Picker(controller.t("Тема панели трея"), selection: Binding(get: { controller.settings.trayTheme }, set: { controller.setTrayTheme($0) })) { themes }
+            }
+            Section {
                 Toggle(controller.t("Запускать при входе в систему"), isOn: Binding(get: { controller.startupEnabled }, set: { controller.setStartup($0) }))
+            } footer: {
+                Text(controller.t("Закрытое окно остаётся в трее") + (controller.hotkeyAvailable ? "\n" + controller.t("Ctrl+Alt+N включает и выключает шумоподавление") : "")).font(.caption).foregroundStyle(.secondary)
             }
             Section {
                 Toggle(controller.t("На батарее использовать быструю модель"), isOn: Binding(get: { controller.settings.fastOnBattery }, set: { controller.setFastOnBattery($0) }))

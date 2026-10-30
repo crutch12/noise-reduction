@@ -36,9 +36,11 @@ struct Settings: Codable {
     var enableNewMicrophones = true
     var source: String?
     var fastOnBattery = false
+    var windowTheme = "system"
+    var trayTheme = "system"
 
     enum CodingKeys: String, CodingKey {
-        case enabled = "Enabled", language = "Language", profiles = "Profiles", enableNewMicrophones = "EnableNewMicrophones", source = "Source", fastOnBattery = "FastOnBattery"
+        case enabled = "Enabled", language = "Language", profiles = "Profiles", enableNewMicrophones = "EnableNewMicrophones", source = "Source", fastOnBattery = "FastOnBattery", windowTheme = "WindowTheme", trayTheme = "TrayTheme"
     }
 
     init() {}
@@ -51,6 +53,8 @@ struct Settings: Codable {
         enableNewMicrophones = try values.decodeIfPresent(Bool.self, forKey: .enableNewMicrophones) ?? true
         source = try values.decodeIfPresent(String.self, forKey: .source)
         fastOnBattery = try values.decodeIfPresent(Bool.self, forKey: .fastOnBattery) ?? false
+        windowTheme = try values.decodeIfPresent(String.self, forKey: .windowTheme) ?? "system"
+        trayTheme = try values.decodeIfPresent(String.self, forKey: .trayTheme) ?? "system"
     }
 
     static var file: URL {

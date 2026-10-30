@@ -1,6 +1,10 @@
 import AppKit
+import Carbon.HIToolbox
 import Combine
 import SwiftUI
+
+// обработчик клавиши вызывается из C и не может ничего захватить
+private var hotkeyPressed: (() -> Void)?
 
 // значок в строке меню: левый клик открывает панель, правый меню; окно настроек отдельно
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
@@ -10,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var window: NSWindow?
     private var observers = Set<AnyCancellable>()
     private var shownGlyph: TrayGlyph?
+    private var hotkey: EventHotKeyRef?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMainMenu()
@@ -20,8 +25,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             button.action = #selector(statusClicked)
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
-        controller.objectWillChange.receive(on: DispatchQueue.main).sink { [weak self] in self?.updateIcon() }.store(in: &observers)
-        updateIcon()
+        controller.objectWillChange.receive(on: DispatchQueue.main).sink { [weak self] in self?.update() }.store(in: &observers)
+        update()
+        registerHotkey()
         if !CommandLine.arguments.contains("--tray") || controller.needsDriver { showWindow() }
     }
 
@@ -44,7 +50,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return host
     }
 
-    private func updateIcon() {
+    // та же клавиша, что на Windows: на Mac Ctrl+Option+N; разрешений система для неё не спрашивает
+    private func registerHotkey() {
+        hotkeyPressed = { [weak self] in
+            guard let self else { return }
+            self.controller.setEnabled(!self.controller.settings.enabled)
+        }
+        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
+            hotkeyPressed?()
+            return noErr
+        }, 1, &spec, nil, nil)
+        let id = EventHotKeyID(signature: OSType(0x4E524B59), id: 1)
+        controller.hotkeyAvailable = RegisterEventHotKey(UInt32(kVK_ANSI_N), UInt32(controlKey | optionKey), id, GetApplicationEventTarget(), 0, &hotkey) == noErr
+    }
+
+    private func appearance(_ theme: String) -> NSAppearance? {
+        theme == "light" ? NSAppearance(named: .aqua) : theme == "dark" ? NSAppearance(named: .darkAqua) : nil
+    }
+
+    private func update() {
+        window?.appearance = appearance(controller.settings.windowTheme)
+        popover.appearance = appearance(controller.settings.trayTheme)
         let glyph: TrayGlyph
         switch controller.state {
         case .working, .idle: glyph = .on
@@ -107,6 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             created.toolbarStyle = .unified
             created.isReleasedWhenClosed = false
             created.delegate = self
+            created.appearance = appearance(controller.settings.windowTheme)
             created.center()
             window = created
         }

@@ -18,6 +18,8 @@ final class Controller: ObservableObject {
     @Published private(set) var startupEnabled = Autostart.enabled
     @Published private(set) var installing = false
     @Published var customOpen = false
+    @Published var hotkeyAvailable = false
+    @Published private(set) var users: [NSRunningApplication] = []
 
     private let bridge = Bridge()
     private var timer: Timer?
@@ -41,7 +43,7 @@ final class Controller: ObservableObject {
     }
 
     var language: String { Strings.shared.resolve(settings.language) }
-    func t(_ text: String) -> String { Strings.shared.get(text, language) }
+    func t(_ text: String) -> String { Strings.shared.get(text, language).replacingOccurrences(of: "Ctrl+Alt+N", with: "⌃⌥N") }
 
     private var key: String { "source:" + (settings.source ?? "default") }
 
@@ -107,6 +109,32 @@ final class Controller: ObservableObject {
     }
 
     func setFastOnBattery(_ value: Bool) { change { $0.fastOnBattery = value } }
+
+    func setWindowTheme(_ value: String) { change { $0.windowTheme = value } }
+
+    func setTrayTheme(_ value: String) { change { $0.trayTheme = value } }
+
+    func setEnableNew(_ value: Bool) { change { $0.enableNewMicrophones = value } }
+
+    func isEnabled(source: String?) -> Bool {
+        let id = "source:" + (source ?? "default")
+        return settings.profiles.first { $0.id == id }?.enabled ?? settings.enableNewMicrophones
+    }
+
+    func setEnabled(source: String?, _ value: Bool) {
+        change { settings in
+            let id = "source:" + (source ?? "default")
+            if let index = settings.profiles.firstIndex(where: { $0.id == id }) { settings.profiles[index].enabled = value } else { settings.profiles.append(Profile(id: id, enabled: value)) }
+        }
+    }
+
+    func copyDiagnostics() {
+        let model = bridgeConfig & 8 != 0 ? "DeepFilterNet" : "RNNoise"
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let lines = [t("Диагностика"), "Noise Reduction " + version, ProcessInfo.processInfo.operatingSystemVersionString, input ?? t("Как в системе"), model, t("Формат движка: 48 kHz"), statusText]
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(lines.joined(separator: "\n"), forType: .string)
+    }
 
     func resetProfile() {
         customOpen = false
@@ -204,6 +232,8 @@ final class Controller: ObservableObject {
         // после того как программа отпустила микрофон, ещё немного держим мост, чтобы не дёргать устройство
         if inUse { idleSince = nil } else if idleSince == nil { idleSince = Date() }
         let want = inUse || Date().timeIntervalSince(idleSince ?? Date()) < 3
+        let apps = inUse ? Self.programsUsingMicrophone() : []
+        if apps != users { users = apps }
         // без разрешения macOS отдаёт тишину вместо ошибки, и программы молча останутся без звука
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .denied, .restricted:
@@ -239,6 +269,39 @@ final class Controller: ObservableObject {
         set(paused ? .paused : error != nil ? .error : bridge.running && stats.modelFrames > lastModel ? .working : .idle)
         lastModel = stats.modelFrames
         lastErrors = stats.errors
+    }
+
+    // кто сейчас пишет наш микрофон: система умеет отвечать на это начиная с macOS 14.2
+    private static func programsUsingMicrophone() -> [NSRunningApplication] {
+        guard #available(macOS 14.2, *) else { return [] }
+        func address(_ selector: AudioObjectPropertySelector, _ scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal) -> AudioObjectPropertyAddress {
+            AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: kAudioObjectPropertyElementMain)
+        }
+        func list(_ object: AudioObjectID, _ selector: AudioObjectPropertySelector, _ scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal) -> [AudioObjectID] {
+            var where_ = address(selector, scope)
+            var size: UInt32 = 0
+            guard AudioObjectGetPropertyDataSize(object, &where_, 0, nil, &size) == noErr, size > 0 else { return [] }
+            var ids = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+            guard AudioObjectGetPropertyData(object, &where_, 0, nil, &size, &ids) == noErr else { return [] }
+            return ids
+        }
+        var uid = "NoiseReduction_Microphone" as CFString
+        var device = AudioObjectID(kAudioObjectUnknown)
+        var translate = address(kAudioHardwarePropertyTranslateUIDToDevice)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        let found = withUnsafePointer(to: &uid) { AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &translate, UInt32(MemoryLayout<CFString>.size), $0, &size, &device) }
+        guard found == noErr, device != kAudioObjectUnknown else { return [] }
+        var seen = Set<pid_t>()
+        return list(AudioObjectID(kAudioObjectSystemObject), kAudioHardwarePropertyProcessObjectList).compactMap { process in
+            guard list(process, kAudioProcessPropertyDevices, kAudioObjectPropertyScopeInput).contains(device) else { return nil }
+            var running: UInt32 = 0, pid: pid_t = 0
+            var runningAddress = address(kAudioProcessPropertyIsRunningInput), pidAddress = address(kAudioProcessPropertyPID)
+            var runningSize = UInt32(MemoryLayout<UInt32>.size), pidSize = UInt32(MemoryLayout<pid_t>.size)
+            guard AudioObjectGetPropertyData(process, &runningAddress, 0, nil, &runningSize, &running) == noErr, running != 0,
+                  AudioObjectGetPropertyData(process, &pidAddress, 0, nil, &pidSize, &pid) == noErr,
+                  pid != ProcessInfo.processInfo.processIdentifier, seen.insert(pid).inserted else { return nil }
+            return NSRunningApplication(processIdentifier: pid)
+        }
     }
 
     private func refreshDevices() {
