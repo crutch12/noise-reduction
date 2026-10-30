@@ -19,16 +19,17 @@ namespace NoiseReduction.Avalonia
         internal static bool IsOwn(string device) =>
             device.StartsWith(Name, StringComparison.Ordinal) || device.StartsWith("Monitor of ", StringComparison.Ordinal);
 
+        // pactl склеивает аргументы через пробел, поэтому описание с пробелом оборачиваем в кавычки дважды
         // устройство живёт, пока работает звуковой сервер, поэтому создаём его при каждом запуске
         internal static bool Prepare(out string error)
         {
             error = null;
             if (!Run("pactl", out var sinks, "list", "short", "sinks")) { error = sinks; return false; }
             if (!sinks.Contains(LinuxFeed) &&
-                !Load(out error, "module-null-sink", $"sink_name={LinuxFeed}", "channels=1", "rate=48000", $"sink_properties=device.description='{LinuxFeedName}'")) return false;
+                !Load(out error, "module-null-sink", $"sink_name={LinuxFeed}", "channels=1", "rate=48000", $"sink_properties=\"device.description='{LinuxFeedName}'\"")) return false;
             Run("pactl", out var sources, "list", "short", "sources");
             if (!sources.Split('\n').Any(line => line.Contains("\tnoise_reduction\t")) &&
-                !Load(out error, "module-remap-source", $"master={LinuxFeed}.monitor", "source_name=noise_reduction", "channels=1", $"source_properties=device.description='{Name}'")) return false;
+                !Load(out error, "module-remap-source", $"master={LinuxFeed}.monitor", "source_name=noise_reduction", "channels=1", $"source_properties=\"device.description='{Name}'\"")) return false;
             return true;
         }
 
