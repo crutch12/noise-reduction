@@ -15,7 +15,7 @@ struct StatusRow: View {
     var body: some View {
         HStack(spacing: 6) {
             Circle().fill(color).frame(width: 8, height: 8)
-            Text(controller.statusText).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text(controller.statusText).font(.callout).fixedSize(horizontal: false, vertical: true)
             ForEach(controller.users, id: \.processIdentifier) { app in
                 if let icon = app.icon { Image(nsImage: icon).resizable().frame(width: 14, height: 14).help(app.localizedName ?? "") }
             }
@@ -136,11 +136,23 @@ struct MicrophoneList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(controller.t("Исходный микрофон")).font(.caption).foregroundStyle(.secondary)
+            Text(controller.t("Исходный микрофон")).font(.caption.weight(.medium)).foregroundStyle(.secondary)
             row(controller.t("Как в системе"), nil)
             ForEach(controller.devices, id: \.name) { row($0.name, $0.name) }
         }
     }
+}
+
+struct MenuMaterial: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .menu
+        view.blendingMode = .behindWindow
+        view.state = .active
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
 
 // всплывающая панель из строки меню: включить, выключить и выбрать микрофон, остальное в настройках
@@ -172,10 +184,12 @@ struct PopoverView: View {
                 Spacer()
                 Button(controller.t("Выход"), action: quit)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
             .padding(12)
         }
         .frame(width: 280)
+        // материал системных меню плотнее, чем у панели, сквозь него текст читается
+        .background(MenuMaterial().ignoresSafeArea())
         .environment(\.layoutDirection, ["ar", "fa"].contains(controller.language) ? .rightToLeft : .leftToRight)
     }
 }
