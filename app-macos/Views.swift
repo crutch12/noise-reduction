@@ -260,7 +260,7 @@ struct PickerRow<Selection: Hashable, Options: View>: View {
         HStack {
             Text(title)
             Spacer(minLength: 12)
-            Picker(title, selection: selection) { options }.labelsHidden().fixedSize()
+            Picker(title, selection: selection) { options }.labelsHidden().frame(width: 200)
         }
     }
 }
