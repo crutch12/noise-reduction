@@ -213,7 +213,7 @@ sh tools/package-linux.sh 1.2.0   # archive, output in dist/linux
 ```
 
 Linux release builds run in the `rust:1.98-bullseye` image so they work on glibc 2.31 and newer
-Linux app and UI tests run with `xvfb-run -a env XDG_SESSION_TYPE=x11 dotnet run --project tests-linux`, installer tests use `python3 -m pytest -q tools/tests/test_linux_package.py`
+Linux app and UI tests run with `xvfb-run -a -s "-screen 0 1280x1024x24 -noreset" env XDG_SESSION_TYPE=x11 dotnet run --project tests-linux`, installer tests use `python3 -m pytest -q tools/tests/test_linux_package.py`
 
 ### Releases
 

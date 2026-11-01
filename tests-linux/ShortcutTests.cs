@@ -23,6 +23,16 @@ namespace NoiseReduction.Linux.Tests
         }
 
         [Test]
+        internal static void ShortcutDisposalLetsAnotherClientImmediatelyRebind()
+        {
+            for (int index = 0; index < 128; index++)
+            {
+                using var shortcut = new GlobalShortcut(() => { });
+                Assert.True(shortcut.Available, "The previous client must release its grab before Dispose returns, iteration " + index);
+            }
+        }
+
+        [Test]
         internal static void ShortcutDoesNotClaimXWaylandGrabAsGlobal()
         {
             string previous = Environment.GetEnvironmentVariable("XDG_SESSION_TYPE");
