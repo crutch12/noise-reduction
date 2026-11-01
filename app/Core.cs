@@ -152,6 +152,7 @@ namespace NoiseReduction.Desktop
         public long Frames { get { return view.ReadInt64(16); } }
         public long ModelFrames { get { return view.ReadInt64(24); } }
         public long Errors { get { return view.ReadInt64(32); } }
+        public long LastErrorModelFrames { get { return view.ReadInt64(48); } }
         public bool DeepFilterActive { get { return view.ReadUInt32(12) == 1; } }
         public static string NotificationName(string fileName)
         {

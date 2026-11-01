@@ -37,7 +37,18 @@ bool ControlView::open_path(const std::wstring& path) {
     InterlockedIncrement64(&block_->initializations);
     return true;
 }
-void ControlView::error() noexcept { if (block_) InterlockedIncrement64(&block_->errors); }
+void ControlView::error() noexcept {
+    if (block_) {
+        const LONG64 models = InterlockedCompareExchange64(&block_->model_frames, 0, 0);
+        LONG64 previous = InterlockedCompareExchange64(&block_->last_error_model_frames, 0, 0);
+        while (previous < models) {
+            const LONG64 actual = InterlockedCompareExchange64(&block_->last_error_model_frames, models, previous);
+            if (actual == previous) break;
+            previous = actual;
+        }
+        InterlockedIncrement64(&block_->errors);
+    }
+}
 void ControlView::model(bool deepfilter) noexcept { if (block_) InterlockedExchange(&block_->active_model, deepfilter ? 1 : 0); }
 void ControlView::stop_watching() noexcept {
     if (wait_) { UnregisterWaitEx(wait_, INVALID_HANDLE_VALUE); wait_ = nullptr; }

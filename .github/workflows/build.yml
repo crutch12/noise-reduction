@@ -100,6 +100,10 @@ jobs:
         shell: pwsh
         run: ./tools/build-winui.ps1
 
+      - name: Microphone status tests
+        shell: pwsh
+        run: dotnet run --project tests-winui/NoiseReduction.UI.Tests.csproj -- dist/app/NoiseReduction.dll
+
       # подпись 1: свои exe и dll; чужие (.NET, Windows App SDK, MSVC, rnnoise) уже подписаны авторами или не наши
       - name: Collect binaries for signing
         if: env.SIGNING == 'true'

@@ -16,10 +16,12 @@ struct alignas(8) ControlBlock {
     volatile LONG64 model_frames;
     volatile LONG64 errors;
     volatile LONG64 initializations;
-    uint64_t padding[2];
+    volatile LONG64 last_error_model_frames;
+    uint64_t padding;
 };
 static_assert(sizeof(ControlBlock) == 64);
 static_assert(offsetof(ControlBlock, audio_frames) == 16);
+static_assert(offsetof(ControlBlock, last_error_model_frames) == 48);
 
 class ControlView {
 public:

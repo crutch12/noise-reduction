@@ -24,16 +24,12 @@ namespace NoiseReduction.WinUI
     {
         private sealed class Sample
         {
-            internal long Errors, Models;
-            internal bool Failed, Observed;
+            internal bool Failed;
             internal readonly Activity Activity = new Activity();
             internal void Observe(ControlFile control)
             {
-                long errors = control.Errors, models = control.ModelFrames;
-                if (!Observed) Failed = errors > 0;
-                else if (errors > Errors) Failed = true;
-                else if (errors < Errors || models > Models) Failed = false;
-                Errors = errors; Models = models; Observed = true;
+                long models = control.ModelFrames;
+                Failed = control.Errors > 0 && models <= control.LastErrorModelFrames;
                 Activity.Update(control.Frames, models);
             }
         }

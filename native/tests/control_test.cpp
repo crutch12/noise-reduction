@@ -1,4 +1,5 @@
 #include "control.h"
+#include <cstring>
 #include <iostream>
 #include <stdexcept>
 
@@ -20,6 +21,8 @@ int main() {
             nr::ControlView view;
             check(view.open_path(path), "Cannot open control mapping");
             check(view.config() == (1u | (24u << 8)), "Configuration changed");
+            view.account(480, 1);
+            view.error();
             view.account(480, 1);
             HANDLE notified = CreateEventW(nullptr, TRUE, FALSE, nullptr);
             check(notified != nullptr, "Cannot create callback fixture");
@@ -55,7 +58,21 @@ int main() {
         SetFilePointer(file, 0, nullptr, FILE_BEGIN);
         DWORD read = 0;
         check(ReadFile(file, &initial, 64, &read, nullptr) && read == 64, "Cannot read counters");
-        check(initial.audio_frames == 480 && initial.model_frames == 1 && initial.initializations == 1, "Counters were not preserved");
+        check(initial.audio_frames == 960 && initial.model_frames == 2 && initial.initializations == 1 && initial.errors == 1, "Counters were not preserved");
+        LONG64 error_models = 0;
+        std::memcpy(&error_models, reinterpret_cast<const BYTE*>(&initial) + 48, sizeof(error_models));
+        check(error_models == 1, "The last error must retain its model progress before recovery");
+        {
+            const LONG64 newer_error = 3;
+            SetFilePointer(file, 48, nullptr, FILE_BEGIN);
+            check(WriteFile(file, &newer_error, sizeof(newer_error), &written, nullptr), "Cannot set a newer failure marker");
+            nr::ControlView view;
+            check(view.open_path(path), "Cannot reopen control mapping");
+            view.error();
+        }
+        SetFilePointer(file, 48, nullptr, FILE_BEGIN);
+        check(ReadFile(file, &error_models, sizeof(error_models), &read, nullptr), "Cannot read the failure marker");
+        check(error_models == 3, "An older failure must not overwrite a newer failure marker");
         initial.magic = 0;
         SetFilePointer(file, 0, nullptr, FILE_BEGIN);
         check(WriteFile(file, &initial, 64, &written, nullptr), "Cannot corrupt fixture");
