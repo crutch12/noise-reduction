@@ -1,5 +1,6 @@
 /my_mic_record*
 /.local/
+/.claude/
 __pycache__/
 .pytest_cache/
 /build/
@@ -10,5 +11,7 @@ __pycache__/
 /app-avalonia/obj/
 /tests-winui/bin/
 /tests-winui/obj/
+/tests-linux/bin/
+/tests-linux/obj/
 /native/deepfilter/target/
 /.cache/

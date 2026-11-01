@@ -92,7 +92,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     @objc private func statusClicked() {
-        if NSApp.currentEvent?.type == .rightMouseUp { showMenu() } else { togglePopover() }
+        let event = NSApp.currentEvent
+        if event?.type == .rightMouseUp {
+            showMenu()
+        } else if event?.type == .leftMouseUp && (event?.clickCount ?? 0) > 1 {
+            showWindow()
+        } else {
+            togglePopover()
+        }
     }
 
     private func togglePopover() {

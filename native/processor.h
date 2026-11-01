@@ -14,6 +14,7 @@ struct Backend {
     size_t latency = 0;
     // своя сила подавления у модели; без неё сила задаётся подмешиванием исходного звука
     void (*strength)(void*, float) = nullptr;
+    uint64_t (*errors)(const void*) = nullptr;
 };
 
 // Срез гула ниже 80 Гц, Butterworth второго порядка на частоте устройства
@@ -71,6 +72,7 @@ public:
     uint64_t processed_frames() const noexcept { return processed_frames_; }
     bool has_model() const noexcept { return state_ != nullptr; }
     size_t delay() const noexcept { return delay_; }
+    uint64_t errors() const noexcept { return state_ && backend_.errors ? backend_.errors(state_) : 0; }
 
 private:
     Backend backend_;

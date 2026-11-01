@@ -9,6 +9,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <InvariantGlobalization>false</InvariantGlobalization>
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
     <ApplicationIcon>../app/assets/NoiseReduction.ico</ApplicationIcon>
     <Version>1.0.0</Version>
     <!-- control-файл из общего Core.cs нужен только Windows, здесь он не вызывается -->
@@ -18,16 +19,23 @@
     <TrimMode>partial</TrimMode>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="NoiseReduction.Linux.Tests" />
     <Compile Include="*.cs" />
     <Compile Include="../app/Core.cs" Link="Shared/Core.cs" />
     <Compile Include="../app/SecureControl.cs" Link="Shared/SecureControl.cs" />
     <Compile Include="../app/Localization.cs" Link="Shared/Localization.cs" />
     <Compile Include="../app/i18n/*.cs" LinkBase="Shared/i18n" />
     <AvaloniaResource Include="../app/assets/NoiseReduction.ico" Link="Assets/NoiseReduction.ico" />
+    <AvaloniaResource Include="Assets/Fonts/*" />
+    <Content Include="../tools/install-linux.sh" Link="install.sh" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../tools/uninstall-linux.sh" Link="uninstall.sh" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../app/assets/Microphone.png" Link="NoiseReduction.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../installer/licenses/SukiUI-LICENSE.txt" Link="licenses/SukiUI-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="../installer/licenses/Noto*-LICENSE.txt" Link="licenses/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.4" />
     <PackageReference Include="Avalonia.Desktop" Version="12.1.4" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.4" />
+    <PackageReference Include="SukiUI" Version="7.0.1" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,11 @@
+﻿<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:suki="clr-namespace:SukiUI;assembly=SukiUI"
+             x:Class="NoiseReduction.Avalonia.App">
+  <Application.Resources>
+    <FontFamily x:Key="DefaultFontFamily">avares://NoiseReduction/Assets/Fonts#Noto Sans</FontFamily>
+  </Application.Resources>
+  <Application.Styles>
+    <suki:SukiTheme ThemeColor="Blue" />
+  </Application.Styles>
+</Application>

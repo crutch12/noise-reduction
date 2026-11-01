@@ -5,6 +5,24 @@ extension View {
     func hintStyle() -> some View { font(.callout).foregroundStyle(Color.primary.opacity(0.72)) }
 }
 
+struct MicrophoneUserIcons: View {
+    let users: [NSRunningApplication]
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(users, id: \.processIdentifier) { app in
+                Group {
+                    if let icon = app.icon { Image(nsImage: icon).resizable() }
+                    else { Image(systemName: "app").resizable() }
+                }
+                .frame(width: 14, height: 14)
+                .help(app.localizedName ?? app.bundleIdentifier ?? "")
+                .accessibilityLabel(app.localizedName ?? app.bundleIdentifier ?? "")
+            }
+        }
+    }
+}
+
 struct StatusRow: View {
     @ObservedObject var controller: Controller
 
@@ -21,9 +39,7 @@ struct StatusRow: View {
         HStack(spacing: 6) {
             Circle().fill(color).frame(width: 8, height: 8)
             Text(controller.statusText).font(.callout).fixedSize(horizontal: false, vertical: true)
-            ForEach(controller.users, id: \.processIdentifier) { app in
-                if let icon = app.icon { Image(nsImage: icon).resizable().frame(width: 14, height: 14).help(app.localizedName ?? "") }
-            }
+            MicrophoneUserIcons(users: controller.users)
         }
     }
 }
@@ -58,10 +74,8 @@ struct SourcePicker: View {
         PickerRow(title: controller.t("Исходный микрофон"), selection: Binding(
             get: { controller.devices.contains { $0.name == controller.settings.source } ? controller.settings.source ?? "" : "" },
             set: { controller.setSource($0.isEmpty ? nil : $0) }
-        )) {
-            Text(controller.t("Как в системе")).tag("")
-            ForEach(controller.devices, id: \.name) { Text($0.name).tag($0.name) }
-        }
+        ), options: [PickerOption(id: "", title: controller.t("Как в системе"))]
+            + controller.devices.map { PickerOption(id: $0.name, title: $0.name) })
     }
 }
 
@@ -260,16 +274,67 @@ struct SwitchRow<Label: View>: View {
     }
 }
 
-struct PickerRow<Selection: Hashable, Options: View>: View {
+struct PickerOption {
+    let id: String
     let title: String
-    let selection: Binding<Selection>
-    @ViewBuilder let options: Options
+}
+
+struct NativePicker: NSViewRepresentable {
+    let title: String
+    @Binding var selection: String
+    let options: [PickerOption]
+
+    final class Coordinator: NSObject {
+        var selection: Binding<String>
+        init(_ selection: Binding<String>) { self.selection = selection }
+        @objc func changed(_ sender: NSPopUpButton) {
+            if let id = sender.selectedItem?.representedObject as? String { selection.wrappedValue = id }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator($selection) }
+
+    func makeNSView(context: Context) -> NSPopUpButton {
+        let view = NSPopUpButton(frame: .zero, pullsDown: false)
+        view.controlSize = .regular
+        view.autoenablesItems = false
+        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        view.target = context.coordinator
+        view.action = #selector(Coordinator.changed(_:))
+        return view
+    }
+
+    func updateNSView(_ view: NSPopUpButton, context: Context) {
+        context.coordinator.selection = $selection
+        if view.itemTitles != options.map(\.title) || view.itemArray.map({ $0.representedObject as? String }) != options.map({ Optional($0.id) }) {
+            view.removeAllItems()
+            for option in options {
+                let item = NSMenuItem(title: option.title, action: nil, keyEquivalent: "")
+                item.representedObject = option.id
+                view.menu?.addItem(item)
+            }
+        }
+        if let index = options.firstIndex(where: { $0.id == selection }) { view.selectItem(at: index) }
+        view.cell?.userInterfaceLayoutDirection = context.environment.layoutDirection == .rightToLeft ? .rightToLeft : .leftToRight
+        view.isEnabled = context.environment.isEnabled
+        view.setAccessibilityLabel(title)
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSPopUpButton, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 200, height: nsView.intrinsicContentSize.height)
+    }
+}
+
+struct PickerRow: View {
+    let title: String
+    let selection: Binding<String>
+    let options: [PickerOption]
 
     var body: some View {
         HStack {
             Text(title)
             Spacer(minLength: 12)
-            Picker(title, selection: selection) { options }.labelsHidden().frame(width: 200)
+            NativePicker(title: title, selection: selection, options: options).frame(width: 200, alignment: .trailing)
         }
     }
 }
@@ -335,7 +400,10 @@ struct MicrophoneCard: View {
                         chevron(open)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(device.isDefault ? name + " (" + controller.t("основной") + ")" : name).lineLimit(1).truncationMode(.middle).help(name)
-                            Text(controller.t(controller.activeDevice == name ? "Используется" : "Не используется")).hintStyle()
+                            HStack(spacing: 6) {
+                                Text(controller.t(controller.activeDevice == name ? "Используется" : "Не используется")).hintStyle()
+                                MicrophoneUserIcons(users: controller.users(for: name))
+                            }
                         }
                         Spacer(minLength: 8)
                     }
@@ -422,10 +490,10 @@ struct SettingsView: View {
     @ObservedObject var controller: Controller
     @State private var confirmUninstall = false
 
-    @ViewBuilder private var themes: some View {
-        Text(controller.t("Как в системе")).tag("system")
-        Text(controller.t("Светлая")).tag("light")
-        Text(controller.t("Тёмная")).tag("dark")
+    private var themes: [PickerOption] {
+        [PickerOption(id: "system", title: controller.t("Как в системе")),
+         PickerOption(id: "light", title: controller.t("Светлая")),
+         PickerOption(id: "dark", title: controller.t("Тёмная"))]
     }
 
     var body: some View {
@@ -459,14 +527,12 @@ struct SettingsView: View {
                 ForEach(controller.devices, id: \.name) { MicrophoneCard(controller: controller, device: $0).id($0.name) }
                 SectionTitle(text: controller.t("Приложение"))
                 Card {
-                    PickerRow(title: controller.t("Язык"), selection: Binding(get: { controller.settings.language }, set: { controller.setLanguage($0) })) {
-                        Text(controller.t("Как в системе")).tag("system")
-                        ForEach(Strings.shared.languages, id: \.id) { Text($0.name).tag($0.id) }
-                    }
+                    PickerRow(title: controller.t("Язык"), selection: Binding(get: { controller.settings.language }, set: { controller.setLanguage($0) }),
+                        options: [PickerOption(id: "system", title: controller.t("Как в системе"))] + Strings.shared.languages.map { PickerOption(id: $0.id, title: $0.name) })
                     Divider()
-                    PickerRow(title: controller.t("Тема окна"), selection: Binding(get: { controller.settings.windowTheme }, set: { controller.setWindowTheme($0) })) { themes }
+                    PickerRow(title: controller.t("Тема окна"), selection: Binding(get: { controller.settings.windowTheme }, set: { controller.setWindowTheme($0) }), options: themes)
                     Divider()
-                    PickerRow(title: controller.t("Тема панели трея"), selection: Binding(get: { controller.settings.trayTheme }, set: { controller.setTrayTheme($0) })) { themes }
+                    PickerRow(title: controller.t("Тема панели трея"), selection: Binding(get: { controller.settings.trayTheme }, set: { controller.setTrayTheme($0) }), options: themes)
                 }
                 Card {
                     SwitchRow(isOn: Binding(get: { controller.startupEnabled }, set: { controller.setStartup($0) })) {
@@ -478,14 +544,22 @@ struct SettingsView: View {
                         Text(controller.t("На батарее использовать быструю модель"))
                     }
                     Text(controller.t("Пока ноутбук работает от батареи, вместо точной модели работает быстрая")).hintStyle()
-                }
-                Card {
-                    Button(controller.t("Удалить программу"), role: .destructive) { confirmUninstall = true }
-                        .disabled(controller.installing)
-                        .confirmationDialog(controller.t("Удалить программу"), isPresented: $confirmUninstall) {
-                            Button(controller.t("Удалить"), role: .destructive) { controller.uninstall() }
-                            Button(controller.t("Отмена"), role: .cancel) {}
+                    Divider()
+                    HStack(spacing: 16) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(controller.t("Удалить программу"))
+                            Text(controller.language == "ru"
+                                ? "Удалит приложение, виртуальный микрофон и запись автозапуска\nНастройки микрофонов сохранятся"
+                                : "Removes the app, virtual microphone and login item\nMicrophone settings are kept").hintStyle()
                         }
+                        Spacer(minLength: 12)
+                        Button(controller.t("Удалить"), role: .destructive) { confirmUninstall = true }
+                            .disabled(controller.installing)
+                            .confirmationDialog(controller.t("Удалить программу"), isPresented: $confirmUninstall) {
+                                Button(controller.t("Удалить"), role: .destructive) { controller.uninstall() }
+                                Button(controller.t("Отмена"), role: .cancel) {}
+                            }
+                    }
                     if controller.state != .needsDriver, let error = controller.error { Text(error).font(.callout).foregroundStyle(.red) }
                 }
             }

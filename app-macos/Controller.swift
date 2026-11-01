@@ -20,7 +20,14 @@ final class Controller: ObservableObject {
     @Published private(set) var customOpen = Set<String>()
     @Published private(set) var windowSession = 0
     @Published var hotkeyAvailable = false
-    @Published private(set) var users: [NSRunningApplication] = []
+    @Published private var microphoneUsers: [String: [NSRunningApplication]] = [:]
+
+    var users: [NSRunningApplication] {
+        var seen = Set<pid_t>()
+        return microphoneUsers.values.flatMap { $0 }.filter { seen.insert($0.processIdentifier).inserted }.sorted { $0.processIdentifier < $1.processIdentifier }
+    }
+
+    func users(for device: String) -> [NSRunningApplication] { microphoneUsers[device] ?? [] }
 
     let voice = VoiceTest()
     private let bridge = Bridge()
@@ -244,6 +251,8 @@ final class Controller: ObservableObject {
 
     private func tick() {
         ticks += 1
+        let apps = MicrophoneUsers.snapshot(devices: devices.map(\.name), selected: activeDevice)
+        if apps != microphoneUsers { microphoneUsers = apps }
         if ticks % 10 == 0 {
             let battery = Self.batteryPower()
             if battery != onBattery {
@@ -260,8 +269,6 @@ final class Controller: ObservableObject {
         // после того как программа отпустила микрофон, ещё немного держим мост, чтобы не дёргать устройство
         if inUse { idleSince = nil } else if idleSince == nil { idleSince = Date() }
         let want = inUse || Date().timeIntervalSince(idleSince ?? Date()) < 3
-        let apps = inUse ? Self.programsUsingMicrophone() : []
-        if apps != users { users = apps }
         // без разрешения macOS отдаёт тишину вместо ошибки, и программы молча останутся без звука
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .denied, .restricted:
@@ -300,39 +307,6 @@ final class Controller: ObservableObject {
         set(paused ? .paused : error != nil ? .error : working ? .working : inUse || DefaultInput.isVirtual ? .idle : .notSelected)
         lastModel = stats.modelFrames
         lastErrors = stats.errors
-    }
-
-    // кто сейчас пишет наш микрофон: система умеет отвечать на это начиная с macOS 14.2
-    private static func programsUsingMicrophone() -> [NSRunningApplication] {
-        guard #available(macOS 14.2, *) else { return [] }
-        func address(_ selector: AudioObjectPropertySelector, _ scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal) -> AudioObjectPropertyAddress {
-            AudioObjectPropertyAddress(mSelector: selector, mScope: scope, mElement: kAudioObjectPropertyElementMain)
-        }
-        func list(_ object: AudioObjectID, _ selector: AudioObjectPropertySelector, _ scope: AudioObjectPropertyScope = kAudioObjectPropertyScopeGlobal) -> [AudioObjectID] {
-            var where_ = address(selector, scope)
-            var size: UInt32 = 0
-            guard AudioObjectGetPropertyDataSize(object, &where_, 0, nil, &size) == noErr, size > 0 else { return [] }
-            var ids = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
-            guard AudioObjectGetPropertyData(object, &where_, 0, nil, &size, &ids) == noErr else { return [] }
-            return ids
-        }
-        var uid = "NoiseReduction_Microphone" as CFString
-        var device = AudioObjectID(kAudioObjectUnknown)
-        var translate = address(kAudioHardwarePropertyTranslateUIDToDevice)
-        var size = UInt32(MemoryLayout<AudioObjectID>.size)
-        let found = withUnsafePointer(to: &uid) { AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &translate, UInt32(MemoryLayout<CFString>.size), $0, &size, &device) }
-        guard found == noErr, device != kAudioObjectUnknown else { return [] }
-        var seen = Set<pid_t>()
-        return list(AudioObjectID(kAudioObjectSystemObject), kAudioHardwarePropertyProcessObjectList).compactMap { process in
-            guard list(process, kAudioProcessPropertyDevices, kAudioObjectPropertyScopeInput).contains(device) else { return nil }
-            var running: UInt32 = 0, pid: pid_t = 0
-            var runningAddress = address(kAudioProcessPropertyIsRunningInput), pidAddress = address(kAudioProcessPropertyPID)
-            var runningSize = UInt32(MemoryLayout<UInt32>.size), pidSize = UInt32(MemoryLayout<pid_t>.size)
-            guard AudioObjectGetPropertyData(process, &runningAddress, 0, nil, &runningSize, &running) == noErr, running != 0,
-                  AudioObjectGetPropertyData(process, &pidAddress, 0, nil, &pidSize, &pid) == noErr,
-                  pid != ProcessInfo.processInfo.processIdentifier, seen.insert(pid).inserted else { return nil }
-            return NSRunningApplication(processIdentifier: pid)
-        }
     }
 
     private func refreshDevices() {

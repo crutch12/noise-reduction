@@ -8,6 +8,7 @@ DeepFilterBackend::DeepFilterBackend(const PathChar* path) : module_(path) {
     api_.destroy = module_.symbol<decltype(api_.destroy)>("nr_df_destroy");
     api_.frame = module_.symbol<decltype(api_.frame)>("nr_df_process_frame");
     api_.strength = module_.symbol<decltype(api_.strength)>("nr_df_set_strength");
+    api_.errors = module_.symbol<decltype(api_.errors)>("nr_df_get_errors");
     auto frame_size = module_.symbol<int (*)()>("nr_df_get_frame_size");
     auto latency = module_.symbol<int (*)(const void*)>("nr_df_get_latency");
     if (!api_.create || !api_.destroy || !api_.frame || !api_.strength || !frame_size || !latency || frame_size() != Processor::frame_size) {

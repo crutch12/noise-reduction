@@ -47,6 +47,12 @@ Linux
 
 .NET runtime, MIT, see dotnet-LICENSE.txt and dotnet-ThirdPartyNotices.txt
 Avalonia, MIT, see Avalonia-LICENSE.txt
+SukiUI 7.0.1, MIT, see SukiUI-LICENSE.txt
+Source: https://github.com/kikipoulet/SukiUI
+Noto Sans, Arabic, Devanagari and Thai, SIL Open Font License 1.1, see Noto-LICENSE.txt
+Source: https://github.com/notofonts/noto-fonts
+Noto Sans CJK SC, SIL Open Font License 1.1, see NotoCJK-LICENSE.txt
+Source: https://github.com/notofonts/noto-cjk
 SkiaSharp, MIT, see SkiaSharp-LICENSE.txt
 HarfBuzzSharp, MIT, see HarfBuzzSharp-LICENSE.txt
 MicroCom, MIT, see MicroCom-LICENSE.txt

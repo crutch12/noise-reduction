@@ -85,9 +85,15 @@ cc -O2 -fPIC $arch -I"$out/include" -c "$root/native/miniaudio.c" -o "$out/minia
 $cxx -fPIC -fvisibility=hidden -isystem "$out/include" $shared "$root/native/bridge.cpp" "$root/native/processor.cpp" "$root/native/rnnoise_backend.cpp" "$root/native/deepfilter_backend.cpp" "$out/miniaudio.o" $system -o "$out/libnr_bridge.$lib"
 # shellcheck disable=SC2086
 $cxx "$root/native/tests/bridge_test.cpp" -L"$out" -lnr_bridge -Wl,-rpath,"$out" -o "$out/bridge_test"
+# shellcheck disable=SC2086
+$cxx -isystem "$out/include" "$root/native/tests/bridge_buffer_test.cpp" "$root/native/processor.cpp" "$root/native/rnnoise_backend.cpp" "$root/native/deepfilter_backend.cpp" "$out/miniaudio.o" $system -o "$out/bridge_buffer_test"
+# shellcheck disable=SC2086
+$cxx -isystem "$out/include" "$root/native/tests/bridge_lifecycle_test.cpp" "$root/native/processor.cpp" "$root/native/rnnoise_backend.cpp" "$root/native/deepfilter_backend.cpp" "$out/miniaudio.o" $system -o "$out/bridge_lifecycle_test"
 
 if [ "${1:-}" = test ]; then
     "$out/resampler_test"
     "$out/processor_test" "$out/librnnoise.$lib"
+    "$out/bridge_buffer_test"
+    "$out/bridge_lifecycle_test"
     "$out/bridge_test" "$out"
 fi

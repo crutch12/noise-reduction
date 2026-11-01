@@ -14,6 +14,7 @@ pub struct State {
     input: [f32; FRAME],
     output: [f32; FRAME],
     seed: u32,
+    errors: u64,
 }
 
 #[no_mangle]
@@ -32,7 +33,7 @@ pub extern "C" fn nr_df_create(_model: *mut c_void) -> *mut State {
         if model.hop_size != FRAME || model.sr != 48000 {
             return None;
         }
-        Some(Box::into_raw(Box::new(State { model, input: [0.0; FRAME], output: [0.0; FRAME], seed: 0x2545_f491 })))
+        Some(Box::into_raw(Box::new(State { model, input: [0.0; FRAME], output: [0.0; FRAME], seed: 0x2545_f491, errors: 0 })))
     })
     .ok()
     .flatten()
@@ -71,13 +72,19 @@ pub unsafe extern "C" fn nr_df_process_frame(st: *mut State, out: *mut f32, inpu
     }));
     match result {
         Ok(Some(snr)) => {
+            let mut invalid = false;
             for (dst, src) in target.iter_mut().zip(state.output.iter()) {
+                invalid |= !src.is_finite();
                 *dst = if src.is_finite() { *src * SCALE } else { 0.0 };
+            }
+            if invalid {
+                state.errors = state.errors.saturating_add(1);
             }
             // локальное SNR в дБ переводим в грубую вероятность голоса, как у RNNoise
             ((snr + 5.0) / 20.0).clamp(0.0, 1.0)
         }
         _ => {
+            state.errors = state.errors.saturating_add(1);
             target.copy_from_slice(source);
             0.0
         }
@@ -91,7 +98,7 @@ pub unsafe extern "C" fn nr_df_set_strength(st: *mut State, db: f32) {
         return;
     }
     let state = &mut *st;
-    let _ = catch_unwind(AssertUnwindSafe(|| {
+    let result = catch_unwind(AssertUnwindSafe(|| {
         if db >= 60.0 {
             state.model.set_atten_lim(100.0);
             state.model.set_pf_beta(0.02);
@@ -100,6 +107,15 @@ pub unsafe extern "C" fn nr_df_set_strength(st: *mut State, db: f32) {
             state.model.set_pf_beta(0.0);
         }
     }));
+    if result.is_err() {
+        state.errors = state.errors.saturating_add(1);
+    }
+}
+
+/// Cumulative processing failures, independent of the voice probability
+#[no_mangle]
+pub unsafe extern "C" fn nr_df_get_errors(st: *const State) -> u64 {
+    st.as_ref().map_or(0, |state| state.errors)
 }
 
 #[no_mangle]
